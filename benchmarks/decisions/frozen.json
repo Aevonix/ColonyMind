@@ -1,0 +1,248 @@
+{
+ "seed": 1201,
+ "sets": {
+  "ask_answer": {
+   "labels": {
+    "approve": 55,
+    "conditional_or_question": 43,
+    "decline": 41,
+    "unrelated": 39
+   },
+   "n": 178,
+   "points": {
+    "ask_answer": 178
+   },
+   "sha256": "11412cd082a261e21ef4f85dd9bdcc41dc3ed4b7c03ac8f97ee2e43c0731932f",
+   "subsets": {
+    "adversarial": 36,
+    "novel": 48,
+    "repo": 94
+   }
+  },
+  "claim_relation": {
+   "labels": {
+    "adds": 45,
+    "replaces": 45
+   },
+   "n": 90,
+   "points": {
+    "claim_relation": 90
+   },
+   "sha256": "945ca969fc93b359003350cc863fb2072612f9a1acb49db84052d0505d92b009",
+   "subsets": {
+    "adversarial": 6,
+    "novel": 24,
+    "repo": 60
+   }
+  },
+  "cron_wake": {
+   "labels": {
+    "no": 85,
+    "yes": 72
+   },
+   "n": 157,
+   "points": {
+    "cron_build_monitor": 20,
+    "cron_deadline": 20,
+    "cron_event_change": 20,
+    "cron_invoice": 20,
+    "cron_price_watch": 18,
+    "cron_release_watch": 20,
+    "cron_supplier_reply": 20,
+    "cron_weather_alert": 19
+   },
+   "sha256": "24406e8cfea8a5692a5e6db2f02b6d2f6869bdc3db824ecbb108b73014194c87",
+   "subsets": {
+    "adversarial": 24,
+    "novel": 40,
+    "repo": 93
+   }
+  },
+  "inbound_triage": {
+   "labels": {
+    "no": 65,
+    "yes": 65
+   },
+   "n": 130,
+   "points": {
+    "inbound_triage": 130
+   },
+   "sha256": "d4986a601ebaad72cd20cb965a30008086b252f229bef8df06bcdbeaad51b052",
+   "subsets": {
+    "adversarial": 12,
+    "novel": 34,
+    "repo": 84
+   }
+  },
+  "interest_settled": {
+   "labels": {
+    "no": 29,
+    "yes": 20
+   },
+   "n": 49,
+   "points": {
+    "interest_settled": 49
+   },
+   "sha256": "6800674a32ac87847730f2edcb89d9d8632a74e5bb2143b35fd08f19a7e37a1d",
+   "subsets": {
+    "adversarial": 4,
+    "novel": 13,
+    "repo": 32
+   }
+  },
+  "no_reminders": {
+   "labels": {
+    "no": 24,
+    "yes": 12
+   },
+   "n": 36,
+   "points": {
+    "no_reminders": 36
+   },
+   "sha256": "354a4324912c05f59d91d5fb7ffdfbbe6255b2a08696cb48a355f68b771ff908",
+   "subsets": {
+    "adversarial": 4,
+    "novel": 10,
+    "repo": 22
+   }
+  },
+  "opt_out": {
+   "labels": {
+    "no": 70,
+    "yes": 55
+   },
+   "n": 125,
+   "points": {
+    "opt_out": 125
+   },
+   "sha256": "3d25fb02d0a79ba3af44d147f54c410f63aae3e55be77feb12376846965bc549",
+   "subsets": {
+    "adversarial": 7,
+    "novel": 32,
+    "repo": 86
+   }
+  },
+  "outreach_reply": {
+   "labels": {
+    "dig_deeper": 17,
+    "engaged": 26,
+    "not_interested": 25,
+    "not_now": 21,
+    "stop": 14
+   },
+   "n": 103,
+   "points": {
+    "outreach_reply": 103
+   },
+   "sha256": "39f6b52e221f764ee2d6e8db2243ba75d46bf4da3aafdc98751e8aa6c9e6f5d8",
+   "subsets": {
+    "adversarial": 5,
+    "novel": 30,
+    "repo": 68
+   }
+  },
+  "owner_instruction": {
+   "labels": {
+    "none": 39,
+    "pause_today": 11,
+    "resume": 11,
+    "stop": 19
+   },
+   "n": 80,
+   "points": {
+    "owner_instruction": 80
+   },
+   "sha256": "81c28208fbf7bc17779d9b2f9fd9132f83d5c2aa3cc8ee41e665ec35ff727e16",
+   "subsets": {
+    "adversarial": 23,
+    "novel": 22,
+    "repo": 35
+   }
+  },
+  "owner_send": {
+   "labels": {
+    "digest": 46,
+    "drop": 44,
+    "send_now": 26
+   },
+   "n": 116,
+   "points": {
+    "owner_send": 116
+   },
+   "sha256": "93c1119416711018d8b10a53d0d6becf5e2e0fa5be354996dad2fb6969b12df8",
+   "subsets": {
+    "adversarial": 20,
+    "novel": 32,
+    "repo": 64
+   }
+  },
+  "owner_verdict": {
+   "labels": {
+    "no": 51,
+    "yes": 51
+   },
+   "n": 102,
+   "points": {
+    "owner_verdict": 102
+   },
+   "sha256": "addf96a74008208f352d5fb330412359f911b3b8f3a21db432f07abcf8fdc309",
+   "subsets": {
+    "adversarial": 6,
+    "novel": 27,
+    "repo": 69
+   }
+  },
+  "question_answer": {
+   "labels": {
+    "both": 7,
+    "first": 8,
+    "neither": 7,
+    "none": 15,
+    "second": 8,
+    "unclear": 9
+   },
+   "n": 54,
+   "points": {
+    "question_answer": 54
+   },
+   "sha256": "37b8ccd58d99eae3b906e816da0e83ae377b8ecb75a74e4febe30f9372475d3f",
+   "subsets": {
+    "adversarial": 9,
+    "novel": 15,
+    "repo": 30
+   }
+  },
+  "report_substance": {
+   "labels": {
+    "empty": 24,
+    "finding": 22
+   },
+   "n": 46,
+   "points": {
+    "report_substance": 46
+   },
+   "sha256": "ba5c2bb17b529f25f95ad6cba8f5619e2415883bc4354cf1a4d1d993bd122d91",
+   "subsets": {
+    "adversarial": 8,
+    "novel": 14,
+    "repo": 24
+   }
+  },
+  "tool_screen": {
+   "labels": {
+    "no": 98,
+    "yes": 92
+   },
+   "n": 190,
+   "points": {
+    "tool_screen": 190
+   },
+   "sha256": "98eb662f9a52cd4b6b2e878c69f847effcc4f7de30615f4662b380158a064f2c",
+   "subsets": {
+    "adversarial": 20,
+    "novel": 50,
+    "repo": 120
+   }
+  }
+ }
+}

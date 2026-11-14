@@ -1,0 +1,76 @@
+{
+  "version": "fidelity-language-1",
+  "description": "One person per language: three statements (committed as claims with the item's own labels; each claim's subject is a phrase of its statement, as the claim rules require), one conversation of three turns and one long statement. The night writes the person's digest and the conversation's episode summary, and the plain summary shortens the long statement as an owner question quotes it. Trap: an output in another language than the source's. English is the control. Synthetic.",
+  "items": [
+    {"id": "lang-es", "language": "Spanish", "name": "Sam",
+     "statements": [
+       {"text": "Mi turno en el hospital del barrio empieza a las siete.", "subject": "Mi turno", "predicate": "starts at", "value": "a las siete"},
+       {"text": "Mi hija prefiere que le escribas por la tarde.", "subject": "Mi hija", "predicate": "prefers messages", "value": "por la tarde"},
+       {"text": "Mi mudanza a Valencia es en septiembre.", "subject": "Mi mudanza a Valencia", "predicate": "happens in", "value": "septiembre"}],
+     "conversation": [
+       ["¿Me ayudas a organizar la cena del sábado?", "Claro. ¿Cuántas personas vienen?"],
+       ["Somos ocho, y dos no comen carne.", "Entonces propongo dos platos vegetarianos."],
+       ["Perfecto. ¿Me mandas la lista de la compra el viernes?", "Sí, te la envío el viernes por la mañana."]],
+     "long_statement": "Ayer hablé con el casero sobre la humedad del baño y me dijo que enviaría a alguien la semana que viene, pero ya me ha dicho lo mismo tres veces desde marzo y sigo esperando, así que quiero que me recuerdes llamarle otra vez el lunes si nadie ha venido."},
+    {"id": "lang-de", "language": "German", "name": "Sam",
+     "statements": [
+       {"text": "Mein Unterricht an der Grundschule beginnt um acht.", "subject": "Mein Unterricht", "predicate": "starts at", "value": "um acht"},
+       {"text": "Mein Sohn möchte lieber abends Nachrichten bekommen.", "subject": "Mein Sohn", "predicate": "prefers messages", "value": "abends"},
+       {"text": "Mein Umzug nach Hamburg ist im Oktober.", "subject": "Mein Umzug nach Hamburg", "predicate": "happens in", "value": "im Oktober"}],
+     "conversation": [
+       ["Kannst du mir helfen, den Umzug zu planen?", "Gern. Wann soll der Umzug stattfinden?"],
+       ["Am zwölften Oktober, und ich brauche einen Transporter.", "Dann suche ich dir drei Angebote für einen Transporter heraus."],
+       ["Super, schick sie mir bis Mittwoch.", "Mache ich, du bekommst sie bis Mittwoch."]],
+     "long_statement": "Gestern habe ich mit meinem Vermieter über die kaputte Heizung gesprochen, und er hat versprochen, nächste Woche einen Techniker zu schicken, aber das hat er seit Februar schon dreimal gesagt, deshalb erinnere mich bitte am Montag daran, ihn noch einmal anzurufen."},
+    {"id": "lang-fr", "language": "French", "name": "Sam",
+     "statements": [
+       {"text": "Ma boulangerie ouvre à six heures.", "subject": "Ma boulangerie", "predicate": "opens at", "value": "à six heures"},
+       {"text": "Ma fille préfère les messages le matin.", "subject": "Ma fille", "predicate": "prefers messages", "value": "le matin"},
+       {"text": "Mon déménagement à Lyon aura lieu au printemps.", "subject": "Mon déménagement à Lyon", "predicate": "happens in", "value": "au printemps"}],
+     "conversation": [
+       ["Tu peux m'aider à préparer l'anniversaire de mon fils ?", "Bien sûr. Combien d'enfants seront là ?"],
+       ["Une douzaine, et l'un d'eux est allergique aux noix.", "Alors je propose un gâteau sans noix."],
+       ["Parfait, envoie-moi la liste des courses jeudi.", "D'accord, tu l'auras jeudi matin."]],
+     "long_statement": "Hier j'ai parlé avec le propriétaire de la fuite dans la cuisine et il m'a promis d'envoyer un plombier la semaine prochaine, mais il m'a déjà dit la même chose trois fois depuis janvier, alors rappelle-moi de le relancer lundi si personne n'est venu."},
+    {"id": "lang-pt", "language": "Portuguese", "name": "Sam",
+     "statements": [
+       {"text": "O meu turno na fábrica começa às seis.", "subject": "O meu turno", "predicate": "starts at", "value": "às seis"},
+       {"text": "A minha filha prefere mensagens à noite.", "subject": "A minha filha", "predicate": "prefers messages", "value": "à noite"},
+       {"text": "A minha mudança para Braga é em novembro.", "subject": "A minha mudança para Braga", "predicate": "happens in", "value": "em novembro"}],
+     "conversation": [
+       ["Podes ajudar-me a planear as férias em agosto?", "Claro. Para onde queres ir?"],
+       ["Para os Açores, com os meus dois filhos.", "Então procuro voos e uma casa para três pessoas."],
+       ["Ótimo, manda-me as opções até sexta.", "Combinado, envio-te as opções até sexta."]],
+     "long_statement": "Ontem falei com o senhorio sobre a janela partida da sala e ele prometeu mandar alguém na próxima semana, mas já me disse o mesmo três vezes desde abril e continuo à espera, por isso lembra-me de lhe telefonar outra vez na segunda-feira se ninguém aparecer."},
+    {"id": "lang-it", "language": "Italian", "name": "Sam",
+     "statements": [
+       {"text": "La mia farmacia apre alle otto e mezza.", "subject": "La mia farmacia", "predicate": "opens at", "value": "alle otto e mezza"},
+       {"text": "Mia figlia preferisce i messaggi di sera.", "subject": "Mia figlia", "predicate": "prefers messages", "value": "di sera"},
+       {"text": "Il mio trasferimento a Torino è a gennaio.", "subject": "Il mio trasferimento a Torino", "predicate": "happens in", "value": "a gennaio"}],
+     "conversation": [
+       ["Mi aiuti a organizzare la cena di sabato?", "Certo. Quante persone vengono?"],
+       ["Siamo in sei, e una persona non mangia glutine.", "Allora propongo un menù senza glutine per tutti."],
+       ["Perfetto, mandami la lista della spesa venerdì.", "Va bene, te la mando venerdì mattina."]],
+     "long_statement": "Ieri ho parlato con il padrone di casa della perdita nel bagno e mi ha promesso di mandare un idraulico la settimana prossima, ma me l'ha già detto tre volte da marzo e sto ancora aspettando, quindi ricordami di richiamarlo lunedì se non è venuto nessuno."},
+    {"id": "lang-ja", "language": "Japanese", "name": "Sam",
+     "statements": [
+       {"text": "私の図書館は九時に開きます。", "subject": "私の図書館", "predicate": "opens at", "value": "九時"},
+       {"text": "私の娘は夜の連絡を好みます。", "subject": "私の娘", "predicate": "prefers messages", "value": "夜"},
+       {"text": "私の札幌への引っ越しは来年の春です。", "subject": "私の札幌への引っ越し", "predicate": "happens in", "value": "来年の春"}],
+     "conversation": [
+       ["週末の家族旅行の計画を手伝ってくれますか？", "もちろんです。どこへ行きたいですか？"],
+       ["箱根に行きたいです。子どもが二人います。", "では、お子さん二人と泊まれる旅館を探します。"],
+       ["ありがとう。金曜日までに候補を送ってください。", "わかりました。金曜日までに候補を送ります。"]],
+     "long_statement": "昨日、大家さんに浴室の水漏れについて話したところ、来週には業者をよこすと約束してくれましたが、三月から同じことをもう三回も言われていて、まだ誰も来ていません。月曜日になっても誰も来なかったら、もう一度電話するように思い出させてください。それから、玄関の電球も切れているので、ついでに交換をお願いしたいと伝えるつもりです。管理会社の電話番号は冷蔵庫に貼ってあるメモに書いてあります。できれば午前中に電話したいので、九時ごろに知らせてもらえると助かります。"},
+    {"id": "lang-en", "language": "English", "name": "Sam", "control": "the default language",
+     "statements": [
+       {"text": "My shift at the clinic starts at seven.", "subject": "My shift", "predicate": "starts at", "value": "at seven"},
+       {"text": "My daughter prefers messages in the evening.", "subject": "My daughter", "predicate": "prefers messages", "value": "in the evening"},
+       {"text": "My move to Bristol is in September.", "subject": "My move to Bristol", "predicate": "happens in", "value": "in September"}],
+     "conversation": [
+       ["Can you help me plan Saturday's dinner?", "Of course. How many people are coming?"],
+       ["Eight of us, and two don't eat meat.", "Then I'll suggest two vegetarian mains."],
+       ["Great, send me the shopping list on Friday.", "Will do, you'll have it Friday morning."]],
+     "long_statement": "Yesterday I spoke to the landlord about the damp in the bathroom and he said he would send someone next week, but he has told me the same thing three times since March and I am still waiting, so please remind me to call him again on Monday if nobody has come."}
+  ]
+}

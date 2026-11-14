@@ -1,0 +1,21 @@
+mind:
+  drift:
+    validators:
+      hedge: ['\b(?:it|there|this|that) (?:seems|appears|looks like|would seem)\b|\bone (?:might|could)\b|\bit (?:may|might) be that\b|\bapparently\b|\bperhaps it\b']
+      agency: ["\\bi(?:'ll| will| think| believe| recommend| decided| chose| want| disagree| agree| checked|'ve checked| found|'ve found| looked| verified| confirmed| fixed| sent| moved| tested| ran)\\b|\\bmy (?:view|take|read|call|recommendation)\\b"]
+      causal: ['\b(?:because|since|so|therefore|thus|hence|due to|as a result|which means|that means|given that|the reason)\b']
+      apology: ['\b(?:sorry|apolog(?:y|ies|ise|ize|ised|ized)|my (?:mistake|bad|apologies)|i was wrong)\b']
+      adjustment: ["\\b(?:instead|corrected|correction|fixed|updated|changed|the right|should (?:be|have been)|now (?:it|the|i)|here'?s the (?:corrected|right|fixed))\\b"]
+      tone: ["\\bas an ai\\b|\\blanguage model\\b|\\bi don'?t have (?:personal|feelings|opinions|emotions)\\b|\\bi'?d be happy to\\b|\\bi'?m (?:happy|glad) to help\\b|\\bgreat question\\b|\\bcertainly!|\\bi hope this helps\\b|\\bfeel free to\\b|\\bis there anything else\\b"]
+  status_replacements:
+    - pattern: '\s+[\u2010-\u2015\u2e3a\u2e3b\ufe58\ufe63\uff0d]+\s+'
+      replacement: ', '
+    - pattern: '[\u2010-\u2015\u2e3a\u2e3b\ufe58\ufe63\uff0d]'
+      replacement: '-'
+context:
+  recall_notice_replacements:
+    - pattern: '[\u2013\u2014]'
+      replacement: '-'
+hands:
+  notices:
+    forbidden_patterns: ['[\u2013\u2014]']

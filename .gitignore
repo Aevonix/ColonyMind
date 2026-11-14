@@ -1,0 +1,31 @@
+__pycache__/
+*.pyc
+*.db-shm
+*.db-wal
+.colonymind-llm-config.json
+openapi.json
+node_modules/
+dist/
+.env
+*.egg-info/
+.venv/
+.venv-test/
+.pytest_cache/
+sidecar/*.db
+sidecar/events/
+sidecar/build/
+/events/
+sidecar.log
+sidecar.pid
+
+# Runtime artifacts — never commit state
+*.db
+*.db-shm
+*.db-wal
+
+# Local distribution build trees
+/build/
+
+# The build stamp, written by scripts/write_build_stamp.py
+sidecar/colonymind/build_stamp.json
+sidecar/colonymind/build_stamp.json.*.tmp

@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "colonymind"
+version = "1.0.0"
+description = "A mind for Hermes agents: persistent memory, commitments, initiative and measured autonomy"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+# The adapter declares the same range; the documented install picks a 3.12 interpreter.
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "litellm>=1.40",
+    "pydantic>=2.6",
+    "PyYAML>=6.0",
+    "aiosqlite>=0.19",
+    "httpx>=0.27",
+    "websockets>=12.0",
+    "Pillow>=10.0",
+    "cryptography>=42.0",
+    "pypdf>=6.18.0,<7",
+    "psutil>=7.2.2,<8; sys_platform == 'darwin'",
+    # The vector store is part of every install: a sidecar without it has no semantic
+    # recall, and the documented three commands must produce one that does.
+    # Metadata-only health scans use the async streaming query API validated on 0.30.2.
+    "lancedb>=0.30.2",
+    "pyarrow>=15.0",
+    "pandas>=2.0",
+]
+
+[project.optional-dependencies]
+# In-process embeddings and reranking; a remote OpenAI-compatible endpoint needs none of it. The local embedder's
+# pinned Qwen3 models need transformers 4.51 or later, which sentence-transformers 3.0 alone does not require.
+vectors = ["sentence-transformers>=3.0", "transformers>=4.51.0"]
+hermes = ["colonymind-hermes>=1.0.0,<2"]
+video = ["av==18.1.0"]
+dev = [
+    "av==18.1.0",
+    "psutil>=7.2.2,<8",
+    "sentence-transformers>=3.0",
+    "transformers>=4.51.0",
+    "pandas>=2.0",
+    "pyarrow>=15.0",
+    "lancedb>=0.30.2",
+    "pytest>=8.0",
+    "pytest-timeout>=2.3",
+    "pytest-asyncio>=0.23",
+    "hypothesis>=6.100",
+    "httpx>=0.27",
+    "jsonschema>=4.21",
+]
+
+[project.scripts]
+colonymind = "colonymind.cli:main"
+colonymind-inference-pool = "colonymind.inference_pool.server:main"
+
+[project.urls]
+Homepage = "https://aevonix.com/colonymind"
+Repository = "https://github.com/Aevonix/ColonyMind"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["colonymind*"]
+exclude = ["*.tests", "*.tests.*", "*.test_*", "*.conftest"]
+
+[tool.setuptools.package-data]
+colonymind = ["**/*.sql", "**/*.json", "**/*.yaml", "**/*.txt", "qualification/fixtures/*.png", "mind/idea_assets/*.svg"]

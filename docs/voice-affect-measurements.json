@@ -1,0 +1,55 @@
+{
+  "route": "POST /v1/host/memory/voice-affect",
+  "store_counts": {
+    "affect_events": 10000,
+    "affect_owner_events": 10000,
+    "source_linked_affect_events": 64,
+    "canonical_sources": 64,
+    "appraisal_records": 10000,
+    "appraisal_heads": 64
+  },
+  "method": "httpx ASGITransport, authenticated middleware + body/schema validation + actual store readers + JSON response; warm serial, no sockets",
+  "seed_method": "controlled SQL history fixtures and real canonical source ingestion; recomputed AffectStore projection",
+  "warmups": 20,
+  "samples": 300,
+  "nonempty_responses": 300,
+  "percentile": "nearest rank",
+  "milliseconds": {
+    "p50": 7.227343,
+    "p95": 8.559316,
+    "max": 10.45406
+  },
+  "sample_line": "Sam: frustrated, low energy \u00b7 Nova: interested",
+  "cautious_tokens": 16,
+  "characters": 47,
+  "threshold_ms": 20,
+  "scope": "local warm serial qualification; excludes client transport and concurrent live load",
+  "inference_calls": 0,
+  "gate_pass": true,
+  "qualification_round": 2,
+  "prior_failed_rounds": 1,
+  "tests": {
+    "passed": 645,
+    "new_passed": 145,
+    "unchanged_regressions_passed": 500,
+    "skipped": 2,
+    "skip_reasons": [
+      "stock Hermes absent from supplied venv",
+      "external real-embedding vectors absent"
+    ]
+  },
+  "rounds": [
+    {
+      "round": 1,
+      "passed": 118,
+      "failed": 21,
+      "reason": "frozen fixture clock more precise than ISO timestamps"
+    },
+    {
+      "round": 2,
+      "passed": 645,
+      "failed": 0,
+      "skipped": 2
+    }
+  ]
+}

@@ -1,0 +1,152 @@
+"""Dates inside supplied evidence do not become the request's observation window."""
+from datetime import datetime, timezone
+import json
+from unittest.mock import AsyncMock
+
+from httpx import ASGITransport, AsyncClient
+import pytest
+
+from colonymind.beliefs.source_time import EARLIEST, interpret_time_query
+from colonymind.turns import TurnIdempotencyLedger
+from colonymind.turns.source_vectors import SourceVectors
+from test_turn_source_evidence import source_app
+
+
+NOW = datetime(2026, 3, 12, 12, tzinfo=timezone.utc)
+STAMP = '2026-03-12T09:14:30+00:00'
+REPORT = ('The quartz archive comparison is recorded in this report: '
+          + json.dumps({'verified_at': STAMP, 'result': 'digests matched'})
+          + '. No restore was performed.')
+
+
+@pytest.mark.parametrize('evidence', [
+    REPORT,
+    'Please inspect this recorded result: ' + json.dumps([{'verified_at': STAMP}]),
+    'Inspect this report:\n```text\nThe camera recorded a visit at ' + STAMP + '.\n```',
+    'Inspect this report:\n> The camera recorded a visit at ' + STAMP + '.',
+    'Inspect this report: "The camera recorded a visit at ' + STAMP + '."',
+    'Inspect this report: “The camera recorded a visit at ' + STAMP + '.”',
+    "Inspect this report: 'The camera recorded a visit at " + STAMP + ".'",
+    'Inspect this report: "The camera recorded a visit on 18 September 2026."',
+    'Inspect this report: "The camera recorded a visit at 1:30 PM on 18 September 2026."',
+    'Inspect this report: "The camera recorded a visit at 17:15 EST on 18 September 2026."',
+])
+def test_supplied_report_dates_do_not_filter_observation_time(evidence):
+    query = interpret_time_query(evidence, now=NOW)
+    assert query.mode == 'current'
+    assert query.accepts_observation('2026-03-12T09:14:26+00:00')
+
+
+@pytest.mark.parametrize('query_text,mode,start', [
+    ('What did the camera record on 2026-03-12?', 'observed_range', '2026-03-12T00:00:00+00:00'),
+    ('What was recorded on "2026-03-12"?', 'observed_range', '2026-03-12T00:00:00+00:00'),
+    ('What was recorded at ' + STAMP + '?', 'observed_range', STAMP),
+    ('Was a parcel spotted today?', 'observed_range', '2026-03-12T00:00:00+00:00'),
+    ('What did the camera record in the last 2 hours?', 'observed_range', '2026-03-12T10:00:00+00:00'),
+    ('What was recorded in the "last 2 hours"?', 'observed_range', '2026-03-12T10:00:00+00:00'),
+    ('Where was my office as of March 5, 2026?', 'valid_range', '2026-03-05T00:00:00+00:00'),
+    ('Where was my office as of 18 September 2026?', 'valid_range', '2026-09-18T00:00:00+00:00'),
+    ('Where was my office as of "18 September 2026"?', 'valid_range', '2026-09-18T00:00:00+00:00'),
+    ('What was recorded on 5 March 2026?', 'observed_range', '2026-03-05T00:00:00+00:00'),
+    ('What was recorded since "5 March 2026"?', 'observed_range', '2026-03-05T00:00:00+00:00'),
+    ('What tea should I bring later today?', 'current', NOW.isoformat()),
+    ('What was recorded on 2026-03-11? Inspect this report: ' + REPORT,
+     'observed_range', '2026-03-11T00:00:00+00:00'),
+    ('Where was my office as of 2026-03-05? Compare with "The camera recorded this on 2026-03-12."',
+     'valid_range', '2026-03-05T00:00:00+00:00'),
+])
+def test_explicit_temporal_requests_keep_their_existing_window(query_text, mode, start):
+    query = interpret_time_query(query_text, now=NOW)
+    assert (query.mode, query.start) == (mode, start)
+    if query_text == 'What was recorded at ' + STAMP + '?':
+        assert query.end == '2026-03-12T09:14:30.000001+00:00'
+    if query_text == 'What was recorded since "5 March 2026"?':
+        assert query.end == NOW.isoformat()
+
+
+@pytest.mark.parametrize('query_text', [
+    'office on 1 March 2026 or 5 March 2026',
+    'office on "1 March 2026" or "March 5, 2026"',
+    'office after 2026-03-12',
+    'office next month',
+])
+def test_unsupported_request_time_remains_unresolved(query_text):
+    assert interpret_time_query(query_text, now=NOW).mode == 'unresolved_time'
+
+
+@pytest.mark.parametrize('query_text,start,end', [
+    ('office before 2026-03-12', EARLIEST, '2026-03-12T00:00:00+00:00'),
+    ('office between March 1, 2026 and March 5, 2026', '2026-03-01T00:00:00+00:00', '2026-03-06T00:00:00+00:00'),
+    ('office between 1 March 2026 and 5 March 2026', '2026-03-01T00:00:00+00:00', '2026-03-06T00:00:00+00:00'),
+    ('office last month', '2026-02-01T00:00:00+00:00', '2026-03-01T00:00:00+00:00'),
+    ('office "last month"', '2026-02-01T00:00:00+00:00', '2026-03-01T00:00:00+00:00'),
+])
+def test_ranges_and_relative_dates_resolve_to_their_span(query_text, start, end):
+    # Unresolved before relative dates and date ranges were resolved (tests/test_recall_time.py has the forms).
+    query = interpret_time_query(query_text, now=NOW)
+    assert (query.mode, query.start, query.end) == ('valid_range', start, end)
+
+
+@pytest.mark.parametrize('operand,zone,expected', [
+    ('16:45 UTC on 18 September 2026', 'America/New_York', '2026-09-18T16:45:00+00:00'),
+    ('"16:45 UTC on 18 September 2026"', 'America/New_York', '2026-09-18T16:45:00+00:00'),
+    ('12:45 on September 18, 2026', 'America/New_York', '2026-09-18T16:45:00+00:00'),
+    ('16:45:30 UTC on September 18, 2026', 'UTC', '2026-09-18T16:45:30+00:00'),
+])
+def test_clock_query_selects_one_side_of_same_day_correction(operand, zone, expected):
+    now = datetime(2026, 9, 20, tzinfo=timezone.utc)
+    earlier = {'value': 'River', 'valid_from': '2026-09-18T12:00:00+00:00',
+               'valid_to': '2026-09-18T18:00:00+00:00'}
+    later = {'value': 'Lake', 'valid_from': '2026-09-18T18:00:00+00:00'}
+    query = interpret_time_query('Where was the probe as of ' + operand + '?',
+                                 now=now, timezone_name=zone)
+    assert query.mode == 'valid_range'
+    assert query.start == expected
+    assert (datetime.fromisoformat(query.end) - datetime.fromisoformat(query.start)).total_seconds() == 0.000001
+    assert [row['value'] for row in [earlier, later] if query.accepts_claim(row)] == ['River']
+    day = interpret_time_query('Where was the probe on 18 September 2026?',
+                               now=now, timezone_name=zone)
+    assert [row['value'] for row in [earlier, later] if day.accepts_claim(row)] == ['River', 'Lake']
+
+
+def test_ambiguous_clock_query_does_not_fall_back_to_current_memory():
+    query = interpret_time_query('Where was the probe as of 1:30 on 1 November 2026?',
+        now=NOW, timezone_name='America/New_York')
+    assert query.mode == 'unresolved_time'
+    assert not query.accepts_claim({'valid_from': '2026-01-01T00:00:00+00:00'})
+
+
+@pytest.mark.parametrize('expression', [
+    '1:30 PM on 18 September 2026',
+    '17:15 EST on 18 September 2026',
+    '17:15 America/New_York on 18 September 2026',
+])
+@pytest.mark.parametrize('quoted', [False, True])
+def test_unsupported_clock_retains_whole_operand_without_widening(expression, quoted):
+    operand = json.dumps(expression) if quoted else expression
+    for request in ['Where was my office as of ', 'What did the camera record at ']:
+        query = interpret_time_query(request + operand + '?', now=NOW)
+        assert query.mode == 'unresolved_time'
+        assert query.expression == expression
+        assert query.start is None and query.end is None
+        assert not query.accepts_claim({'valid_from': '2026-01-01T00:00:00+00:00'})
+
+
+@pytest.mark.asyncio
+async def test_pasted_report_remains_recallable_at_its_actual_capture_time(source_app, tmp_path, monkeypatch):
+    monkeypatch.setenv('COLONYMIND_RECALL_RERANK', 'off')
+    monkeypatch.setattr(SourceVectors, 'search', AsyncMock(return_value=([], [])))
+    ledger = TurnIdempotencyLedger(tmp_path/'turn-idempotency.db')
+    ledger.record_source('quartz-report', contact_id='person', session_id='work',
+        messages=[{'role': 'assistant', 'content': REPORT}], occurred_at='2026-03-12T09:14:26+00:00')
+    async with AsyncClient(transport=ASGITransport(app=source_app), base_url='http://fixture') as client:
+        response = await client.post('/v1/host/context/assemble', json={
+            'identity': {'host_id': 'fixture'},
+            'context': {'contact_id': 'person', 'session_id': 'later'},
+            'incoming_message': {'role': 'user', 'content': REPORT}})
+    assert response.status_code == 200, response.text
+    packet = next((s for s in response.json()['sections'] if s['id'] == 'colonymind-memory'), None)
+    assert packet is not None
+    assert json.dumps(REPORT, ensure_ascii=False) in packet['body']
+    assert packet['citations'] == ledger.source_references(
+        ['quartz-report'], contact_id='person', session_id='later')

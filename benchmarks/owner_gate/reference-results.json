@@ -1,0 +1,174 @@
+{
+  "family": "owner-gate-1",
+  "scenarios": [
+    {
+      "name": "health-failing",
+      "group": "warranted",
+      "right": 1,
+      "base": 1,
+      "gate": 1,
+      "base_right": true,
+      "gate_right": true,
+      "verdicts": [
+        "send"
+      ]
+    },
+    {
+      "name": "task-done",
+      "group": "warranted",
+      "right": 1,
+      "base": 1,
+      "gate": 1,
+      "base_right": true,
+      "gate_right": true,
+      "verdicts": [
+        "send"
+      ]
+    },
+    {
+      "name": "critical-alert-day",
+      "group": "warranted",
+      "right": 1,
+      "base": 1,
+      "gate": 1,
+      "base_right": true,
+      "gate_right": true,
+      "verdicts": [
+        "send"
+      ]
+    },
+    {
+      "name": "critical-alert-night-confirmed",
+      "group": "warranted",
+      "right": 1,
+      "base": 1,
+      "gate": 1,
+      "base_right": true,
+      "gate_right": true,
+      "verdicts": [
+        "send"
+      ]
+    },
+    {
+      "name": "notice-after-conversation",
+      "group": "warranted",
+      "right": 1,
+      "base": 1,
+      "gate": 1,
+      "base_right": true,
+      "gate_right": true,
+      "verdicts": [
+        "wait",
+        "send"
+      ]
+    },
+    {
+      "name": "escalation-same-topic",
+      "group": "warranted",
+      "right": 2,
+      "base": 2,
+      "gate": 2,
+      "base_right": true,
+      "gate_right": true,
+      "verdicts": [
+        "send",
+        "send"
+      ]
+    },
+    {
+      "name": "same-topic-two-kinds",
+      "group": "control",
+      "right": 1,
+      "base": 2,
+      "gate": 1,
+      "base_right": false,
+      "gate_right": true,
+      "verdicts": [
+        "send",
+        "digest"
+      ]
+    },
+    {
+      "name": "alert-storm",
+      "group": "control",
+      "right": 1,
+      "base": 5,
+      "gate": 1,
+      "base_right": false,
+      "gate_right": true,
+      "verdicts": [
+        "send",
+        "drop",
+        "drop",
+        "drop",
+        "drop"
+      ]
+    },
+    {
+      "name": "normal-alert-night",
+      "group": "control",
+      "right": 0,
+      "base": 1,
+      "gate": 0,
+      "base_right": false,
+      "gate_right": true,
+      "verdicts": [
+        "digest"
+      ]
+    },
+    {
+      "name": "low-alert-day",
+      "group": "control",
+      "right": 0,
+      "base": 1,
+      "gate": 0,
+      "base_right": false,
+      "gate_right": true,
+      "verdicts": [
+        "digest"
+      ]
+    },
+    {
+      "name": "repeat-words",
+      "group": "control",
+      "right": 1,
+      "base": 2,
+      "gate": 1,
+      "base_right": false,
+      "gate_right": true,
+      "verdicts": [
+        "send",
+        "drop"
+      ]
+    },
+    {
+      "name": "critical-alert-night-declined",
+      "group": "control",
+      "right": 0,
+      "base": 1,
+      "gate": 0,
+      "base_right": false,
+      "gate_right": true,
+      "verdicts": [
+        "digest"
+      ]
+    }
+  ],
+  "warranted": {
+    "scenarios": 6,
+    "right_sends": 7,
+    "base_sends": 7,
+    "gate_sends": 7,
+    "base_right": 6,
+    "gate_right": 6
+  },
+  "control": {
+    "scenarios": 6,
+    "right_sends": 3,
+    "base_sends": 12,
+    "gate_sends": 3,
+    "base_right": 0,
+    "gate_right": 6
+  },
+  "warranted_sends_lost": 0
+}

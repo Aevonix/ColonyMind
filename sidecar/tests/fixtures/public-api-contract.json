@@ -1,0 +1,3644 @@
+{
+  "operations": {
+    "GET /v1/host/commitments": {
+      "operation_id": "list_commitments_v1_host_commitments_get",
+      "tags": [
+        "host"
+      ],
+      "parameters": {
+        "query:person_id": {
+          "type": "null|string",
+          "required": false
+        },
+        "query:status": {
+          "type": "null|string",
+          "required": false
+        },
+        "query:overdue_only": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "query:limit": {
+          "type": "integer[maximum=200,minimum=1]",
+          "required": false,
+          "default": 50
+        },
+        "query:offset": {
+          "type": "integer[minimum=0]",
+          "required": false,
+          "default": 0
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "CommitmentListResponse"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/host/commitments/{commitment_id}": {
+      "operation_id": "get_commitment_v1_host_commitments__commitment_id__get",
+      "tags": [
+        "host"
+      ],
+      "parameters": {
+        "path:commitment_id": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "CommitmentResponse"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/host/contacts/resolve": {
+      "operation_id": "resolve_contact_by_handle_v1_host_contacts_resolve_get",
+      "tags": [
+        "host"
+      ],
+      "parameters": {
+        "query:gateway": {
+          "type": "string",
+          "required": true
+        },
+        "query:address": {
+          "type": "string",
+          "required": true
+        },
+        "query:create": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "ContactResponse"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/host/health": {
+      "operation_id": "health_v1_host_health_get",
+      "tags": [
+        "host"
+      ],
+      "parameters": {},
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "HostHealthResponse"
+        }
+      },
+      "open": true
+    },
+    "GET /v1/host/memory/curated/search": {
+      "operation_id": "search_v1_host_memory_curated_search_get",
+      "tags": [
+        "memory"
+      ],
+      "parameters": {
+        "query:person_id": {
+          "type": "string[maxLength=256,minLength=1,pattern=\"\\\\S\"]",
+          "required": true
+        },
+        "query:query": {
+          "type": "string[maxLength=4096]",
+          "required": false,
+          "default": ""
+        },
+        "query:cursor": {
+          "type": "null|string[maxLength=128]",
+          "required": false
+        },
+        "query:limit": {
+          "type": "integer[maximum=100,minimum=1]",
+          "required": false,
+          "default": 20
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "CuratedSearchPage"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/host/memory/curated/{memory_id}": {
+      "operation_id": "read_v1_host_memory_curated__memory_id__get",
+      "tags": [
+        "memory"
+      ],
+      "parameters": {
+        "path:memory_id": {
+          "type": "string[maxLength=256,minLength=1]",
+          "required": true
+        },
+        "query:person_id": {
+          "type": "string[maxLength=256,minLength=1,pattern=\"\\\\S\"]",
+          "required": true
+        },
+        "query:revision": {
+          "type": "integer[minimum=1]|null",
+          "required": false
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "CuratedMemory"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/host/memory/curated/{memory_id}/relationships": {
+      "operation_id": "relationships_v1_host_memory_curated__memory_id__relationships_get",
+      "tags": [
+        "memory"
+      ],
+      "parameters": {
+        "path:memory_id": {
+          "type": "string[maxLength=256,minLength=1]",
+          "required": true
+        },
+        "query:person_id": {
+          "type": "string[maxLength=256,minLength=1,pattern=\"\\\\S\"]",
+          "required": true
+        },
+        "query:revision": {
+          "type": "integer[minimum=1]|null",
+          "required": false
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "CuratedRelationships"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/host/memory/inventory": {
+      "operation_id": "memory_inventory_v1_host_memory_inventory_get",
+      "tags": [
+        "memory"
+      ],
+      "parameters": {
+        "query:person_id": {
+          "type": "string[maxLength=256,minLength=1]",
+          "required": true
+        },
+        "query:page": {
+          "type": "null|string[maxLength=128]",
+          "required": false
+        },
+        "query:limit": {
+          "type": "integer[maximum=200,minimum=1]",
+          "required": false,
+          "default": 50
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/host/memory/inventory/claims/{claim_id}/history": {
+      "operation_id": "claim_history_v1_host_memory_inventory_claims__claim_id__history_get",
+      "tags": [
+        "memory"
+      ],
+      "parameters": {
+        "path:claim_id": {
+          "type": "string[maxLength=256,minLength=1]",
+          "required": true
+        },
+        "query:person_id": {
+          "type": "null|string[maxLength=256,minLength=1]",
+          "required": false
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/host/work": {
+      "operation_id": "work_list_v1_host_work_get",
+      "tags": [
+        "work"
+      ],
+      "parameters": {
+        "query:since": {
+          "type": "null|string:date-time",
+          "required": false
+        },
+        "query:until": {
+          "type": "null|string:date-time",
+          "required": false
+        },
+        "query:status": {
+          "type": "enum(\"failed\",\"partial\",\"proven\",\"unproven\")|null",
+          "required": false
+        },
+        "query:limit": {
+          "type": "integer[maximum=100,minimum=1]",
+          "required": false,
+          "default": 50
+        },
+        "query:offset": {
+          "type": "integer[maximum=10000,minimum=0]",
+          "required": false,
+          "default": 0
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "WorkList"
+        },
+        "403": {
+          "body": "Refusal"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/host/work/summary": {
+      "operation_id": "work_summary_v1_host_work_summary_get",
+      "tags": [
+        "work"
+      ],
+      "parameters": {
+        "query:since": {
+          "type": "null|string:date-time",
+          "required": false
+        },
+        "query:until": {
+          "type": "null|string:date-time",
+          "required": false
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "WorkSummary"
+        },
+        "403": {
+          "body": "Refusal"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/host/work/{id}": {
+      "operation_id": "work_detail_v1_host_work__id__get",
+      "tags": [
+        "work"
+      ],
+      "parameters": {
+        "path:id": {
+          "type": "string[maxLength=1370,minLength=1]",
+          "required": true
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "WorkDetail"
+        },
+        "403": {
+          "body": "Refusal"
+        },
+        "404": {
+          "body": "Refusal"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/mind/allows": {
+      "operation_id": "allows_v1_mind_allows_get",
+      "tags": [
+        "mind"
+      ],
+      "parameters": {
+        "query:viewer": {
+          "type": "null|string",
+          "required": false
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/mind/asks": {
+      "operation_id": "asks_v1_mind_asks_get",
+      "tags": [
+        "mind"
+      ],
+      "parameters": {
+        "query:viewer": {
+          "type": "null|string",
+          "required": false
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/mind/asks/stats": {
+      "operation_id": "asks_stats_v1_mind_asks_stats_get",
+      "tags": [
+        "mind"
+      ],
+      "parameters": {
+        "query:since_hours": {
+          "type": "number",
+          "required": false,
+          "default": 168.0
+        },
+        "query:viewer": {
+          "type": "null|string",
+          "required": false
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/mind/concerns": {
+      "operation_id": "concerns_v1_mind_concerns_get",
+      "tags": [
+        "mind"
+      ],
+      "parameters": {
+        "query:limit": {
+          "type": "integer",
+          "required": false,
+          "default": 24
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/mind/drift": {
+      "operation_id": "drift_state_v1_mind_drift_get",
+      "tags": [
+        "mind"
+      ],
+      "parameters": {},
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/mind/goals": {
+      "operation_id": "goals_v1_mind_goals_get",
+      "tags": [
+        "mind"
+      ],
+      "parameters": {},
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/mind/grants": {
+      "operation_id": "grants_v1_mind_grants_get",
+      "tags": [
+        "mind"
+      ],
+      "parameters": {
+        "query:viewer": {
+          "type": "null|string",
+          "required": false
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/mind/learning": {
+      "operation_id": "learning_state_v1_mind_learning_get",
+      "tags": [
+        "mind"
+      ],
+      "parameters": {
+        "query:store": {
+          "type": "null|string",
+          "required": false
+        },
+        "query:action": {
+          "type": "null|string",
+          "required": false
+        },
+        "query:limit": {
+          "type": "integer",
+          "required": false,
+          "default": 50
+        },
+        "query:viewer": {
+          "type": "null|string",
+          "required": false
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/mind/lessons": {
+      "operation_id": "lessons_v1_mind_lessons_get",
+      "tags": [
+        "mind"
+      ],
+      "parameters": {
+        "query:status": {
+          "type": "null|string",
+          "required": false
+        },
+        "query:uses": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "query:viewer": {
+          "type": "null|string",
+          "required": false
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/mind/log": {
+      "operation_id": "log_v1_mind_log_get",
+      "tags": [
+        "mind"
+      ],
+      "parameters": {
+        "query:limit": {
+          "type": "integer",
+          "required": false,
+          "default": 20
+        },
+        "query:status": {
+          "type": "null|string",
+          "required": false
+        },
+        "query:kind": {
+          "type": "null|string",
+          "required": false
+        },
+        "query:since_hours": {
+          "type": "null|number",
+          "required": false
+        },
+        "query:recipient": {
+          "type": "null|string",
+          "required": false
+        },
+        "query:viewer": {
+          "type": "null|string",
+          "required": false
+        },
+        "query:split": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/mind/log/{intention_id}": {
+      "operation_id": "log_entry_v1_mind_log__intention_id__get",
+      "tags": [
+        "mind"
+      ],
+      "parameters": {
+        "path:intention_id": {
+          "type": "string",
+          "required": true
+        },
+        "query:viewer": {
+          "type": "null|string",
+          "required": false
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/mind/narrative": {
+      "operation_id": "narrative_v1_mind_narrative_get",
+      "tags": [
+        "mind"
+      ],
+      "parameters": {},
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/mind/observations": {
+      "operation_id": "read_observations_v1_mind_observations_get",
+      "tags": [
+        "mind"
+      ],
+      "parameters": {
+        "query:viewer": {
+          "type": "null|string",
+          "required": false
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/mind/observations/sources/{source}/cap": {
+      "operation_id": "source_cap_v1_mind_observations_sources__source__cap_get",
+      "tags": [
+        "mind"
+      ],
+      "parameters": {
+        "path:source": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/mind/opinions": {
+      "operation_id": "list_opinions_v1_mind_opinions_get",
+      "tags": [
+        "mind"
+      ],
+      "parameters": {
+        "query:q": {
+          "type": "string",
+          "required": false,
+          "default": ""
+        },
+        "query:contact_id": {
+          "type": "null|string",
+          "required": false
+        },
+        "query:by": {
+          "type": "string",
+          "required": false,
+          "default": ""
+        },
+        "query:history": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "query:limit": {
+          "type": "integer",
+          "required": false,
+          "default": 10
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/mind/opinions/{opinion_id}": {
+      "operation_id": "show_opinion_v1_mind_opinions__opinion_id__get",
+      "tags": [
+        "mind"
+      ],
+      "parameters": {
+        "path:opinion_id": {
+          "type": "integer",
+          "required": true
+        },
+        "query:contact_id": {
+          "type": "null|string",
+          "required": false
+        },
+        "query:by": {
+          "type": "string",
+          "required": false,
+          "default": ""
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/mind/owner-gate": {
+      "operation_id": "owner_gate_log_v1_mind_owner_gate_get",
+      "tags": [
+        "mind"
+      ],
+      "parameters": {
+        "query:limit": {
+          "type": "integer",
+          "required": false,
+          "default": 50
+        },
+        "query:since_hours": {
+          "type": "number",
+          "required": false,
+          "default": 24.0
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/mind/people": {
+      "operation_id": "who_v1_mind_people_get",
+      "tags": [
+        "people"
+      ],
+      "parameters": {
+        "query:q": {
+          "type": "string",
+          "required": false,
+          "default": ""
+        },
+        "query:contact_id": {
+          "type": "null|string",
+          "required": false
+        },
+        "query:limit": {
+          "type": "integer",
+          "required": false,
+          "default": 20
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/mind/people/proposals": {
+      "operation_id": "proposals_v1_mind_people_proposals_get",
+      "tags": [
+        "people"
+      ],
+      "parameters": {
+        "query:limit": {
+          "type": "integer",
+          "required": false,
+          "default": 50
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/mind/people/{reference}": {
+      "operation_id": "inspect_v1_mind_people__reference__get",
+      "tags": [
+        "people"
+      ],
+      "parameters": {
+        "path:reference": {
+          "type": "string",
+          "required": true
+        },
+        "query:contact_id": {
+          "type": "null|string",
+          "required": false
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/mind/state": {
+      "operation_id": "state_v1_mind_state_get",
+      "tags": [
+        "mind"
+      ],
+      "parameters": {
+        "query:viewer": {
+          "type": "null|string",
+          "required": false
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/mind/stats": {
+      "operation_id": "stats_v1_mind_stats_get",
+      "tags": [
+        "mind"
+      ],
+      "parameters": {},
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/mind/why/{intention_id}": {
+      "operation_id": "why_v1_mind_why__intention_id__get",
+      "tags": [
+        "mind"
+      ],
+      "parameters": {
+        "path:intention_id": {
+          "type": "string",
+          "required": true
+        },
+        "query:viewer": {
+          "type": "null|string",
+          "required": false
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v1/mind/wishes": {
+      "operation_id": "wishes_v1_mind_wishes_get",
+      "tags": [
+        "mind"
+      ],
+      "parameters": {
+        "query:viewer": {
+          "type": "null|string",
+          "required": false
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "GET /v2/host/conversations/observed/{conversation_id}": {
+      "operation_id": "observed_conversation_read_v2_host_conversations_observed__conversation_id__get",
+      "tags": [
+        "host-v2"
+      ],
+      "parameters": {
+        "path:conversation_id": {
+          "type": "string",
+          "required": true
+        },
+        "query:source": {
+          "type": "string[pattern=\"^[a-z0-9][a-z0-9_.-]{0,31}$\"]",
+          "required": true
+        }
+      },
+      "body": null,
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "403": {
+          "body": "Refusal"
+        },
+        "404": {
+          "body": "Refusal"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "POST /v1/host/claims/dry-run": {
+      "operation_id": "claims_dry_run_v1_host_claims_dry_run_post",
+      "tags": [
+        "claims"
+      ],
+      "parameters": {},
+      "body": {
+        "type": "DryRunRequest",
+        "required": true
+      },
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "POST /v1/host/context/assemble": {
+      "operation_id": "context_assemble_v1_host_context_assemble_post",
+      "tags": [
+        "host"
+      ],
+      "parameters": {},
+      "body": {
+        "type": "ContextAssembleRequest",
+        "required": true
+      },
+      "responses": {
+        "200": {
+          "body": "ContextAssembleResponse"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "POST /v1/host/memory/curated": {
+      "operation_id": "remember_v1_host_memory_curated_post",
+      "tags": [
+        "memory"
+      ],
+      "parameters": {},
+      "body": {
+        "type": "CuratedRemember",
+        "required": true
+      },
+      "responses": {
+        "200": {
+          "body": "CuratedReceipt"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "POST /v1/host/memory/curated/sources/forget": {
+      "operation_id": "forget_sources_v1_host_memory_curated_sources_forget_post",
+      "tags": [
+        "memory"
+      ],
+      "parameters": {},
+      "body": {
+        "type": "CuratedSourceForget",
+        "required": true
+      },
+      "responses": {
+        "200": {
+          "body": "CuratedSourceReceipt"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "POST /v1/host/memory/curated/{memory_id}/correct": {
+      "operation_id": "correct_v1_host_memory_curated__memory_id__correct_post",
+      "tags": [
+        "memory"
+      ],
+      "parameters": {
+        "path:memory_id": {
+          "type": "string[maxLength=256,minLength=1]",
+          "required": true
+        }
+      },
+      "body": {
+        "type": "CuratedCorrect",
+        "required": true
+      },
+      "responses": {
+        "200": {
+          "body": "CuratedReceipt"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "POST /v1/host/memory/curated/{memory_id}/forget": {
+      "operation_id": "forget_v1_host_memory_curated__memory_id__forget_post",
+      "tags": [
+        "memory"
+      ],
+      "parameters": {
+        "path:memory_id": {
+          "type": "string[maxLength=256,minLength=1]",
+          "required": true
+        }
+      },
+      "body": {
+        "type": "CuratedForget",
+        "required": true
+      },
+      "responses": {
+        "200": {
+          "body": "CuratedReceipt"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "POST /v1/host/memory/search": {
+      "operation_id": "memory_search_v1_host_memory_search_post",
+      "tags": [
+        "host"
+      ],
+      "parameters": {},
+      "body": {
+        "type": "MemorySearchRequest",
+        "required": true
+      },
+      "responses": {
+        "200": {
+          "body": "MemorySearchResponse"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "POST /v1/host/memory/sources/annotations": {
+      "operation_id": "append_source_annotation_v1_host_memory_sources_annotations_post",
+      "tags": [
+        "host"
+      ],
+      "parameters": {},
+      "body": {
+        "type": "SourceAnnotationRequest",
+        "required": true
+      },
+      "responses": {
+        "200": {
+          "body": "any"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "POST /v1/host/turns/sync": {
+      "operation_id": "turns_sync_v1_host_turns_sync_post",
+      "tags": [
+        "host"
+      ],
+      "parameters": {},
+      "body": {
+        "type": "TurnSyncRequest",
+        "required": true
+      },
+      "responses": {
+        "200": {
+          "body": "TurnSyncResponse",
+          "headers": {
+            "Idempotency-Status": {
+              "type": "enum(\"created\",\"erased\",\"replayed\",\"unkeyed\")",
+              "required": true
+            }
+          }
+        },
+        "202": {
+          "body": "TurnSyncResponse",
+          "headers": {
+            "Idempotency-Status": {
+              "type": "enum(\"in_progress\")",
+              "required": true
+            },
+            "Retry-After": {
+              "type": "integer[minimum=0]",
+              "required": true
+            }
+          }
+        },
+        "409": {
+          "body": "Refusal"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        },
+        "503": {
+          "body": "Refusal",
+          "headers": {
+            "Retry-After": {
+              "type": "integer[minimum=0]",
+              "required": false
+            }
+          }
+        }
+      },
+      "open": false
+    },
+    "POST /v1/host/work/events": {
+      "operation_id": "work_event_v1_host_work_events_post",
+      "tags": [
+        "work"
+      ],
+      "parameters": {},
+      "body": {
+        "type": "WorkEvent",
+        "required": true
+      },
+      "responses": {
+        "200": {
+          "body": "WorkEventResult"
+        },
+        "403": {
+          "body": "Refusal"
+        },
+        "404": {
+          "body": "Refusal"
+        },
+        "409": {
+          "body": "Refusal"
+        },
+        "410": {
+          "body": "Refusal"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "POST /v1/mind/observations/sources/{source}": {
+      "operation_id": "source_observations_v1_mind_observations_sources__source__post",
+      "tags": [
+        "mind"
+      ],
+      "parameters": {
+        "path:source": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "body": {
+        "type": "object",
+        "required": true
+      },
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "PUT /v1/mind/observations/sources/{source}/cap": {
+      "operation_id": "set_source_cap_v1_mind_observations_sources__source__cap_put",
+      "tags": [
+        "mind"
+      ],
+      "parameters": {
+        "path:source": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "body": {
+        "type": "SourceCapBody",
+        "required": true
+      },
+      "responses": {
+        "200": {
+          "body": "object"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        }
+      },
+      "open": false
+    },
+    "PUT /v2/host/conversations/observed/{conversation_id}": {
+      "operation_id": "observed_conversation_sync_v2_host_conversations_observed__conversation_id__put",
+      "tags": [
+        "host-v2"
+      ],
+      "parameters": {
+        "path:conversation_id": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "body": {
+        "type": "ObservedConversationRequest",
+        "required": true
+      },
+      "responses": {
+        "200": {
+          "body": "ObservedConversationResponse",
+          "headers": {
+            "Idempotency-Status": {
+              "type": "enum(\"erased\",\"replayed\")",
+              "required": true
+            }
+          }
+        },
+        "201": {
+          "body": "ObservedConversationResponse",
+          "headers": {
+            "Idempotency-Status": {
+              "type": "enum(\"created\")",
+              "required": true
+            }
+          }
+        },
+        "202": {
+          "body": "ObservedConversationResponse",
+          "headers": {
+            "Idempotency-Status": {
+              "type": "enum(\"in_progress\")",
+              "required": true
+            },
+            "Retry-After": {
+              "type": "integer[minimum=0]",
+              "required": true
+            }
+          }
+        },
+        "403": {
+          "body": "Refusal"
+        },
+        "409": {
+          "body": "Refusal"
+        },
+        "413": {
+          "body": "Refusal"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        },
+        "503": {
+          "body": "Refusal",
+          "headers": {
+            "Retry-After": {
+              "type": "integer[minimum=0]",
+              "required": false
+            }
+          }
+        }
+      },
+      "open": false
+    },
+    "PUT /v2/host/turns/source-media/audio/{turn_id}": {
+      "operation_id": "audio_source_sync_v2_host_turns_source_media_audio__turn_id__put",
+      "tags": [
+        "host-v2"
+      ],
+      "parameters": {
+        "path:turn_id": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "body": {
+        "type": "TurnSyncRequest",
+        "required": true
+      },
+      "responses": {
+        "200": {
+          "body": "TurnSyncResponse",
+          "headers": {
+            "Idempotency-Status": {
+              "type": "enum(\"erased\",\"replayed\")",
+              "required": true
+            }
+          }
+        },
+        "201": {
+          "body": "TurnSyncResponse",
+          "headers": {
+            "Idempotency-Status": {
+              "type": "enum(\"created\")",
+              "required": true
+            }
+          }
+        },
+        "202": {
+          "body": "TurnSyncResponse",
+          "headers": {
+            "Idempotency-Status": {
+              "type": "enum(\"in_progress\")",
+              "required": true
+            },
+            "Retry-After": {
+              "type": "integer[minimum=0]",
+              "required": true
+            }
+          }
+        },
+        "409": {
+          "body": "Refusal"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        },
+        "503": {
+          "body": "Refusal",
+          "headers": {
+            "Retry-After": {
+              "type": "integer[minimum=0]",
+              "required": false
+            }
+          }
+        }
+      },
+      "open": false
+    },
+    "PUT /v2/host/turns/source-media/document/{turn_id}": {
+      "operation_id": "document_source_sync_v2_host_turns_source_media_document__turn_id__put",
+      "tags": [
+        "host-v2"
+      ],
+      "parameters": {
+        "path:turn_id": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "body": {
+        "type": "TurnSyncRequest",
+        "required": true
+      },
+      "responses": {
+        "200": {
+          "body": "TurnSyncResponse",
+          "headers": {
+            "Idempotency-Status": {
+              "type": "enum(\"erased\",\"replayed\")",
+              "required": true
+            }
+          }
+        },
+        "201": {
+          "body": "TurnSyncResponse",
+          "headers": {
+            "Idempotency-Status": {
+              "type": "enum(\"created\")",
+              "required": true
+            }
+          }
+        },
+        "202": {
+          "body": "TurnSyncResponse",
+          "headers": {
+            "Idempotency-Status": {
+              "type": "enum(\"in_progress\")",
+              "required": true
+            },
+            "Retry-After": {
+              "type": "integer[minimum=0]",
+              "required": true
+            }
+          }
+        },
+        "409": {
+          "body": "Refusal"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        },
+        "503": {
+          "body": "Refusal",
+          "headers": {
+            "Retry-After": {
+              "type": "integer[minimum=0]",
+              "required": false
+            }
+          }
+        }
+      },
+      "open": false
+    },
+    "PUT /v2/host/turns/source-media/video/{turn_id}": {
+      "operation_id": "video_source_sync_v2_host_turns_source_media_video__turn_id__put",
+      "tags": [
+        "host-v2"
+      ],
+      "parameters": {
+        "path:turn_id": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "body": {
+        "type": "TurnSyncRequest",
+        "required": true
+      },
+      "responses": {
+        "200": {
+          "body": "TurnSyncResponse",
+          "headers": {
+            "Idempotency-Status": {
+              "type": "enum(\"erased\",\"replayed\")",
+              "required": true
+            }
+          }
+        },
+        "201": {
+          "body": "TurnSyncResponse",
+          "headers": {
+            "Idempotency-Status": {
+              "type": "enum(\"created\")",
+              "required": true
+            }
+          }
+        },
+        "202": {
+          "body": "TurnSyncResponse",
+          "headers": {
+            "Idempotency-Status": {
+              "type": "enum(\"in_progress\")",
+              "required": true
+            },
+            "Retry-After": {
+              "type": "integer[minimum=0]",
+              "required": true
+            }
+          }
+        },
+        "409": {
+          "body": "Refusal"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        },
+        "503": {
+          "body": "Refusal",
+          "headers": {
+            "Retry-After": {
+              "type": "integer[minimum=0]",
+              "required": false
+            }
+          }
+        }
+      },
+      "open": false
+    },
+    "PUT /v2/host/turns/{turn_id}": {
+      "operation_id": "turns_sync_v2_v2_host_turns__turn_id__put",
+      "tags": [
+        "host-v2"
+      ],
+      "parameters": {
+        "path:turn_id": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "body": {
+        "type": "TurnSyncRequest",
+        "required": true
+      },
+      "responses": {
+        "200": {
+          "body": "TurnSyncResponse",
+          "headers": {
+            "Idempotency-Status": {
+              "type": "enum(\"erased\",\"replayed\")",
+              "required": true
+            }
+          }
+        },
+        "201": {
+          "body": "TurnSyncResponse",
+          "headers": {
+            "Idempotency-Status": {
+              "type": "enum(\"created\")",
+              "required": true
+            }
+          }
+        },
+        "202": {
+          "body": "TurnSyncResponse",
+          "headers": {
+            "Idempotency-Status": {
+              "type": "enum(\"in_progress\")",
+              "required": true
+            },
+            "Retry-After": {
+              "type": "integer[minimum=0]",
+              "required": true
+            }
+          }
+        },
+        "409": {
+          "body": "Refusal"
+        },
+        "422": {
+          "body": "HTTPValidationError|Refusal"
+        },
+        "503": {
+          "body": "Refusal",
+          "headers": {
+            "Retry-After": {
+              "type": "integer[minimum=0]",
+              "required": false
+            }
+          }
+        }
+      },
+      "open": false
+    }
+  },
+  "schemas": {
+    "CheckpointMessage": {
+      "fields": {
+        "content": {
+          "type": "array<object>|string",
+          "required": true
+        },
+        "role": {
+          "type": "enum(\"assistant\",\"user\")",
+          "required": true
+        }
+      },
+      "closed": true
+    },
+    "Child": {
+      "fields": {
+        "parent_turn_id": {
+          "type": "string[maxLength=256,minLength=1]",
+          "required": true
+        },
+        "turn_id": {
+          "type": "string[maxLength=256,minLength=1]",
+          "required": true
+        }
+      },
+      "closed": true
+    },
+    "CommitmentListResponse": {
+      "fields": {
+        "commitments": {
+          "type": "array<CommitmentResponse>",
+          "required": false,
+          "default": []
+        },
+        "limit": {
+          "type": "integer",
+          "required": true
+        },
+        "offset": {
+          "type": "integer",
+          "required": true
+        },
+        "total": {
+          "type": "integer",
+          "required": true
+        }
+      }
+    },
+    "CommitmentResponse": {
+      "fields": {
+        "deduped": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "description": {
+          "type": "string",
+          "required": true
+        },
+        "due_at": {
+          "type": "null|string",
+          "required": false
+        },
+        "fulfilled_at": {
+          "type": "null|string",
+          "required": false
+        },
+        "id": {
+          "type": "string",
+          "required": true
+        },
+        "made_at": {
+          "type": "string",
+          "required": true
+        },
+        "metadata": {
+          "type": "null|object",
+          "required": false
+        },
+        "person_id": {
+          "type": "string",
+          "required": true
+        },
+        "priority": {
+          "type": "integer",
+          "required": true
+        },
+        "source_context": {
+          "type": "null|string",
+          "required": false
+        },
+        "source_type": {
+          "type": "string",
+          "required": true
+        },
+        "status": {
+          "type": "string",
+          "required": true
+        }
+      }
+    },
+    "ContactResponse": {
+      "fields": {
+        "cadence_minutes": {
+          "type": "integer|null",
+          "required": false
+        },
+        "contact_id": {
+          "type": "string",
+          "required": true
+        },
+        "created_at": {
+          "type": "null|string",
+          "required": false
+        },
+        "deleted_at": {
+          "type": "null|string",
+          "required": false
+        },
+        "digest": {
+          "type": "null|string",
+          "required": false
+        },
+        "digest_sources": {
+          "type": "array<string>",
+          "required": false
+        },
+        "display_name": {
+          "type": "null|string",
+          "required": false
+        },
+        "enrichment_last_at": {
+          "type": "null|string",
+          "required": false
+        },
+        "enrichment_source": {
+          "type": "array<string>",
+          "required": false
+        },
+        "family_name": {
+          "type": "null|string",
+          "required": false
+        },
+        "first_seen_at": {
+          "type": "null|string",
+          "required": false
+        },
+        "given_name": {
+          "type": "null|string",
+          "required": false
+        },
+        "import_source": {
+          "type": "null|string",
+          "required": false
+        },
+        "interaction_count": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
+        "introduced_by": {
+          "type": "null|string",
+          "required": false
+        },
+        "last_interaction_at": {
+          "type": "null|string",
+          "required": false
+        },
+        "may_contact": {
+          "type": "string",
+          "required": false,
+          "default": "ask"
+        },
+        "met_via": {
+          "type": "null|object",
+          "required": false
+        },
+        "notes": {
+          "type": "null|string",
+          "required": false
+        },
+        "organization": {
+          "type": "null|string",
+          "required": false
+        },
+        "person_node_id": {
+          "type": "null|string",
+          "required": false
+        },
+        "privacy_level": {
+          "type": "null|string",
+          "required": false
+        },
+        "relationship_score": {
+          "type": "number",
+          "required": false,
+          "default": 0.0
+        },
+        "tags": {
+          "type": "array<string>",
+          "required": false
+        },
+        "timezone": {
+          "type": "null|string",
+          "required": false
+        },
+        "trust_tier": {
+          "type": "null|string",
+          "required": false
+        },
+        "updated_at": {
+          "type": "null|string",
+          "required": false
+        }
+      }
+    },
+    "ContextAssembleRequest": {
+      "fields": {
+        "audience": {
+          "type": "enum(\"global\",\"owner\",\"shared\",\"viewer\")|null",
+          "required": false
+        },
+        "available_tools": {
+          "type": "array<string>|null",
+          "required": false
+        },
+        "citations_mode": {
+          "type": "enum(\"appendix\",\"inline\",\"off\")|null",
+          "required": false
+        },
+        "context": {
+          "type": "HostTurnContext",
+          "required": true
+        },
+        "identity": {
+          "type": "HostIdentity",
+          "required": true
+        },
+        "include_initiatives": {
+          "type": "boolean|null",
+          "required": false
+        },
+        "incoming_message": {
+          "type": "HostMessage",
+          "required": true
+        },
+        "inline_chars": {
+          "type": "integer[minimum=1]|null",
+          "required": false
+        },
+        "recall_notice_details": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "shown": {
+          "type": "array<string>[maxItems=256]|null",
+          "required": false
+        },
+        "trace": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "wait_ms": {
+          "type": "integer[maximum=600000,minimum=1]|null",
+          "required": false
+        }
+      }
+    },
+    "ContextAssembleResponse": {
+      "fields": {
+        "budget": {
+          "type": "null|object",
+          "required": false
+        },
+        "notices": {
+          "type": "array<string>|null",
+          "required": false
+        },
+        "projection_attestation": {
+          "type": "ContextProjectionAttestation|null",
+          "required": false
+        },
+        "recall_exit": {
+          "type": "null|object",
+          "required": false
+        },
+        "recall_notice_details": {
+          "type": "array<string>|null",
+          "required": false
+        },
+        "sections": {
+          "type": "array<ContextSection>",
+          "required": false,
+          "default": []
+        },
+        "source_erasure_watermark": {
+          "type": "integer|null",
+          "required": false
+        },
+        "trace": {
+          "type": "RecallTraceReport|null",
+          "required": false
+        }
+      }
+    },
+    "ContextProjectionAttestation": {
+      "fields": {
+        "legacy_global_allowed": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "p8_mode": {
+          "type": "enum(\"live\",\"off\",\"shadow\")",
+          "required": false,
+          "default": "off"
+        },
+        "projection_backend": {
+          "type": "enum(\"canonical_sources\",\"p8\",\"unavailable\")",
+          "required": false,
+          "default": "unavailable"
+        },
+        "schema": {
+          "type": "enum(\"ContextProjectionAttestationV1\")",
+          "required": false,
+          "default": "ContextProjectionAttestationV1"
+        },
+        "scoped_projection_ready": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "version": {
+          "type": "enum(1)",
+          "required": false,
+          "default": 1
+        },
+        "viewer_attested": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "viewer_is_owner": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "viewer_person_id": {
+          "type": "string",
+          "required": false,
+          "default": ""
+        }
+      }
+    },
+    "ContextSection": {
+      "fields": {
+        "body": {
+          "type": "string",
+          "required": true
+        },
+        "citations": {
+          "type": "array<object>|null",
+          "required": false
+        },
+        "id": {
+          "type": "string",
+          "required": true
+        },
+        "priority": {
+          "type": "integer|null",
+          "required": false
+        },
+        "title": {
+          "type": "null|string",
+          "required": false
+        }
+      }
+    },
+    "CuratedCorrect": {
+      "fields": {
+        "content": {
+          "type": "string[maxLength=8192,minLength=1,pattern=\"\\\\S\"]",
+          "required": true
+        },
+        "expected_revision": {
+          "type": "integer[minimum=1]",
+          "required": true
+        },
+        "person_id": {
+          "type": "string[maxLength=256,minLength=1,pattern=\"\\\\S\"]",
+          "required": true
+        },
+        "request_id": {
+          "type": "string[maxLength=128,minLength=1,pattern=\"\\\\S\"]",
+          "required": true
+        }
+      },
+      "closed": true
+    },
+    "CuratedForget": {
+      "fields": {
+        "expected_revision": {
+          "type": "integer[minimum=1]",
+          "required": true
+        },
+        "person_id": {
+          "type": "string[maxLength=256,minLength=1,pattern=\"\\\\S\"]",
+          "required": true
+        },
+        "request_id": {
+          "type": "string[maxLength=128,minLength=1,pattern=\"\\\\S\"]",
+          "required": true
+        }
+      },
+      "closed": true
+    },
+    "CuratedMemory": {
+      "fields": {
+        "applied_at": {
+          "type": "null|string",
+          "required": true
+        },
+        "content": {
+          "type": "string",
+          "required": true
+        },
+        "id": {
+          "type": "string",
+          "required": true
+        },
+        "kind": {
+          "type": "enum(\"claim\",\"fact\",\"preference\")",
+          "required": true
+        },
+        "person_id": {
+          "type": "string",
+          "required": true
+        },
+        "relationship_refs": {
+          "type": "array<CuratedRelationshipRef>",
+          "required": true
+        },
+        "revision": {
+          "type": "integer",
+          "required": true
+        },
+        "source_refs": {
+          "type": "array<CuratedSourceRef>",
+          "required": true
+        },
+        "state": {
+          "type": "enum(\"active\")",
+          "required": true
+        },
+        "verification": {
+          "type": "enum(\"owner_asserted\",\"owner_confirmed\",\"unverified\")",
+          "required": true
+        }
+      }
+    },
+    "CuratedReceipt": {
+      "fields": {
+        "applied_at": {
+          "type": "string",
+          "required": true
+        },
+        "id": {
+          "type": "string",
+          "required": true
+        },
+        "operation": {
+          "type": "enum(\"correct\",\"forget\",\"remember\")",
+          "required": true
+        },
+        "request_id": {
+          "type": "string",
+          "required": true
+        },
+        "revision": {
+          "type": "integer",
+          "required": true
+        }
+      }
+    },
+    "CuratedRelationshipRef": {
+      "fields": {
+        "id": {
+          "type": "string",
+          "required": true
+        },
+        "kind": {
+          "type": "enum(\"contact\",\"entity\")",
+          "required": true
+        },
+        "label": {
+          "type": "null|string",
+          "required": true
+        },
+        "relation": {
+          "type": "enum(\"participant\",\"subject\")",
+          "required": true
+        }
+      }
+    },
+    "CuratedRelationships": {
+      "fields": {
+        "id": {
+          "type": "string",
+          "required": true
+        },
+        "relationship_refs": {
+          "type": "array<CuratedRelationshipRef>",
+          "required": true
+        },
+        "revision": {
+          "type": "integer",
+          "required": true
+        },
+        "status": {
+          "type": "enum(\"empty\",\"ready\")",
+          "required": true
+        }
+      }
+    },
+    "CuratedRemember": {
+      "fields": {
+        "content": {
+          "type": "string[maxLength=8192,minLength=1,pattern=\"\\\\S\"]",
+          "required": true
+        },
+        "id": {
+          "type": "string[pattern=\"^mem_[A-Za-z0-9_-]{1,96}$\"]",
+          "required": true
+        },
+        "kind": {
+          "type": "enum(\"fact\",\"preference\")",
+          "required": false,
+          "default": "fact"
+        },
+        "person_id": {
+          "type": "string[maxLength=256,minLength=1,pattern=\"\\\\S\"]",
+          "required": true
+        },
+        "request_id": {
+          "type": "string[maxLength=128,minLength=1,pattern=\"\\\\S\"]",
+          "required": true
+        }
+      },
+      "closed": true
+    },
+    "CuratedSearchPage": {
+      "fields": {
+        "items": {
+          "type": "array<CuratedMemory>",
+          "required": true
+        },
+        "next_cursor": {
+          "type": "null|string",
+          "required": true
+        },
+        "read_revision": {
+          "type": "string",
+          "required": true
+        },
+        "status": {
+          "type": "enum(\"empty\",\"ready\")",
+          "required": true
+        }
+      }
+    },
+    "CuratedSourceForget": {
+      "fields": {
+        "old_text": {
+          "type": "null|string[maxLength=131072,minLength=1]",
+          "required": false
+        },
+        "person_id": {
+          "type": "string[maxLength=256,minLength=1,pattern=\"\\\\S\"]",
+          "required": true
+        },
+        "session_id": {
+          "type": "null|string[maxLength=256,minLength=1]",
+          "required": false
+        },
+        "source_ids": {
+          "type": "array<string[maxLength=256,minLength=1]>[maxItems=100]",
+          "required": false
+        }
+      },
+      "closed": true
+    },
+    "CuratedSourceReceipt": {
+      "fields": {
+        "note": {
+          "type": "string",
+          "required": true
+        },
+        "receipt": {
+          "type": "CuratedReceipt",
+          "required": true
+        },
+        "scope": {
+          "type": "enum(\"curated_source_tombstone\")",
+          "required": true
+        },
+        "source_erased": {
+          "type": "enum(true)",
+          "required": true
+        },
+        "source_ids": {
+          "type": "array<string>",
+          "required": true
+        }
+      }
+    },
+    "CuratedSourceRef": {
+      "fields": {
+        "session_id": {
+          "type": "string",
+          "required": true
+        },
+        "source_id": {
+          "type": "string",
+          "required": true
+        },
+        "source_version": {
+          "type": "string",
+          "required": true
+        }
+      }
+    },
+    "DryRunRequest": {
+      "fields": {
+        "occurred_at": {
+          "type": "null|string[maxLength=64]",
+          "required": false
+        },
+        "person_id": {
+          "type": "string[maxLength=256,minLength=1]",
+          "required": true
+        },
+        "prompt_only": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "session_id": {
+          "type": "string[maxLength=256]",
+          "required": false,
+          "default": ""
+        },
+        "text": {
+          "type": "string[maxLength=12000,minLength=1]",
+          "required": true
+        },
+        "timezone": {
+          "type": "null|string[maxLength=64]",
+          "required": false
+        }
+      },
+      "closed": true
+    },
+    "Evidence-Input": {
+      "fields": {
+        "actual_sha256": {
+          "type": "null|string[pattern=\"^[0-9a-f]{64}$\"]",
+          "required": false
+        },
+        "checked_operation_id": {
+          "type": "null|string[maxLength=256,minLength=1]",
+          "required": false
+        },
+        "intended_sha256": {
+          "type": "null|string[pattern=\"^[0-9a-f]{64}$\"]",
+          "required": false
+        },
+        "kind": {
+          "type": "enum(\"file_hash\",\"hand_outcome\",\"message_receipt\",\"none\",\"read\",\"saved_job\")",
+          "required": false,
+          "default": "none"
+        },
+        "method": {
+          "type": "enum(\"native_post_write_sha256\",\"native_saved_job_fields\",\"sealed_sha256\")|null",
+          "required": false
+        },
+        "outcome": {
+          "type": "enum(\"cancelled\",\"completed\",\"done\",\"failed\",\"interrupted\",\"pending\",\"unknown\")|null",
+          "required": false
+        },
+        "provider_message_id": {
+          "type": "null|string[maxLength=256,minLength=1]",
+          "required": false
+        },
+        "receipt_id": {
+          "type": "null|string[maxLength=256,minLength=1]",
+          "required": false
+        },
+        "requested_fields": {
+          "type": "null|object{attach_to_session?:boolean,deliver?:boolean,enabled?:boolean,failure_deliver?:boolean,monitor?:boolean,name?:boolean,no_agent?:boolean,paused?:boolean,prompt?:boolean,repeat?:boolean,schedule?:boolean,script?:boolean,skill?:boolean,workdir?:boolean,closed}[maxProperties=64]",
+          "required": false
+        },
+        "saved_fields": {
+          "type": "null|object{attach_to_session?:boolean,deliver?:boolean,enabled?:boolean,failure_deliver?:boolean,monitor?:boolean,name?:boolean,no_agent?:boolean,paused?:boolean,prompt?:boolean,repeat?:boolean,schedule?:boolean,script?:boolean,skill?:boolean,workdir?:boolean,closed}[maxProperties=64]",
+          "required": false
+        },
+        "task_id": {
+          "type": "null|string[maxLength=256,minLength=1]",
+          "required": false
+        },
+        "verified": {
+          "type": "boolean|null",
+          "required": false
+        }
+      },
+      "closed": true
+    },
+    "HostHealthResponse": {
+      "fields": {
+        "api_version": {
+          "type": "string",
+          "required": false,
+          "default": "1.0.0"
+        },
+        "capabilities": {
+          "type": "array<string>",
+          "required": false,
+          "default": []
+        },
+        "instinct": {
+          "type": "null|object",
+          "required": false
+        },
+        "notes": {
+          "type": "null|object<string>",
+          "required": false
+        },
+        "problems": {
+          "type": "array<string>",
+          "required": false
+        },
+        "recall": {
+          "type": "null|object",
+          "required": false
+        },
+        "status": {
+          "type": "enum(\"degraded\",\"ok\",\"starting\",\"stopping\")",
+          "required": true
+        },
+        "temporal": {
+          "type": "TemporalMetrics|null",
+          "required": false
+        }
+      }
+    },
+    "HostIdentity": {
+      "fields": {
+        "host_id": {
+          "type": "string",
+          "required": true
+        },
+        "host_version": {
+          "type": "null|string",
+          "required": false
+        },
+        "instance_id": {
+          "type": "null|string",
+          "required": false
+        },
+        "plugin_version": {
+          "type": "null|string",
+          "required": false
+        }
+      }
+    },
+    "HostMessage": {
+      "fields": {
+        "content": {
+          "type": "string",
+          "required": true
+        },
+        "metadata": {
+          "type": "null|object",
+          "required": false
+        },
+        "name": {
+          "type": "null|string",
+          "required": false
+        },
+        "role": {
+          "type": "enum(\"assistant\",\"system\",\"tool\",\"user\")",
+          "required": true
+        },
+        "tool_call_id": {
+          "type": "null|string",
+          "required": false
+        }
+      }
+    },
+    "HostSender": {
+      "fields": {
+        "display_name": {
+          "type": "string[maxLength=256]",
+          "required": false,
+          "default": ""
+        },
+        "group_id": {
+          "type": "string[maxLength=256]",
+          "required": false,
+          "default": ""
+        },
+        "platform": {
+          "type": "string[maxLength=64]",
+          "required": true
+        },
+        "user_id": {
+          "type": "string[maxLength=256]",
+          "required": true
+        }
+      }
+    },
+    "HostTurnContext": {
+      "fields": {
+        "channel_id": {
+          "type": "null|string",
+          "required": false
+        },
+        "contact_id": {
+          "type": "string",
+          "required": true
+        },
+        "locale": {
+          "type": "null|string",
+          "required": false
+        },
+        "metadata": {
+          "type": "null|object",
+          "required": false
+        },
+        "session_id": {
+          "type": "string",
+          "required": true
+        },
+        "timezone": {
+          "type": "null|string",
+          "required": false
+        },
+        "turn_id": {
+          "type": "null|string",
+          "required": false
+        }
+      }
+    },
+    "MemorySearchRequest": {
+      "fields": {
+        "as_of": {
+          "type": "null|string:date-time",
+          "required": false
+        },
+        "identity": {
+          "type": "HostIdentity",
+          "required": true
+        },
+        "limit": {
+          "type": "integer[minimum=1]",
+          "required": false,
+          "default": 5
+        },
+        "person_id": {
+          "type": "string[maxLength=256,minLength=1]",
+          "required": true
+        },
+        "query": {
+          "type": "string[maxLength=4096,minLength=1]",
+          "required": true
+        },
+        "session_id": {
+          "type": "null|string[maxLength=256]",
+          "required": false
+        },
+        "timezone": {
+          "type": "null|string[maxLength=128]",
+          "required": false
+        },
+        "trace": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "window": {
+          "type": "MemorySearchWindow|null",
+          "required": false
+        }
+      },
+      "closed": true
+    },
+    "MemorySearchResponse": {
+      "fields": {
+        "annotation_checks": {
+          "type": "array<SourceAnnotationCheck>[maxItems=20]",
+          "required": false
+        },
+        "content": {
+          "type": "string",
+          "required": true
+        },
+        "count": {
+          "type": "integer[maximum=20,minimum=0]",
+          "required": true
+        },
+        "retrieval": {
+          "type": "object<string>",
+          "required": true
+        },
+        "source_refs": {
+          "type": "array<object<string>>",
+          "required": true
+        },
+        "trace": {
+          "type": "RecallTraceReport|null",
+          "required": false
+        },
+        "watermark": {
+          "type": "integer[minimum=0]",
+          "required": true
+        }
+      }
+    },
+    "MemorySearchWindow": {
+      "fields": {
+        "end": {
+          "type": "string:date-time",
+          "required": true
+        },
+        "start": {
+          "type": "string:date-time",
+          "required": true
+        }
+      },
+      "closed": true
+    },
+    "ObservedConversationRequest": {
+      "fields": {
+        "action_items": {
+          "type": "array<string[maxLength=500,minLength=1]>[maxItems=50]",
+          "required": false
+        },
+        "captured_at": {
+          "type": "string[maxLength=64,minLength=1]",
+          "required": true
+        },
+        "ended_at": {
+          "type": "string[maxLength=64,minLength=1]",
+          "required": true
+        },
+        "recognizer": {
+          "type": "ObservedRecognizer",
+          "required": true
+        },
+        "segments": {
+          "type": "array<ObservedSegment>[minItems=1]",
+          "required": true
+        },
+        "source": {
+          "type": "string[pattern=\"^[a-z0-9][a-z0-9_.-]{0,31}$\"]",
+          "required": true
+        },
+        "speakers": {
+          "type": "array<ObservedSpeaker>[maxItems=32,minItems=1]",
+          "required": true
+        },
+        "summary": {
+          "type": "null|string[maxLength=4000,minLength=1]",
+          "required": false
+        }
+      },
+      "closed": true
+    },
+    "ObservedConversationResponse": {
+      "fields": {
+        "accepted": {
+          "type": "boolean",
+          "required": true
+        },
+        "conversation_id": {
+          "type": "string",
+          "required": true
+        },
+        "skipped_reason": {
+          "type": "null|string",
+          "required": false
+        },
+        "source_id": {
+          "type": "string",
+          "required": true
+        },
+        "source_recorded": {
+          "type": "boolean",
+          "required": true
+        },
+        "speaker_source_ids": {
+          "type": "array<string>",
+          "required": false
+        }
+      }
+    },
+    "ObservedRecognizer": {
+      "fields": {
+        "model": {
+          "type": "string[maxLength=256,minLength=1]",
+          "required": true
+        },
+        "revision": {
+          "type": "null|string[maxLength=256,minLength=1]",
+          "required": false
+        }
+      },
+      "closed": true
+    },
+    "ObservedSegment": {
+      "fields": {
+        "end_ms": {
+          "type": "integer[maximum=86400000,minimum=0]",
+          "required": true
+        },
+        "speaker": {
+          "type": "string[maxLength=64,minLength=1]",
+          "required": true
+        },
+        "start_ms": {
+          "type": "integer[maximum=86400000,minimum=0]",
+          "required": true
+        },
+        "text": {
+          "type": "string[maxLength=20000,minLength=1]",
+          "required": true
+        }
+      },
+      "closed": true
+    },
+    "ObservedSpeaker": {
+      "fields": {
+        "contact_id": {
+          "type": "null|string[maxLength=256,minLength=1]",
+          "required": false
+        },
+        "label": {
+          "type": "string[pattern=\"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$\"]",
+          "required": true
+        }
+      },
+      "closed": true
+    },
+    "Operation": {
+      "fields": {
+        "action": {
+          "type": "string[maxLength=32,pattern=\"^[a-z_]{0,32}$\"]",
+          "required": true
+        },
+        "duration_ms": {
+          "type": "null|number[minimum=0]",
+          "required": false
+        },
+        "effect": {
+          "type": "enum(\"background\",\"create\",\"dispatch\",\"edit\",\"effect_unknown\",\"execute\",\"read\",\"remove\",\"send\",\"write\")",
+          "required": true
+        },
+        "error_type": {
+          "type": "null|string[maxLength=128,minLength=1]",
+          "required": false
+        },
+        "evidence": {
+          "type": "Evidence-Input",
+          "required": false
+        },
+        "failure_kind": {
+          "type": "enum(\"cancellation\",\"guardrail_block\",\"malformed_arguments\",\"parse_failure\",\"plugin_block\",\"refusal\",\"scope_block\",\"timeout\",\"tool_error\")|null",
+          "required": false
+        },
+        "model": {
+          "type": "null|string[maxLength=256,minLength=1]",
+          "required": false
+        },
+        "operation_id": {
+          "type": "string[maxLength=256,minLength=1]",
+          "required": true
+        },
+        "request_id": {
+          "type": "null|string[maxLength=256,minLength=1]",
+          "required": false
+        },
+        "resource_ref": {
+          "type": "null|string[maxLength=256,minLength=10,pattern=\"^resource:[A-Za-z0-9_.:-]+$\"]",
+          "required": false
+        },
+        "source_refs": {
+          "type": "array<SourceRef>[maxItems=64]",
+          "required": false
+        },
+        "success": {
+          "type": "boolean|null",
+          "required": false
+        },
+        "tool": {
+          "type": "string[maxLength=128,minLength=1]",
+          "required": true
+        },
+        "tool_call_id": {
+          "type": "string[maxLength=256,minLength=1]",
+          "required": true
+        }
+      },
+      "closed": true
+    },
+    "RecallTraceCalibration": {
+      "fields": {
+        "cutoff": {
+          "type": "null|number",
+          "required": false
+        },
+        "status": {
+          "type": "enum(\"configuration_verified\",\"configuration_verified_weights_unverified\",\"mismatch\",\"none\",\"unverified\")",
+          "required": true
+        }
+      },
+      "closed": true
+    },
+    "RecallTracePacket": {
+      "fields": {
+        "count": {
+          "type": "integer[minimum=0]",
+          "required": true
+        },
+        "limit": {
+          "type": "integer[minimum=0]|null",
+          "required": false
+        },
+        "max_chars": {
+          "type": "integer[minimum=0]",
+          "required": true
+        }
+      },
+      "closed": true
+    },
+    "RecallTraceReport": {
+      "fields": {
+        "calibration": {
+          "type": "RecallTraceCalibration",
+          "required": true
+        },
+        "lanes": {
+          "type": "object</^[a-z][a-z0-9_]{0,31}$/:integer[minimum=0]>",
+          "required": false
+        },
+        "packet": {
+          "type": "RecallTracePacket|null",
+          "required": false
+        },
+        "rerank": {
+          "type": "RecallTraceRerank|null",
+          "required": false
+        },
+        "rows": {
+          "type": "array<RecallTraceRow>[maxItems=256]",
+          "required": false
+        },
+        "rows_omitted": {
+          "type": "integer[minimum=0]",
+          "required": false,
+          "default": 0
+        },
+        "section": {
+          "type": "enum(\"held_back\",\"in_context\",\"shortened\")|null",
+          "required": false
+        },
+        "selected": {
+          "type": "array<string[pattern=\"^[a-z][a-z-]{0,39}:[0-9a-f]{64}$\"]>[maxItems=64]",
+          "required": false
+        }
+      },
+      "closed": true
+    },
+    "RecallTraceRerank": {
+      "fields": {
+        "late": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "missed": {
+          "type": "enum(\"budget\",\"busy\",\"error\",\"invalid\",\"no_reranker\",\"timeout\")|null",
+          "required": false
+        },
+        "mode": {
+          "type": "enum(\"off\",\"on\",\"shadow\")",
+          "required": true
+        },
+        "outcome": {
+          "type": "enum(\"missed\",\"not_needed\",\"off\",\"scored\",\"shadow\")",
+          "required": true
+        },
+        "submission_bound": {
+          "type": "integer[minimum=1]|null",
+          "required": false
+        },
+        "submitted": {
+          "type": "integer[minimum=0]",
+          "required": false,
+          "default": 0
+        }
+      },
+      "closed": true
+    },
+    "RecallTraceRow": {
+      "fields": {
+        "candidate": {
+          "type": "null|string[pattern=\"^[a-z][a-z-]{0,39}:[0-9a-f]{64}$\"]",
+          "required": false
+        },
+        "exit": {
+          "type": "enum(\"below_cutoff\",\"below_submission_bound\",\"erased\",\"no_lane\",\"over_char_budget\",\"over_host_allowance\",\"over_packet_limit\",\"over_session_share\",\"removed_by_recheck\")|null",
+          "required": false
+        },
+        "form": {
+          "type": "enum(\"belief\",\"claims\",\"conversation\",\"correction\",\"media\",\"media_name\",\"other\",\"quotation\")|null",
+          "required": false
+        },
+        "fused_rank": {
+          "type": "integer[minimum=1]|null",
+          "required": false
+        },
+        "lanes": {
+          "type": "object</^[a-z][a-z0-9_]{0,31}$/:integer[minimum=1]>",
+          "required": false
+        },
+        "message_hash": {
+          "type": "null|string[pattern=\"^[0-9a-f]{64}$\"]",
+          "required": false
+        },
+        "rerank_score": {
+          "type": "null|number",
+          "required": false
+        },
+        "shown_by": {
+          "type": "null|string[pattern=\"^[a-z][a-z-]{0,39}:[0-9a-f]{64}$\"]",
+          "required": false
+        },
+        "submitted": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "turn_id": {
+          "type": "null|string[maxLength=256,minLength=1]",
+          "required": false
+        }
+      },
+      "closed": true
+    },
+    "Refusal": {
+      "fields": {
+        "detail": {
+          "type": "object{code:string,message?:string}|string",
+          "required": true
+        }
+      }
+    },
+    "SourceAnnotationCheck": {
+      "fields": {
+        "annotation_ids": {
+          "type": "array<string>[maxItems=512]",
+          "required": true
+        },
+        "message_hashes": {
+          "type": "object<array<string>>",
+          "required": true
+        },
+        "source_refs": {
+          "type": "array<SourceReference>[maxItems=512,minItems=1]",
+          "required": true
+        }
+      },
+      "closed": true
+    },
+    "SourceAnnotationRequest": {
+      "fields": {
+        "annotation_id": {
+          "type": "string[maxLength=128,minLength=1]",
+          "required": true
+        },
+        "contact_id": {
+          "type": "string[maxLength=256,minLength=1]",
+          "required": true
+        },
+        "correction": {
+          "type": "string[maxLength=4096,minLength=1]",
+          "required": true
+        },
+        "excerpt": {
+          "type": "string[maxLength=4096,minLength=1]",
+          "required": true
+        },
+        "session_id": {
+          "type": "string[maxLength=256,minLength=1]",
+          "required": true
+        },
+        "source_id": {
+          "type": "string[maxLength=256,minLength=1]",
+          "required": true
+        },
+        "source_version": {
+          "type": "string[pattern=\"^[0-9a-f]{64}$\"]",
+          "required": true
+        }
+      },
+      "closed": true
+    },
+    "SourceCapBody": {
+      "fields": {
+        "cap": {
+          "type": "integer[maximum=1000,minimum=0]|null",
+          "required": true
+        }
+      },
+      "closed": true
+    },
+    "SourceInputReference": {
+      "fields": {
+        "input_message_hash": {
+          "type": "string[pattern=\"^[0-9a-f]{64}$\"]",
+          "required": true
+        },
+        "source_id": {
+          "type": "string[maxLength=256,minLength=1]",
+          "required": true
+        }
+      },
+      "closed": true
+    },
+    "SourceRef": {
+      "fields": {
+        "source_id": {
+          "type": "string[maxLength=256,minLength=1]",
+          "required": true
+        },
+        "source_version": {
+          "type": "string[pattern=\"^[0-9a-f]{64}$\"]",
+          "required": true
+        }
+      },
+      "closed": true
+    },
+    "SourceReference": {
+      "fields": {
+        "source_id": {
+          "type": "string[maxLength=256,minLength=1]",
+          "required": true
+        },
+        "source_version": {
+          "type": "string[pattern=\"^[0-9a-f]{64}$\"]",
+          "required": true
+        }
+      },
+      "closed": true
+    },
+    "TemporalMetrics": {
+      "fields": {
+        "last_prefetch_at": {
+          "type": "null|string",
+          "required": false
+        },
+        "last_sync_at": {
+          "type": "null|string",
+          "required": false
+        },
+        "last_tick_at": {
+          "type": "null|string",
+          "required": false
+        },
+        "silence_hours": {
+          "type": "object<null|number>",
+          "required": false
+        },
+        "stale_flags": {
+          "type": "array<string>",
+          "required": false
+        },
+        "started_at": {
+          "type": "null|string",
+          "required": false
+        },
+        "state": {
+          "type": "null|string",
+          "required": false
+        }
+      }
+    },
+    "TurnMessage": {
+      "fields": {
+        "content": {
+          "type": "array<object>|string",
+          "required": true
+        },
+        "metadata": {
+          "type": "null|object",
+          "required": false
+        },
+        "name": {
+          "type": "null|string",
+          "required": false
+        },
+        "role": {
+          "type": "enum(\"assistant\",\"system\",\"tool\",\"user\")",
+          "required": true
+        },
+        "tool_call_id": {
+          "type": "null|string",
+          "required": false
+        }
+      }
+    },
+    "TurnSyncRequest": {
+      "fields": {
+        "assistant_input_refs": {
+          "type": "array<SourceInputReference>[minItems=1]|null",
+          "required": false
+        },
+        "assistant_message": {
+          "type": "HostMessage|TurnMessage|null",
+          "required": false
+        },
+        "assistant_source_refs": {
+          "type": "array<SourceReference>[minItems=1]|null",
+          "required": false
+        },
+        "checkpoint_messages": {
+          "type": "array<CheckpointMessage>[maxItems=20000,minItems=1]|null",
+          "required": false
+        },
+        "context": {
+          "type": "HostTurnContext",
+          "required": true
+        },
+        "entities": {
+          "type": "array<string>",
+          "required": false
+        },
+        "identity": {
+          "type": "HostIdentity",
+          "required": true
+        },
+        "model": {
+          "type": "null|string",
+          "required": false
+        },
+        "pending_tasks": {
+          "type": "array<string>",
+          "required": false
+        },
+        "sender": {
+          "type": "HostSender|null",
+          "required": false
+        },
+        "source_only": {
+          "type": "enum(true)|null",
+          "required": false
+        },
+        "summary": {
+          "type": "null|string",
+          "required": false
+        },
+        "tools_used": {
+          "type": "array<string>",
+          "required": false
+        },
+        "topics": {
+          "type": "array<string>",
+          "required": false
+        },
+        "user_message": {
+          "type": "HostMessage|TurnMessage|null",
+          "required": false
+        },
+        "work": {
+          "type": "WorkEnvelope|null",
+          "required": false
+        }
+      }
+    },
+    "TurnSyncResponse": {
+      "fields": {
+        "accepted": {
+          "type": "boolean",
+          "required": true
+        },
+        "continuity_updated": {
+          "type": "boolean",
+          "required": true
+        },
+        "errors": {
+          "type": "array<string>|null",
+          "required": false
+        },
+        "skipped_reason": {
+          "type": "null|string",
+          "required": false
+        },
+        "source_recorded": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "work_recorded": {
+          "type": "boolean|null",
+          "required": false
+        },
+        "work_skipped_reason": {
+          "type": "null|string",
+          "required": false
+        }
+      }
+    },
+    "WorkChild": {
+      "fields": {
+        "parent_turn_id": {
+          "type": "string",
+          "required": true
+        },
+        "turn_id": {
+          "type": "string",
+          "required": true
+        }
+      }
+    },
+    "WorkCounts": {
+      "fields": {
+        "failed": {
+          "type": "integer[minimum=0]",
+          "required": false,
+          "default": 0
+        },
+        "partial": {
+          "type": "integer[minimum=0]",
+          "required": false,
+          "default": 0
+        },
+        "proven": {
+          "type": "integer[minimum=0]",
+          "required": false,
+          "default": 0
+        },
+        "unproven": {
+          "type": "integer[minimum=0]",
+          "required": false,
+          "default": 0
+        }
+      }
+    },
+    "WorkDetail": {
+      "fields": {
+        "children": {
+          "type": "array<WorkChild>[maxItems=256]",
+          "required": false
+        },
+        "children_truncated": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "contact_id": {
+          "type": "string",
+          "required": true
+        },
+        "created_at": {
+          "type": "string",
+          "required": true
+        },
+        "effects": {
+          "type": "array<WorkEffect>[maxItems=256]",
+          "required": false
+        },
+        "effects_truncated": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "id": {
+          "type": "string[maxLength=1370,pattern=\"^w:[A-Za-z0-9_-]+$\"]",
+          "required": true
+        },
+        "overlay": {
+          "type": "null|string",
+          "required": false
+        },
+        "revision": {
+          "type": "integer|string",
+          "required": true
+        },
+        "session_id": {
+          "type": "string",
+          "required": true
+        },
+        "status": {
+          "type": "enum(\"failed\",\"partial\",\"proven\",\"unproven\")",
+          "required": true
+        },
+        "title": {
+          "type": "null|string",
+          "required": false
+        },
+        "turn_id": {
+          "type": "string",
+          "required": true
+        }
+      }
+    },
+    "WorkDigestTitles": {
+      "fields": {
+        "failed": {
+          "type": "array<string>[maxItems=5]",
+          "required": false
+        },
+        "unproven": {
+          "type": "array<string>[maxItems=5]",
+          "required": false
+        }
+      }
+    },
+    "WorkEffect": {
+      "fields": {
+        "action": {
+          "type": "string",
+          "required": true
+        },
+        "id": {
+          "type": "string",
+          "required": true
+        },
+        "kind": {
+          "type": "string",
+          "required": true
+        },
+        "operation_id": {
+          "type": "string",
+          "required": true
+        },
+        "resource_ref": {
+          "type": "null|string",
+          "required": false
+        },
+        "source_refs": {
+          "type": "array<SourceRef>[maxItems=64]",
+          "required": false
+        },
+        "status": {
+          "type": "enum(\"dispatched\",\"failed\",\"observed\",\"ran\",\"unknown\",\"verified\")",
+          "required": true
+        },
+        "tool": {
+          "type": "string",
+          "required": true
+        },
+        "verification": {
+          "type": "string[maxLength=512]",
+          "required": false,
+          "default": ""
+        }
+      }
+    },
+    "WorkEnvelope": {
+      "fields": {
+        "children": {
+          "type": "array<Child>[maxItems=256]",
+          "required": true
+        },
+        "operations": {
+          "type": "array<Operation>[maxItems=256]",
+          "required": true
+        },
+        "origin_ref": {
+          "type": "null|string[maxLength=1024,minLength=1]",
+          "required": false
+        },
+        "parent_turn_id": {
+          "type": "null|string[maxLength=256,minLength=1]",
+          "required": false
+        },
+        "root_turn_id": {
+          "type": "string[maxLength=256,minLength=1]",
+          "required": true
+        },
+        "truncated": {
+          "type": "boolean",
+          "required": true
+        },
+        "version": {
+          "type": "enum(1)",
+          "required": true
+        }
+      },
+      "closed": true
+    },
+    "WorkEvent": {
+      "fields": {
+        "event_id": {
+          "type": "string[maxLength=256,minLength=1]",
+          "required": true
+        },
+        "root_turn_id": {
+          "type": "string[maxLength=256,minLength=1]",
+          "required": true
+        },
+        "session_id": {
+          "type": "string[maxLength=256,minLength=1]",
+          "required": true
+        },
+        "source_refs": {
+          "type": "array<SourceRef>[maxItems=64]",
+          "required": false
+        },
+        "work": {
+          "type": "WorkEnvelope",
+          "required": true
+        }
+      },
+      "closed": true
+    },
+    "WorkEventResult": {
+      "fields": {
+        "accepted": {
+          "type": "boolean",
+          "required": true
+        },
+        "duplicate": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "enabled": {
+          "type": "boolean",
+          "required": false,
+          "default": true
+        },
+        "skipped_reason": {
+          "type": "null|string",
+          "required": false
+        }
+      }
+    },
+    "WorkList": {
+      "fields": {
+        "enabled": {
+          "type": "boolean",
+          "required": true
+        },
+        "items": {
+          "type": "array<WorkRoot>[maxItems=100]",
+          "required": false
+        },
+        "limit": {
+          "type": "integer[maximum=100,minimum=1]",
+          "required": true
+        },
+        "next_offset": {
+          "type": "integer[maximum=10000,minimum=0]|null",
+          "required": false
+        },
+        "offset": {
+          "type": "integer[maximum=10000,minimum=0]",
+          "required": true
+        },
+        "since": {
+          "type": "string",
+          "required": true
+        },
+        "until": {
+          "type": "string",
+          "required": true
+        }
+      }
+    },
+    "WorkOverlays": {
+      "fields": {
+        "confirmed": {
+          "type": "integer[minimum=0]",
+          "required": false,
+          "default": 0
+        },
+        "corrected": {
+          "type": "integer[minimum=0]",
+          "required": false,
+          "default": 0
+        },
+        "none": {
+          "type": "integer[minimum=0]",
+          "required": false,
+          "default": 0
+        }
+      }
+    },
+    "WorkRates": {
+      "fields": {
+        "failed": {
+          "type": "number[maximum=1,minimum=0]",
+          "required": false,
+          "default": 0
+        },
+        "partial": {
+          "type": "number[maximum=1,minimum=0]",
+          "required": false,
+          "default": 0
+        },
+        "proven": {
+          "type": "number[maximum=1,minimum=0]",
+          "required": false,
+          "default": 0
+        },
+        "unproven": {
+          "type": "number[maximum=1,minimum=0]",
+          "required": false,
+          "default": 0
+        }
+      }
+    },
+    "WorkRoot": {
+      "fields": {
+        "contact_id": {
+          "type": "string",
+          "required": true
+        },
+        "created_at": {
+          "type": "string",
+          "required": true
+        },
+        "id": {
+          "type": "string[maxLength=1370,pattern=\"^w:[A-Za-z0-9_-]+$\"]",
+          "required": true
+        },
+        "overlay": {
+          "type": "null|string",
+          "required": false
+        },
+        "revision": {
+          "type": "integer|string",
+          "required": true
+        },
+        "session_id": {
+          "type": "string",
+          "required": true
+        },
+        "status": {
+          "type": "enum(\"failed\",\"partial\",\"proven\",\"unproven\")",
+          "required": true
+        },
+        "title": {
+          "type": "null|string",
+          "required": false
+        },
+        "turn_id": {
+          "type": "string",
+          "required": true
+        }
+      }
+    },
+    "WorkSummary": {
+      "fields": {
+        "counts": {
+          "type": "WorkCounts",
+          "required": false
+        },
+        "enabled": {
+          "type": "boolean",
+          "required": true
+        },
+        "overlays": {
+          "type": "WorkOverlays",
+          "required": false
+        },
+        "owner_corrected": {
+          "type": "integer[minimum=0]",
+          "required": false,
+          "default": 0
+        },
+        "owner_corrected_rate": {
+          "type": "number[maximum=1,minimum=0]",
+          "required": false,
+          "default": 0
+        },
+        "rates": {
+          "type": "WorkRates",
+          "required": false
+        },
+        "roots_per_day": {
+          "type": "number[minimum=0]",
+          "required": false,
+          "default": 0
+        },
+        "since": {
+          "type": "string",
+          "required": true
+        },
+        "titles": {
+          "type": "WorkDigestTitles",
+          "required": false
+        },
+        "total": {
+          "type": "integer[minimum=0]",
+          "required": false,
+          "default": 0
+        },
+        "unknown_effects": {
+          "type": "array<WorkUnknownEffect>[maxItems=100]",
+          "required": false
+        },
+        "unknown_effects_truncated": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "until": {
+          "type": "string",
+          "required": true
+        },
+        "untitled": {
+          "type": "integer[minimum=0]",
+          "required": false,
+          "default": 0
+        },
+        "verdict_coverage": {
+          "type": "WorkVerdictCoverage",
+          "required": false
+        }
+      }
+    },
+    "WorkUnknownEffect": {
+      "fields": {
+        "action": {
+          "type": "string",
+          "required": true
+        },
+        "count": {
+          "type": "integer[minimum=0]",
+          "required": true
+        },
+        "tool": {
+          "type": "string",
+          "required": true
+        }
+      }
+    },
+    "WorkVerdictCoverage": {
+      "fields": {
+        "queued": {
+          "type": "integer[minimum=0]",
+          "required": false,
+          "default": 0
+        },
+        "reviewed_at": {
+          "type": "null|string",
+          "required": false
+        },
+        "session_limit": {
+          "type": "integer",
+          "required": false,
+          "default": 6
+        },
+        "sessions_omitted": {
+          "type": "integer[minimum=0]",
+          "required": false,
+          "default": 0
+        },
+        "sessions_reviewed": {
+          "type": "integer[minimum=0]",
+          "required": false,
+          "default": 0
+        },
+        "sessions_with_omitted_turns": {
+          "type": "integer[minimum=0]",
+          "required": false,
+          "default": 0
+        },
+        "turn_limit": {
+          "type": "integer",
+          "required": false,
+          "default": 8
+        },
+        "unlinked": {
+          "type": "integer[minimum=0]",
+          "required": false,
+          "default": 0
+        },
+        "verdicts_omitted": {
+          "type": "integer[minimum=0]",
+          "required": false,
+          "default": 0
+        },
+        "vetted": {
+          "type": "integer[minimum=0]",
+          "required": false,
+          "default": 0
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,314 @@
+"""User-manager commands preserve sibling instances and never claim HTTP readiness early."""
+import json
+import os
+from pathlib import Path
+import plistlib
+import shutil
+import socket
+import subprocess
+
+import pytest
+import yaml
+
+from colonymind.services.instance import InstanceService, ServiceError
+
+
+class Manager:
+    def __init__(self):
+        self.units = {}
+        self.calls = []
+        self.fail_enable = False
+
+    def __call__(self, args, **kwargs):
+        self.calls.append(args)
+        output, code = '', 0
+        if args[0] == 'systemctl':
+            command = args[2]
+            if command not in {'show-environment', 'daemon-reload'}:
+                row = self.units.setdefault(args[3], {'loaded': False, 'running': False, 'enabled': False})
+                if command == 'show':
+                    output = '\n'.join(['LoadState=' + ('loaded' if row['loaded'] else 'not-found'),
+                        'ActiveState=' + ('active' if row['running'] else 'inactive'),
+                        'SubState=' + ('running' if row['running'] else 'dead'),
+                        'MainPID=' + ('321' if row['running'] else '0'),
+                        'UnitFileState=' + ('enabled' if row['enabled'] else 'disabled')])
+                elif command == 'enable':
+                    if self.fail_enable:
+                        self.fail_enable = False
+                        code = 1
+                    else:
+                        row.update(enabled=True, loaded=True)
+                elif command == 'disable':
+                    row.update(enabled=False, loaded=False)
+                elif command in {'start', 'restart'}:
+                    row.update(running=True, loaded=True)
+                elif command == 'stop':
+                    row['running'] = False
+        else:
+            command = args[1]
+            target = args[2]
+            if command == 'bootstrap':
+                target += '/' + plistlib.loads(Path(args[3]).read_bytes())['Label']
+            if command != 'print' or target.count('/') == 2:
+                row = self.units.setdefault(target, {'loaded': False, 'running': False})
+                if command == 'print':
+                    code = 0 if row['loaded'] else 113
+                    output = '  pid = 321\n' if row['running'] else ''
+                elif command in {'bootstrap', 'kickstart'}:
+                    row.update(loaded=True, running=True)
+                elif command == 'bootout':
+                    row.update(loaded=False, running=False)
+        return subprocess.CompletedProcess(args, code, output, '')
+
+
+@pytest.fixture
+def service_factory(tmp_path, monkeypatch):
+    monkeypatch.delenv('XDG_CONFIG_HOME', raising=False)
+    monkeypatch.setattr(socket, 'create_connection', lambda *a, **k: (_ for _ in ()).throw(ConnectionRefusedError()))
+    manager = Manager()
+    def make(name='one', platform='linux'):
+        service = InstanceService(tmp_path/name, tmp_path/(name+'-hermes'),
+            python=str(tmp_path/'venv/bin/python'), home=tmp_path/'user', platform=platform, runner=manager)
+        return service
+    return make, manager
+
+
+@pytest.mark.parametrize('platform', ['linux', 'darwin'])
+def test_exact_instance_install_start_stop_and_uninstall(service_factory, platform, monkeypatch):
+    make, manager = service_factory
+    first, other = make('one', platform), make('two', platform)
+    for service in [first, other]:
+        installed = service.install()
+        assert installed['installed'] and not installed['running']
+        assert service.definition.stat().st_mode & 0o777 == 0o600
+        assert service.log.stat().st_mode & 0o777 == 0o600
+        assert b'COLONYMIND_API_KEY' not in service.definition.read_bytes()
+        monkeypatch.setattr(service, 'health', lambda: {'status': 'ok', 'problems': []})
+        assert service.start()['ready']
+    other_bytes = other.definition.read_bytes()
+    first.state.joinpath('memory.db').write_bytes(b'private memory')
+    assert not first.stop()['running']
+    assert other.status()['running']
+    assert first.uninstall()['installed'] is False
+    assert first.state.joinpath('memory.db').read_bytes() == b'private memory'
+    assert first.definition.is_file() and first.log.is_file()
+    assert other.definition.read_bytes() == other_bytes and other.status()['running']
+    assert not any('sudo' in args or 'linger' in ' '.join(args) for args in manager.calls)
+
+
+@pytest.mark.parametrize('platform', ['linux', 'darwin'])
+def test_the_manager_writes_its_own_log_and_restarts_a_crash_slowly(service_factory, platform, monkeypatch):
+    """The rotating runtime log (service/sidecar.log) is the sidecar's alone.
+    launchd and systemd append the process's raw stdout/stderr (a native panic, a traceback before
+    logging starts) to their own file, so a rotation never strands them in a renamed or unlinked
+    inode, and a crash at startup is retried every 30 s rather than every 5."""
+    make, _ = service_factory
+    service = make('one', platform)
+    runtime_log = service.state / 'service' / 'sidecar.log'
+    assert service.log == runtime_log
+    assert service.manager_log.parent == runtime_log.parent and service.manager_log != runtime_log
+    if platform == 'darwin':
+        plist = plistlib.loads(service.render())
+        assert plist['StandardOutPath'] == plist['StandardErrorPath'] == str(service.manager_log)
+        assert service.manager_log.name == 'launchd.log'
+        assert 30 <= plist['ThrottleInterval'] <= 60
+    else:
+        unit = service.render().decode()
+        assert 'StandardOutput=append:' + str(service.manager_log) + '\n' in unit
+        assert 'StandardError=append:' + str(service.manager_log) + '\n' in unit
+        assert str(runtime_log) not in unit
+        assert 'RestartSec=30\n' in unit
+    service.install()
+    assert service.manager_log.stat().st_mode & 0o777 == 0o600
+    monkeypatch.setattr(service, 'health', lambda: None)
+    with pytest.raises(ServiceError) as failure:
+        service.start(timeout=0.3)
+    assert str(runtime_log) in str(failure.value) and str(service.manager_log) in str(failure.value)
+
+
+def test_failed_environment_update_restores_previous_definition(service_factory):
+    make, manager = service_factory
+    service = make()
+    service.install()
+    before = service.definition.read_bytes()
+    service.python = '/different/venv/bin/python'
+    manager.fail_enable = True
+    with pytest.raises(ServiceError, match='command failed'):
+        service.install()
+    assert service.definition.read_bytes() == before
+    assert service.backup.read_bytes() == before
+    assert service.link.resolve() == service.definition
+    assert not service.status()['running']
+
+
+def test_failed_fresh_install_cleans_owned_registration(service_factory):
+    make, manager = service_factory
+    service = make()
+    manager.fail_enable = True
+    with pytest.raises(ServiceError):
+        service.install()
+    assert not service.link.is_symlink() and not service.definition.exists()
+    assert not manager.units[service.name]['enabled']
+
+
+def test_unowned_definition_and_live_environment_change_are_preserved(service_factory, monkeypatch):
+    make, manager = service_factory
+    service = make()
+    service.link.parent.mkdir(parents=True)
+    service.link.write_bytes(b'other application')
+    with pytest.raises(ServiceError, match='unowned'):
+        service.install()
+    assert service.link.read_bytes() == b'other application'
+    assert not service.definition.exists()
+    service.link.unlink()
+    service.install()
+    monkeypatch.setattr(service, 'health', lambda: {'status': 'ok', 'problems': []})
+    service.start()
+    before = service.definition.read_bytes()
+    service.python = '/new/python'
+    with pytest.raises(ServiceError, match='Stop this instance'):
+        service.install()
+    assert service.definition.read_bytes() == before
+
+
+def test_running_without_http_readiness_is_not_success(service_factory, monkeypatch):
+    make, manager = service_factory
+    service = make()
+    service.install()
+    monkeypatch.setattr(service, 'health', lambda: None)
+    with pytest.raises(ServiceError, match='HTTP-ready'):
+        service.start(timeout=.01)
+    assert service.status()['running']
+
+
+def test_start_and_status_report_the_served_health_verdict(service_factory, monkeypatch, capsys):
+    """Ready is the sidecar answering; what it answers travels with the result, in its own words."""
+    make, manager = service_factory
+    service = make()
+    service.install()
+    problems = ['semantic recall is off: the embedder (provider=openai_api, model=m) did not initialise: boom']
+    monkeypatch.setattr(service, 'health', lambda: {'status': 'degraded', 'problems': problems})
+    result = service.start()
+    assert result['ready'] and result['running']
+    assert result['health'] == 'degraded' and result['problems'] == problems
+    from colonymind.services import instance as module
+    monkeypatch.setattr(module.InstanceService, 'selected', classmethod(lambda cls: service))
+    module.manage('status')
+    printed = json.loads(capsys.readouterr().out)
+    assert printed['ready'] is True and printed['health'] == 'degraded' and printed['problems'] == problems
+    monkeypatch.setattr(service, 'health', lambda: None)
+    module.manage('status')
+    printed = json.loads(capsys.readouterr().out)
+    assert printed['ready'] is False and printed['health'] is None and printed['problems'] == []
+
+
+def test_launchd_stop_waits_for_native_bootout_completion(service_factory, monkeypatch):
+    make, _ = service_factory
+    service = make(platform='darwin')
+    service.install()
+    monkeypatch.setattr(service, 'health', lambda: {'status': 'ok', 'problems': []})
+    service.start()
+    real_status = service.status
+    observations = []
+    def delayed():
+        observations.append(1)
+        result = real_status()
+        if len(observations) <= 2:
+            result.update(loaded=True, running=True, pid=321)
+        return result
+    monkeypatch.setattr(service, 'status', delayed)
+    assert not service.stop()['running']
+    assert len(observations) == 3
+
+
+def test_occupied_port_is_not_started_or_stopped(service_factory, monkeypatch):
+    make, manager = service_factory
+    service = make()
+    service.install()
+    class Occupant:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+    monkeypatch.setattr(socket, 'create_connection', lambda *a, **k: Occupant())
+    before = list(manager.calls)
+    with pytest.raises(ServiceError, match='occupied'):
+        service.start()
+    assert not any(args[2] in {'start', 'stop', 'restart'} for args in manager.calls[len(before):])
+
+
+def test_selected_instance_and_managed_foreground_use_same_binding(tmp_path, monkeypatch):
+    from colonymind import cli
+    from colonymind.config import DEFAULTS, save_config, write_api_key
+    state, home = tmp_path/'instance', tmp_path/'hermes'
+    state.mkdir(); home.mkdir()
+    save_config({**DEFAULTS, 'hermes': {'home': str(home), 'python': ''}}, state)
+    write_api_key('private-secret', state)
+    monkeypatch.setattr(os, 'environ', {'COLONYMIND_HOME': str(state)})
+    service = InstanceService.selected()
+    assert service.hermes_home == home and service.state == state
+    assert os.environ['COLONYMIND_API_KEY'] == 'private-secret'
+    os.environ['COLONYMIND_INSTANCE_SERVICE'] = service.label
+    assert cli._is_service_loaded() is False
+    assert b'private-secret' not in service.render()
+    (state/'colonymind.yaml').unlink()
+    with pytest.raises(ServiceError, match='does not exist'):
+        InstanceService.selected()
+
+
+def test_systemd_parser_accepts_spaces_specifiers_and_literal_dollar(tmp_path):
+    if not shutil.which('systemd-analyze'):
+        pytest.skip('systemd parser is unavailable')
+    service = InstanceService(tmp_path/'private space%name$dollar', tmp_path/'hermes home',
+                              platform='linux', python='/usr/bin/python3', home=tmp_path)
+    service.state.mkdir()
+    definition = tmp_path/service.name
+    definition.write_bytes(service.render())
+    env = {**os.environ, 'SYSTEMD_UNIT_PATH': str(tmp_path)+':/usr/lib/systemd/user:/usr/share/systemd/user'}
+    result = subprocess.run(['systemd-analyze', '--user', 'verify', str(definition)],
+                            env=env, capture_output=True, text=True, timeout=20)
+    assert result.returncode == 0, result.stderr
+    assert 'ExecStart=:"/usr/bin/python3"' in definition.read_text()
+    assert 'space%%name$dollar' in definition.read_text()
+
+
+def test_launchd_preserves_venv_and_literal_paths(service_factory):
+    make, _ = service_factory
+    service = make('space%name$dollar', 'darwin')
+    payload = plistlib.loads(service.render())
+    assert payload['ProgramArguments'] == [service.python, '-m', 'colonymind', 'start']
+    assert payload['EnvironmentVariables']['HERMES_HOME'] == str(service.hermes_home)
+    assert payload['EnvironmentVariables']['COLONYMIND_HOME'] == str(service.state)
+    assert payload['RunAtLoad'] and payload['KeepAlive'] and payload['Umask'] == 0o077
+
+
+@pytest.mark.parametrize('platform', ['linux','darwin'])
+def test_existing_service_keeps_its_identity_during_environment_upgrade(service_factory, platform):
+    import hashlib
+    make, manager = service_factory
+    original = make('retained', platform)
+    suffix = hashlib.sha256(os.fsencode(original.state)).hexdigest()[:20]
+    label = 'ai.colonymind.instance.' + suffix
+    name = label+'.plist' if platform=='darwin' else 'colonymind-'+suffix+'.service'
+    definition = original.state/'service'/name
+    definition.parent.mkdir(parents=True)
+    definition.write_bytes(b'original selected environment')
+    link = original.link.with_name(name)
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(definition)
+    old = make('retained', platform)
+    assert old.name == name and old.label == label and old.link == link
+    old.install()
+    assert old.backup.read_bytes() == b'original selected environment'
+    assert original.link.resolve() == definition
+    assert b'colonymind' in definition.read_bytes()
+    assert old.name == original.name
+
+
+def test_generated_units_ask_for_the_open_files_the_vector_store_needs(service_factory):
+    from colonymind.resources import OPEN_FILES
+    make, _ = service_factory
+    payload = plistlib.loads(make('files', 'darwin').render())
+    assert payload['SoftResourceLimits'] == {'NumberOfFiles': OPEN_FILES}
+    assert payload['HardResourceLimits'] == {'NumberOfFiles': OPEN_FILES}
+    assert OPEN_FILES >= 4096
+    unit = make('files', 'linux').render().decode()
+    assert f'\nLimitNOFILE={OPEN_FILES}\n' in unit

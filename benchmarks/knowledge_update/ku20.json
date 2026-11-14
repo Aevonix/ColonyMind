@@ -1,0 +1,803 @@
+{
+ "name": "KU20",
+ "version": 1,
+ "about": "Paraphrased knowledge updates for one person with many claims. Each change pair's first message is committed for real; its second states a change of the same property without sharing a content word with the first, while sharing one with a filler message, so a keyword search of the second finds other claims but never the first. Each control's second is a change of a different, nearby property: it should retire nothing. The gold fields are for scoring only and never reach extraction.",
+ "contact_id": "person-ku20",
+ "timezone": "UTC",
+ "fillers": [
+  {
+   "id": "f01",
+   "at": "2026-01-05T09:00:00+00:00",
+   "text": "My cousin studies in Munich."
+  },
+  {
+   "id": "f02",
+   "at": "2026-01-05T10:00:00+00:00",
+   "text": "My front door is painted grey."
+  },
+  {
+   "id": "f03",
+   "at": "2026-01-05T11:00:00+00:00",
+   "text": "My favourite bakery is by the station."
+  },
+  {
+   "id": "f04",
+   "at": "2026-01-05T12:00:00+00:00",
+   "text": "My locker number is 42."
+  },
+  {
+   "id": "f05",
+   "at": "2026-01-05T13:00:00+00:00",
+   "text": "My brother keeps tropical fish."
+  },
+  {
+   "id": "f06",
+   "at": "2026-01-05T14:00:00+00:00",
+   "text": "My billing address is Quay Road 7."
+  },
+  {
+   "id": "f07",
+   "at": "2026-01-05T15:00:00+00:00",
+   "text": "My neighbour teaches Japanese cooking."
+  },
+  {
+   "id": "f08",
+   "at": "2026-01-05T16:00:00+00:00",
+   "text": "My sailing club is at the harbour."
+  },
+  {
+   "id": "f09",
+   "at": "2026-01-05T17:00:00+00:00",
+   "text": "My sister repairs bike wheels."
+  },
+  {
+   "id": "f10",
+   "at": "2026-01-05T18:00:00+00:00",
+   "text": "My building has a rooftop garden."
+  },
+  {
+   "id": "f11",
+   "at": "2026-01-05T19:00:00+00:00",
+   "text": "My partner works for the rail union."
+  },
+  {
+   "id": "f12",
+   "at": "2026-01-05T20:00:00+00:00",
+   "text": "My niece sings in the school choir."
+  },
+  {
+   "id": "f13",
+   "at": "2026-01-05T21:00:00+00:00",
+   "text": "My favourite daytime show is a quiz."
+  },
+  {
+   "id": "f14",
+   "at": "2026-01-05T22:00:00+00:00",
+   "text": "My expense report goes to finance."
+  },
+  {
+   "id": "f15",
+   "at": "2026-01-05T23:00:00+00:00",
+   "text": "My aunt bakes sugar cookies."
+  },
+  {
+   "id": "f16",
+   "at": "2026-01-06T00:00:00+00:00",
+   "text": "My nephew trains at a football academy."
+  },
+  {
+   "id": "f17",
+   "at": "2026-01-06T01:00:00+00:00",
+   "text": "My flight transfer is in Vienna."
+  },
+  {
+   "id": "f18",
+   "at": "2026-01-06T02:00:00+00:00",
+   "text": "My home server uses Linux."
+  },
+  {
+   "id": "f19",
+   "at": "2026-01-06T03:00:00+00:00",
+   "text": "My reading glasses are tortoiseshell."
+  },
+  {
+   "id": "f20",
+   "at": "2026-01-06T04:00:00+00:00",
+   "text": "My uncle owns a garage in town."
+  },
+  {
+   "id": "f21",
+   "at": "2026-01-06T05:00:00+00:00",
+   "text": "My watch strap is silver."
+  },
+  {
+   "id": "f22",
+   "at": "2026-01-06T06:00:00+00:00",
+   "text": "My godson plays chess."
+  },
+  {
+   "id": "f23",
+   "at": "2026-01-06T07:00:00+00:00",
+   "text": "My piano lessons are on Friday afternoons."
+  },
+  {
+   "id": "f24",
+   "at": "2026-01-06T08:00:00+00:00",
+   "text": "My phone case is green."
+  },
+  {
+   "id": "f25",
+   "at": "2026-01-06T09:00:00+00:00",
+   "text": "My hiking club walks the coast path."
+  },
+  {
+   "id": "f26",
+   "at": "2026-01-06T10:00:00+00:00",
+   "text": "My violin needs new strings."
+  },
+  {
+   "id": "f27",
+   "at": "2026-01-06T11:00:00+00:00",
+   "text": "My favourite colour is teal."
+  },
+  {
+   "id": "f28",
+   "at": "2026-01-06T12:00:00+00:00",
+   "text": "My desk plant is a fern."
+  },
+  {
+   "id": "f29",
+   "at": "2026-01-06T13:00:00+00:00",
+   "text": "I collect vintage postcards."
+  },
+  {
+   "id": "f30",
+   "at": "2026-01-06T14:00:00+00:00",
+   "text": "My favourite film is a silent comedy."
+  },
+  {
+   "id": "f31",
+   "at": "2026-01-06T15:00:00+00:00",
+   "text": "I keep bees on the allotment."
+  },
+  {
+   "id": "f32",
+   "at": "2026-01-06T16:00:00+00:00",
+   "text": "My grandmother was a tailor."
+  },
+  {
+   "id": "f33",
+   "at": "2026-01-06T17:00:00+00:00",
+   "text": "I prefer window seats on flights."
+  },
+  {
+   "id": "f34",
+   "at": "2026-01-06T18:00:00+00:00",
+   "text": "My favourite fruit is mango."
+  },
+  {
+   "id": "f35",
+   "at": "2026-01-06T19:00:00+00:00",
+   "text": "I am left-handed."
+  },
+  {
+   "id": "f36",
+   "at": "2026-01-06T20:00:00+00:00",
+   "text": "My bicycle helmet is orange."
+  },
+  {
+   "id": "f37",
+   "at": "2026-01-06T21:00:00+00:00",
+   "text": "My go-to takeaway is ramen."
+  },
+  {
+   "id": "f38",
+   "at": "2026-01-06T22:00:00+00:00",
+   "text": "I write with a fountain pen."
+  },
+  {
+   "id": "f39",
+   "at": "2026-01-06T23:00:00+00:00",
+   "text": "My childhood home had a pear tree."
+  },
+  {
+   "id": "f40",
+   "at": "2026-01-07T00:00:00+00:00",
+   "text": "I volunteer at the library on weekends."
+  },
+  {
+   "id": "f41",
+   "at": "2026-01-07T01:00:00+00:00",
+   "text": "My favourite board game is about trading between islands."
+  },
+  {
+   "id": "f42",
+   "at": "2026-01-07T02:00:00+00:00",
+   "text": "My balcony faces west."
+  },
+  {
+   "id": "f43",
+   "at": "2026-01-07T03:00:00+00:00",
+   "text": "I use a paper diary for appointments."
+  },
+  {
+   "id": "f44",
+   "at": "2026-01-07T04:00:00+00:00",
+   "text": "My usual haircut is short at the sides."
+  },
+  {
+   "id": "f45",
+   "at": "2026-01-07T05:00:00+00:00",
+   "text": "I knit scarves for friends."
+  },
+  {
+   "id": "f46",
+   "at": "2026-01-07T06:00:00+00:00",
+   "text": "My kettle is a stovetop one."
+  },
+  {
+   "id": "f47",
+   "at": "2026-01-07T07:00:00+00:00",
+   "text": "I sleep with the window open."
+  },
+  {
+   "id": "f48",
+   "at": "2026-01-07T08:00:00+00:00",
+   "text": "My favourite podcast is about maps."
+  },
+  {
+   "id": "f49",
+   "at": "2026-01-07T09:00:00+00:00",
+   "text": "I take my tea with lemon."
+  },
+  {
+   "id": "f50",
+   "at": "2026-01-07T10:00:00+00:00",
+   "text": "My guitar is a nylon-string classical."
+  },
+  {
+   "id": "f51",
+   "at": "2026-01-07T11:00:00+00:00",
+   "text": "I grow tomatoes on the windowsill."
+  },
+  {
+   "id": "f52",
+   "at": "2026-01-07T12:00:00+00:00",
+   "text": "My favourite museum has a dinosaur hall."
+  },
+  {
+   "id": "f53",
+   "at": "2026-01-07T13:00:00+00:00",
+   "text": "My photo camera is a film rangefinder."
+  },
+  {
+   "id": "f54",
+   "at": "2026-01-07T14:00:00+00:00",
+   "text": "I swim on Sunday mornings."
+  },
+  {
+   "id": "f55",
+   "at": "2026-01-07T15:00:00+00:00",
+   "text": "My spare keys are with a neighbour."
+  },
+  {
+   "id": "f56",
+   "at": "2026-01-07T16:00:00+00:00",
+   "text": "My favourite pizza topping is artichoke."
+  },
+  {
+   "id": "f57",
+   "at": "2026-01-07T17:00:00+00:00",
+   "text": "I have a membership at the botanical garden."
+  },
+  {
+   "id": "f58",
+   "at": "2026-01-07T18:00:00+00:00",
+   "text": "My umbrella is a large golf one."
+  },
+  {
+   "id": "f59",
+   "at": "2026-01-07T19:00:00+00:00",
+   "text": "I learned to sail as a teenager."
+  },
+  {
+   "id": "f60",
+   "at": "2026-01-07T20:00:00+00:00",
+   "text": "My favourite mug has a fox on it."
+  }
+ ],
+ "pairs": [
+  {
+   "id": "p01",
+   "first": {
+    "at": "2026-02-02T09:00:00+00:00",
+    "text": "My office is in Berlin."
+   },
+   "second": {
+    "at": "2026-06-01T09:00:00+00:00",
+    "text": "We relocated to Munich last week, and I work there now."
+   },
+   "gold": {
+    "property": "office location",
+    "first_value": "Berlin",
+    "second_value": "Munich"
+   }
+  },
+  {
+   "id": "p02",
+   "first": {
+    "at": "2026-02-02T10:00:00+00:00",
+    "text": "I drive a blue hatchback."
+   },
+   "second": {
+    "at": "2026-06-01T10:00:00+00:00",
+    "text": "Sold that old runabout; I get around in a grey pickup now."
+   },
+   "gold": {
+    "property": "car",
+    "first_value": "blue hatchback",
+    "second_value": "grey pickup"
+   }
+  },
+  {
+   "id": "p03",
+   "first": {
+    "at": "2026-02-02T11:00:00+00:00",
+    "text": "I train at the Riverside gym on Tuesdays."
+   },
+   "second": {
+    "at": "2026-06-01T11:00:00+00:00",
+    "text": "Switched my workouts to the climbing hall near the station now."
+   },
+   "gold": {
+    "property": "gym",
+    "first_value": "Riverside gym",
+    "second_value": "climbing hall"
+   }
+  },
+  {
+   "id": "p04",
+   "first": {
+    "at": "2026-02-02T12:00:00+00:00",
+    "text": "My mobile carrier is Lumen."
+   },
+   "second": {
+    "at": "2026-06-01T12:00:00+00:00",
+    "text": "Ported my number over to Brightwave, so that is my network now."
+   },
+   "gold": {
+    "property": "mobile carrier",
+    "first_value": "Lumen",
+    "second_value": "Brightwave"
+   }
+  },
+  {
+   "id": "p05",
+   "first": {
+    "at": "2026-02-02T13:00:00+00:00",
+    "text": "I am vegetarian."
+   },
+   "second": {
+    "at": "2026-06-01T13:00:00+00:00",
+    "text": "Started eating fish again, so I am pescatarian now."
+   },
+   "gold": {
+    "property": "diet",
+    "first_value": "vegetarian",
+    "second_value": "pescatarian"
+   }
+  },
+  {
+   "id": "p06",
+   "first": {
+    "at": "2026-02-02T14:00:00+00:00",
+    "text": "I lead the payments team."
+   },
+   "second": {
+    "at": "2026-06-01T14:00:00+00:00",
+    "text": "Handed over the billing squad; I run platform reliability now."
+   },
+   "gold": {
+    "property": "team",
+    "first_value": "payments team",
+    "second_value": "platform reliability"
+   }
+  },
+  {
+   "id": "p07",
+   "first": {
+    "at": "2026-02-02T15:00:00+00:00",
+    "text": "I am learning Spanish."
+   },
+   "second": {
+    "at": "2026-06-01T15:00:00+00:00",
+    "text": "Dropped the Castilian lessons; I study Japanese now."
+   },
+   "gold": {
+    "property": "language study",
+    "first_value": "Spanish",
+    "second_value": "Japanese"
+   }
+  },
+  {
+   "id": "p08",
+   "first": {
+    "at": "2026-02-02T16:00:00+00:00",
+    "text": "My dentist is Dr. Okafor on Elm Street."
+   },
+   "second": {
+    "at": "2026-06-01T16:00:00+00:00",
+    "text": "Found a new tooth doctor, Dr. Lindqvist by the harbour, and I see her now."
+   },
+   "gold": {
+    "property": "dentist",
+    "first_value": "Dr. Okafor",
+    "second_value": "Dr. Lindqvist"
+   }
+  },
+  {
+   "id": "p09",
+   "first": {
+    "at": "2026-02-02T17:00:00+00:00",
+    "text": "I commute by train."
+   },
+   "second": {
+    "at": "2026-06-01T17:00:00+00:00",
+    "text": "Bought an e-bike; I cycle everywhere now."
+   },
+   "gold": {
+    "property": "commute",
+    "first_value": "train",
+    "second_value": "e-bike"
+   }
+  },
+  {
+   "id": "p10",
+   "first": {
+    "at": "2026-02-02T18:00:00+00:00",
+    "text": "I live on the third floor."
+   },
+   "second": {
+    "at": "2026-06-01T18:00:00+00:00",
+    "text": "I moved downstairs to a ground-level flat in the same building."
+   },
+   "gold": {
+    "property": "home floor",
+    "first_value": "third floor",
+    "second_value": "ground-level flat"
+   }
+  },
+  {
+   "id": "p11",
+   "first": {
+    "at": "2026-02-02T19:00:00+00:00",
+    "text": "My bank is Northfield Savings."
+   },
+   "second": {
+    "at": "2026-06-01T19:00:00+00:00",
+    "text": "Closed that account; my money sits with Harbourline Credit Union now."
+   },
+   "gold": {
+    "property": "bank",
+    "first_value": "Northfield Savings",
+    "second_value": "Harbourline Credit Union"
+   }
+  },
+  {
+   "id": "p12",
+   "first": {
+    "at": "2026-02-02T20:00:00+00:00",
+    "text": "I play the cello in a quartet."
+   },
+   "second": {
+    "at": "2026-06-01T20:00:00+00:00",
+    "text": "Gave up strings; I sing tenor in a choir now."
+   },
+   "gold": {
+    "property": "music hobby",
+    "first_value": "cello",
+    "second_value": "tenor"
+   }
+  },
+  {
+   "id": "p13",
+   "first": {
+    "at": "2026-02-02T21:00:00+00:00",
+    "text": "I work night shifts."
+   },
+   "second": {
+    "at": "2026-06-01T21:00:00+00:00",
+    "text": "My hours changed to daytime, nine to five."
+   },
+   "gold": {
+    "property": "working hours",
+    "first_value": "night shifts",
+    "second_value": "daytime"
+   }
+  },
+  {
+   "id": "p14",
+   "first": {
+    "at": "2026-02-02T22:00:00+00:00",
+    "text": "My manager is Robin."
+   },
+   "second": {
+    "at": "2026-06-01T22:00:00+00:00",
+    "text": "Sam took over as my boss this month, so I report to Sam now."
+   },
+   "gold": {
+    "property": "manager",
+    "first_value": "Robin",
+    "second_value": "Sam"
+   }
+  },
+  {
+   "id": "p15",
+   "first": {
+    "at": "2026-02-02T23:00:00+00:00",
+    "text": "I drink my coffee black."
+   },
+   "second": {
+    "at": "2026-06-01T23:00:00+00:00",
+    "text": "Adding oat milk and sugar to my brew these days instead."
+   },
+   "gold": {
+    "property": "coffee",
+    "first_value": "black",
+    "second_value": "oat milk and sugar"
+   }
+  },
+  {
+   "id": "p16",
+   "first": {
+    "at": "2026-02-03T00:00:00+00:00",
+    "text": "Our daughter attends Maple Primary."
+   },
+   "second": {
+    "at": "2026-06-02T00:00:00+00:00",
+    "text": "The kid switched to Cedar Academy this term, so that is her school now."
+   },
+   "gold": {
+    "property": "school",
+    "first_value": "Maple Primary",
+    "second_value": "Cedar Academy"
+   }
+  },
+  {
+   "id": "p17",
+   "first": {
+    "at": "2026-02-03T01:00:00+00:00",
+    "text": "I support the Rovers."
+   },
+   "second": {
+    "at": "2026-06-02T01:00:00+00:00",
+    "text": "Became a United fan after the transfer saga; I cheer for them now."
+   },
+   "gold": {
+    "property": "football team",
+    "first_value": "the Rovers",
+    "second_value": "United"
+   }
+  },
+  {
+   "id": "p18",
+   "first": {
+    "at": "2026-02-03T02:00:00+00:00",
+    "text": "My laptop runs Windows."
+   },
+   "second": {
+    "at": "2026-06-02T02:00:00+00:00",
+    "text": "Wiped the notebook; it boots Linux now."
+   },
+   "gold": {
+    "property": "laptop system",
+    "first_value": "Windows",
+    "second_value": "Linux"
+   }
+  },
+  {
+   "id": "p19",
+   "first": {
+    "at": "2026-02-03T03:00:00+00:00",
+    "text": "Our book club meets on Thursdays."
+   },
+   "second": {
+    "at": "2026-06-02T03:00:00+00:00",
+    "text": "The reading circle gathers on Sundays now."
+   },
+   "gold": {
+    "property": "book club day",
+    "first_value": "Thursdays",
+    "second_value": "Sundays"
+   }
+  },
+  {
+   "id": "p20",
+   "first": {
+    "at": "2026-02-03T04:00:00+00:00",
+    "text": "I park in lot C."
+   },
+   "second": {
+    "at": "2026-06-02T04:00:00+00:00",
+    "text": "Got a spot in the underground garage now."
+   },
+   "gold": {
+    "property": "parking",
+    "first_value": "lot C",
+    "second_value": "the underground garage"
+   }
+  }
+ ],
+ "controls": [
+  {
+   "id": "c01",
+   "first": {
+    "at": "2026-02-04T01:00:00+00:00",
+    "text": "My studio is in Leipzig."
+   },
+   "second": {
+    "at": "2026-06-03T01:00:00+00:00",
+    "text": "My brother moved to Dresden now."
+   },
+   "gold": {
+    "first_property": "studio location",
+    "first_value": "Leipzig",
+    "second_property": "brother location",
+    "second_value": "Dresden"
+   }
+  },
+  {
+   "id": "c02",
+   "first": {
+    "at": "2026-02-04T02:00:00+00:00",
+    "text": "My mother's car is a red estate."
+   },
+   "second": {
+    "at": "2026-06-03T02:00:00+00:00",
+    "text": "My father switched to a silver coupe now."
+   },
+   "gold": {
+    "first_property": "mother's car",
+    "first_value": "red estate",
+    "second_property": "father's car",
+    "second_value": "silver coupe"
+   }
+  },
+  {
+   "id": "c03",
+   "first": {
+    "at": "2026-02-04T03:00:00+00:00",
+    "text": "My sister's dog is a terrier."
+   },
+   "second": {
+    "at": "2026-06-03T03:00:00+00:00",
+    "text": "Our neighbour keeps a beagle now."
+   },
+   "gold": {
+    "first_property": "sister's dog",
+    "first_value": "terrier",
+    "second_property": "neighbour's dog",
+    "second_value": "beagle"
+   }
+  },
+  {
+   "id": "c04",
+   "first": {
+    "at": "2026-02-04T04:00:00+00:00",
+    "text": "My old school friend lives in Porto."
+   },
+   "second": {
+    "at": "2026-06-03T04:00:00+00:00",
+    "text": "My godson moved to Lisbon now."
+   },
+   "gold": {
+    "first_property": "friend's city",
+    "first_value": "Porto",
+    "second_property": "godson's city",
+    "second_value": "Lisbon"
+   }
+  },
+  {
+   "id": "c05",
+   "first": {
+    "at": "2026-02-04T05:00:00+00:00",
+    "text": "Our team standup is at nine."
+   },
+   "second": {
+    "at": "2026-06-03T05:00:00+00:00",
+    "text": "The retrospective moved to Friday afternoons now."
+   },
+   "gold": {
+    "first_property": "standup time",
+    "first_value": "nine",
+    "second_property": "retrospective time",
+    "second_value": "Friday afternoons"
+   }
+  },
+  {
+   "id": "c06",
+   "first": {
+    "at": "2026-02-04T06:00:00+00:00",
+    "text": "My landlord is Mr. Adeyemi."
+   },
+   "second": {
+    "at": "2026-06-03T06:00:00+00:00",
+    "text": "The building caretaker changed to Ms. Novak now."
+   },
+   "gold": {
+    "first_property": "landlord",
+    "first_value": "Mr. Adeyemi",
+    "second_property": "caretaker",
+    "second_value": "Ms. Novak"
+   }
+  },
+  {
+   "id": "c07",
+   "first": {
+    "at": "2026-02-04T07:00:00+00:00",
+    "text": "My partner works nights."
+   },
+   "second": {
+    "at": "2026-06-03T07:00:00+00:00",
+    "text": "My sister's shifts changed to early mornings now."
+   },
+   "gold": {
+    "first_property": "partner's hours",
+    "first_value": "nights",
+    "second_property": "sister's hours",
+    "second_value": "early mornings"
+   }
+  },
+  {
+   "id": "c08",
+   "first": {
+    "at": "2026-02-04T08:00:00+00:00",
+    "text": "My home internet provider is Fibrelink."
+   },
+   "second": {
+    "at": "2026-06-03T08:00:00+00:00",
+    "text": "The office switched its phone contract to Callway now."
+   },
+   "gold": {
+    "first_property": "home internet",
+    "first_value": "Fibrelink",
+    "second_property": "office phone contract",
+    "second_value": "Callway"
+   }
+  },
+  {
+   "id": "c09",
+   "first": {
+    "at": "2026-02-04T09:00:00+00:00",
+    "text": "My running shoes are size 42."
+   },
+   "second": {
+    "at": "2026-06-03T09:00:00+00:00",
+    "text": "My hiking boots changed to a 43 now."
+   },
+   "gold": {
+    "first_property": "running shoes",
+    "first_value": "42",
+    "second_property": "hiking boots",
+    "second_value": "43"
+   }
+  },
+  {
+   "id": "c10",
+   "first": {
+    "at": "2026-02-04T10:00:00+00:00",
+    "text": "My daughter's piano teacher is Ms. Varga."
+   },
+   "second": {
+    "at": "2026-06-03T10:00:00+00:00",
+    "text": "Our son's violin tutor changed to Mr. Pohl now."
+   },
+   "gold": {
+    "first_property": "daughter's piano teacher",
+    "first_value": "Ms. Varga",
+    "second_property": "son's violin tutor",
+    "second_value": "Mr. Pohl"
+   }
+  }
+ ]
+}

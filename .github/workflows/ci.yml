@@ -1,0 +1,524 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # A tagged release runs these same checks on its own commit and publishes
+  # the resulting artifacts, rather than rebuilding after qualification.
+  workflow_call:
+
+# These checks read the repository and nothing more: no job writes to it, to a pull request or to a registry.
+permissions:
+  contents: read
+
+env:
+  # Stock Hermes v2026.9.14 (0.21.3): the qualified floor for install, first-loop and container checks.
+  HERMES_REF: 345cd2b057a452236de401d3534b8502a7465e8d
+  PYTHONDONTWRITEBYTECODE: "1"
+  # Stock Hermes v0.21.7, for both adapter jobs: the release the adapter suite is qualified on (the suite and the
+  # adapter's archive child use interfaces that 0.21.7 introduced), and the first whose requires-python admits 3.14.
+  HERMES_REF_ADAPTER_SUITE: 71d34bad1045610252eda02ee79549436896e784
+  # Stock Hermes v0.23.1, the release Hermes' own installer brings today: the adapter suite runs on it as well.
+  HERMES_REF_ADAPTER_SUITE_023: 3b421578588243f920886e6fe79a6faa87ea026e
+
+jobs:
+  # Every workflow file: expressions, contexts and action inputs, and the shell of each run step through the
+  # runner's shellcheck. The linter is a pinned release, checked against its published checksum.
+  workflows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Lint the workflow files
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL -o "${RUNNER_TEMP}/${archive}" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}"
+          echo "${ACTIONLINT_SHA256}  ${RUNNER_TEMP}/${archive}" | sha256sum --check --strict
+          tar -xzf "${RUNNER_TEMP}/${archive}" -C "${RUNNER_TEMP}" actionlint
+          "${RUNNER_TEMP}/actionlint" -color
+
+  artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements/release-py312.txt
+      # The next three steps stand before anything is installed or built: the checkout is still as git left it.
+      - name: Every place that holds the version holds the same one
+        run: python scripts/set_version.py --check
+      # GITHUB_REF_TYPE and GITHUB_REF_NAME are the runner's own variables; in a release they are the tag's.
+      - name: A release tag is v plus that version (does nothing unless the run is for a tag that starts with v)
+        run: |
+          case "${GITHUB_REF_TYPE}/${GITHUB_REF_NAME}" in
+            tag/v*) ;;
+            *) exit 0 ;;
+          esac
+          version="$(python scripts/set_version.py --check)"
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not fit version ${version}: a release tag is v plus the version, v${version}" >&2
+            exit 1
+          fi
+          echo "tag ${GITHUB_REF_NAME} fits version ${version}"
+      # The script prints the stamp's facts. Both distributions of the sidecar carry the file it writes
+      # (sidecar/pyproject.toml, package-data). A tag checks out no branch, so its stamp names none.
+      - name: Write the build stamp (a tag is built only from a tree without uncommitted changes)
+        run: |
+          python scripts/write_build_stamp.py
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            python -c 'import json, sys; sys.exit(1 if json.load(open("sidecar/colonymind/build_stamp.json"))["dirty"] else 0)' || {
+              echo "the build stamp says the tree had uncommitted changes: a tag is not built from such a tree" >&2
+              git status --short >&2
+              exit 1
+            }
+          fi
+      - name: Install qualified build and quality tools
+        run: python -m pip install -c requirements/release-py312.txt '.[test,quality]'
+      - name: Check fatal errors
+        run: python -m ruff check sidecar/colonymind sidecar/colonymind/session_archive sidecar/colonymind_hand_context sidecar/colonymind_shared plugins/hermes-plugin plugins/colonymind-memory plugins/instinct-gates plugins/colonymind-hands scripts/qualify_artifacts.py scripts/check_hermes_record.py scripts/check_sidecar_skips.py scripts/secret_scan.py scripts/genericity_scan.py scripts/check_doc_links.py scripts/get_started_commands.py tests/hermes_adapter sidecar/tests benchmarks/working_memory benchmarks/paired/generators
+      - name: Secret scan of every tracked file (synthetic fixtures are marked; docs/SECRETS.md)
+        run: python scripts/secret_scan.py
+      # The repository's generic rules only: a deployment's own denylist stays on its own machines
+      # (CONTRIBUTING.md, The genericity rule).
+      - name: Genericity scan of every tracked file (no deployment's people, hosts, addresses or endpoints)
+        run: python scripts/genericity_scan.py
+      - name: Every link in the docs reaches its file and heading
+        run: python scripts/check_doc_links.py
+      - name: Build distributions from source archives
+        run: |
+          python -m build --no-isolation --outdir dist .
+          python -m build --no-isolation --outdir dist ./sidecar
+          python -m twine check dist/*
+      - name: Qualify installed artifacts and record resolved dependencies
+        run: |
+          python scripts/qualify_artifacts.py --dist dist --constraints requirements/release-py312.txt --output artifact-qualification
+          python -m pip list --format=json > artifact-qualification/build-packages.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-distributions
+          path: dist/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: artifact-qualification
+          path: artifact-qualification/
+          if-no-files-found: warn
+
+  # The plan's fresh-install test: stock Hermes in its own environment, the
+  # built wheels, init, pip check, RECORD, upgrade twice, doctor, uninstall.
+  fresh-install:
+    runs-on: ubuntu-latest
+    needs: artifacts
+    strategy:
+      # Every Python the packages accept (requires-python); one version's failure does not cancel the others.
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-distributions
+          path: dist/
+      - uses: actions/checkout@v6
+        with:
+          repository: NousResearch/hermes-agent
+          ref: ${{ env.HERMES_REF }}
+          path: .qualification/hermes
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install, check, upgrade twice, uninstall against stock Hermes
+        env:
+          HERMES_SRC: ${{ github.workspace }}/.qualification/hermes
+          DIST_DIR: ${{ github.workspace }}/dist
+        run: bash scripts/ci_fresh_install.sh
+      - name: Remember in one session, recall in another (acceptance test 1)
+        env:
+          HERMES_SRC: ${{ github.workspace }}/.qualification/hermes
+          DIST_DIR: ${{ github.workspace }}/dist
+        run: bash scripts/ci_recall_probe.sh
+      - name: The first closed loop on stock Hermes (build plan M2 acceptance)
+        env:
+          HERMES_SRC: ${{ github.workspace }}/.qualification/hermes
+          DIST_DIR: ${{ github.workspace }}/dist
+        run: bash scripts/ci_mind_loop.sh
+      - name: The keyless demo from the built wheel (runtime and success)
+        env:
+          DIST_DIR: ${{ github.workspace }}/dist
+        run: bash scripts/ci_demo.sh
+
+  # Hermes as its own installer sets it up for a new user, pinned to one release: one Hermes home, Hermes' own
+  # environment (it has no pip) and uv on PATH. Then the four proof steps of fresh-install, through the same
+  # scripts: they read HERMES_INSTALLER_HOME and use that home in place of a Hermes they would build themselves.
+  fresh-install-installer:
+    runs-on: ubuntu-latest
+    needs: artifacts
+    env:
+      DIST_DIR: ${{ github.workspace }}/dist
+    steps:
+      # This job runs Hermes' install script as it is served on the day: the checkout's token stays out of the
+      # workspace that script can read.
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-distributions
+          path: dist/
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install uv, with which colonymind init reaches an environment that has no pip
+        run: python -m pip install 'uv==0.11.31'
+      - name: Set up Hermes 0.23.1 with Hermes' installer
+        run: |
+          curl -fsSL https://hermes-agent.nousresearch.com/install.sh -o "${RUNNER_TEMP}/hermes-install.sh"
+          bash "${RUNNER_TEMP}/hermes-install.sh" --branch v0.23.1
+          "${HOME}/.local/bin/hermes" --version
+          # For the steps below: the installer's launcher on PATH, its one Hermes home and its checkout.
+          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+          {
+            echo "HERMES_INSTALLER_HOME=${HOME}/.hermes"
+            echo "HERMES_SRC=${HOME}/.hermes/hermes-agent"
+          } >> "${GITHUB_ENV}"
+      - name: Install, check, upgrade twice, uninstall against stock Hermes
+        run: bash scripts/ci_fresh_install.sh
+      - name: Remember in one session, recall in another (acceptance test 1)
+        run: bash scripts/ci_recall_probe.sh
+      - name: The first closed loop on stock Hermes (build plan M2 acceptance)
+        run: bash scripts/ci_mind_loop.sh
+      - name: The keyless demo from the built wheel (runtime and success)
+        run: bash scripts/ci_demo.sh
+
+  # The README's "Get started" commands as a reader copies them (scripts/get_started_commands.py reads them from the
+  # page), on a fresh machine with stock Hermes and the distributions the artifacts job qualified in place of the
+  # package index. The page installs with --python 3.12, so this runs on 3.12.
+  get-started:
+    runs-on: ubuntu-latest
+    needs: artifacts
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-distributions
+          path: dist/
+      - uses: actions/checkout@v6
+        with:
+          repository: NousResearch/hermes-agent
+          ref: ${{ env.HERMES_REF }}
+          path: .qualification/hermes
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install uv, the page's installer
+        run: python -m pip install 'uv==0.11.31'
+      - name: Install, init and the gateway restart, as the README shows them
+        env:
+          HERMES_SRC: ${{ github.workspace }}/.qualification/hermes
+          DIST_DIR: ${{ github.workspace }}/dist
+        run: bash scripts/ci_get_started.sh
+
+  hermes-adapter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: artifacts
+    env:
+      COLONYMIND_DISTRIBUTIONS_DIR: ${{ github.workspace }}/dist
+      HERMES_SOURCE_ROOT: ${{ github.workspace }}/.qualification/hermes
+    strategy:
+      # Every Python the packages accept (requires-python); one version's failure does not cancel the others.
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v6
+      # Hermes and the sidecar's ML dependencies need room beside the runner's preinstalled SDKs.
+      - name: Free disk space for Python dependencies
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-distributions
+          path: dist/
+      - uses: actions/checkout@v6
+        with:
+          # Stock Hermes source; the install step lifts dependency markers for this test interpreter.
+          repository: NousResearch/hermes-agent
+          ref: ${{ env.HERMES_REF_ADAPTER_SUITE }}
+          path: .qualification/hermes
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            sidecar/pyproject.toml
+            .qualification/hermes/pyproject.toml
+      - name: Install stock Hermes and the built adapter
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ripgrep
+          rg --version
+          adapter=(dist/colonymind_hermes-*.whl)
+          sidecar=(dist/colonymind-*.whl)
+          [ "${#adapter[@]}" -eq 1 ]
+          [ "${#sidecar[@]}" -eq 1 ]
+          # From 0.21.7 on, stock Hermes declares each of its dependencies for Python 3.14 and newer only, and
+          # the sidecar requires <3.14. On this job's interpreters pip would install Hermes without a single
+          # dependency, so the step hands pip the checkout's own list, unchanged but for that one marker.
+          # Hermes' code and its pins stay as released.
+          python - <<'PY'
+          import os, re, tomllib
+          from pathlib import Path
+          project = tomllib.loads(Path(".qualification/hermes/pyproject.toml").read_text())["project"]
+          only_314 = re.compile(r"\s*(?:;|\band)\s*python_version\s*>=\s*'3\.14'\s*$")
+          lines = [only_314.sub("", dependency) for dependency in project["dependencies"]]
+          assert lines and not any("python_version" in line for line in lines), lines
+          Path(os.environ["RUNNER_TEMP"], "hermes-dependencies.txt").write_text("\n".join(lines) + "\n")
+          PY
+          # One resolver run: pip chooses the wheels' dependencies with the pins of the Hermes checkout in view.
+          python -m pip install -e ./.qualification/hermes -r "${RUNNER_TEMP}/hermes-dependencies.txt" "${adapter[0]}[test]" "${sidecar[0]}"
+          python -m pip check
+      - name: Qualify the adapter against stock Hermes
+        run: python -m pytest tests/hermes_adapter tests/test_hardware_latency.py tests/test_set_version.py -q --durations=0 --junitxml=hermes-adapter-results.xml
+      - name: Check adapter skips and failures
+        if: always()
+        run: python scripts/check_sidecar_skips.py hermes-adapter-results.xml
+      - name: Qualify the recall harness
+        run: python -m pytest benchmarks/source_recall/test_harness.py -q --durations=0 --junitxml=source-recall-results.xml
+      - name: Retain test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hermes-adapter-results-py${{ matrix.python-version }}
+          path: '*-results*.xml'
+
+  # The adapter accepts 3.14 inside Hermes; the sidecar requires <3.14 and stays out of this interpreter.
+  hermes-adapter-py314:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: artifacts
+    env:
+      COLONYMIND_DISTRIBUTIONS_DIR: ${{ github.workspace }}/dist
+      HERMES_SOURCE_ROOT: ${{ github.workspace }}/.qualification/hermes
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-distributions
+          path: dist/
+      - uses: actions/checkout@v6
+        with:
+          # Stock Hermes from the first release that installs on 3.14; earlier releases declare <3.14.
+          repository: NousResearch/hermes-agent
+          ref: ${{ env.HERMES_REF_ADAPTER_SUITE }}
+          path: .qualification/hermes
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            .qualification/hermes/pyproject.toml
+      - name: Install stock Hermes and only the built adapter
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ripgrep
+          rg --version
+          adapter=(dist/colonymind_hermes-*.whl)
+          [ "${#adapter[@]}" -eq 1 ]
+          # One resolver run: pip chooses the wheel's dependencies with the pins of the Hermes checkout in view.
+          python -m pip install -e ./.qualification/hermes "${adapter[0]}[test]"
+          python -c "import importlib.util; assert importlib.util.find_spec('colonymind') is None, 'sidecar must be absent'"
+          python -m pip check
+      - name: Qualify the adapter without the sidecar
+        run: python -m pytest tests/hermes_adapter -q --durations=0 --junitxml=hermes-adapter-results.xml
+      - name: Account for every sidecar skip
+        if: ${{ !cancelled() }}
+        run: python scripts/check_sidecar_skips.py hermes-adapter-results.xml
+      - name: Retain test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hermes-adapter-results-py3.14
+          path: '*-results*.xml'
+
+  # The adapter suite on stock Hermes 0.23.1: Python 3.14 and no sidecar, as hermes-adapter-py314 runs it on 0.21.7.
+  hermes-adapter-hermes023:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: artifacts
+    env:
+      COLONYMIND_DISTRIBUTIONS_DIR: ${{ github.workspace }}/dist
+      HERMES_SOURCE_ROOT: ${{ github.workspace }}/.qualification/hermes
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-distributions
+          path: dist/
+      - uses: actions/checkout@v6
+        with:
+          repository: NousResearch/hermes-agent
+          ref: ${{ env.HERMES_REF_ADAPTER_SUITE_023 }}
+          path: .qualification/hermes
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            .qualification/hermes/pyproject.toml
+      - name: Install stock Hermes and only the built adapter
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ripgrep
+          rg --version
+          adapter=(dist/colonymind_hermes-*.whl)
+          [ "${#adapter[@]}" -eq 1 ]
+          # Hermes 0.23.1 pins Pillow 13.0.0 beside a browser-harness that asks for Pillow 12.3.0, and pip stops
+          # there. Hermes' own installer resolves with uv and the override list of the checkout's pyproject.toml
+          # ([tool.uv] override-dependencies). This step hands uv that list, unchanged.
+          python -m pip install 'uv==0.11.31'
+          python - <<'PY'
+          import os, tomllib
+          from pathlib import Path
+          project = tomllib.loads(Path(".qualification/hermes/pyproject.toml").read_text())
+          overrides = project["tool"]["uv"]["override-dependencies"]
+          assert any(line.lower().startswith("pillow==") for line in overrides), overrides
+          Path(os.environ["RUNNER_TEMP"], "hermes-overrides.txt").write_text("\n".join(overrides) + "\n")
+          PY
+          # One resolver run: uv chooses the wheel's dependencies with the pins of the Hermes checkout in view.
+          uv pip install --python "$(command -v python)" --overrides "${RUNNER_TEMP}/hermes-overrides.txt" \
+            -e ./.qualification/hermes "${adapter[0]}[test]"
+          python -c "import importlib.util; assert importlib.util.find_spec('colonymind') is None, 'sidecar must be absent'"
+          # pip check may name the one conflict Hermes ships with, the older Pillow browser-harness asks for,
+          # and nothing else.
+          python - <<'PY'
+          import subprocess, sys
+          lines = subprocess.run([sys.executable, "-m", "pip", "check"], capture_output=True, text=True).stdout.splitlines()
+          print("\n".join(lines))
+          others = [line for line in lines if not (line.startswith("browser-harness ") and "pillow" in line.lower())]
+          assert others in ([], ["No broken requirements found."]), others
+          PY
+      - name: Qualify the adapter without the sidecar
+        run: python -m pytest tests/hermes_adapter -q --durations=0 --junitxml=hermes-adapter-results.xml
+      - name: Account for every sidecar skip
+        if: ${{ !cancelled() }}
+        run: python scripts/check_sidecar_skips.py hermes-adapter-results.xml
+      - name: Retain test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hermes-adapter-results-hermes023
+          path: '*-results*.xml'
+
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      # Every Python the packages accept (requires-python); one version's failure does not cancel the others.
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v6
+      # Two isolated Hermes installs and the sidecar's ML dependencies exceed the runner's spare disk.
+      - name: Free disk space for Python dependencies
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+      - uses: actions/checkout@v6
+        with:
+          repository: NousResearch/hermes-agent
+          ref: ${{ env.HERMES_REF }}
+          path: .qualification/hermes
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: sidecar/pyproject.toml
+      - name: Install the sidecar and a stock Hermes for the install tests
+        run: |
+          pip install -e "./sidecar[dev]" -e .
+          python -m venv .qualification/hermes-venv
+          .qualification/hermes-venv/bin/python -m pip install --quiet --upgrade pip
+          .qualification/hermes-venv/bin/python -m pip install --quiet -e ./.qualification/hermes .
+      - name: Run tests
+        env:
+          SUITE_PRIVATE_ROOT: ${{ runner.temp }}
+          TMPDIR: ${{ runner.temp }}
+          COLONYMIND_TEST_HERMES_PYTHON: ${{ github.workspace }}/.qualification/hermes-venv/bin/python
+        working-directory: sidecar
+        run: pytest tests/ -v
+      # The paired worker runs inside Hermes; the tests that drive it in-process skip above (no Hermes in
+      # the sidecar's interpreter) and run here with stock Hermes installed.
+      - name: Install stock Hermes into the test interpreter
+        if: ${{ !cancelled() }}
+        run: pip install -e ./.qualification/hermes
+      - name: Run the worker tests that need Hermes in-process
+        if: ${{ !cancelled() }}
+        env:
+          SUITE_PRIVATE_ROOT: ${{ runner.temp }}
+          TMPDIR: ${{ runner.temp }}
+        working-directory: sidecar
+        run: >-
+          pytest -v tests/test_people_family_walk.py tests/test_people_acceptance.py
+          tests/test_m8_arm_contrasts.py tests/test_paired_people_instrument.py
+          tests/test_qualification_paired_campaign.py tests/test_outreach_family_walk.py
+          tests/test_session_reparent.py tests/test_device_boundary.py tests/test_owner_continuity.py
+          tests/test_owner_continuity_review.py tests/test_hands_authority_plugin.py
+
+  # The container quickstart (docker/): stock Hermes' own image, pinned by digest, plus the distributions the
+  # artifacts job qualified. Every run builds it and runs the smoke inside it; a tag keeps the image it checked,
+  # which the Release workflow publishes as it is.
+  docker:
+    runs-on: ubuntu-latest
+    needs: artifacts
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-distributions
+          path: dist/
+      - uses: docker/setup-buildx-action@v4
+      - name: Build the quickstart image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: false
+          load: true
+          tags: colonymind-qualified:${{ github.sha }}
+      - name: Doctor, memory across Hermes sessions, the keyless demo, a restart and a new owner uid, inside the container
+        env:
+          IMAGE: colonymind-qualified:${{ github.sha }}
+        run: bash docker/smoke.sh
+      - name: Save the qualified release image
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          docker save --output "${RUNNER_TEMP}/colonymind-image.tar" "colonymind-qualified:${GITHUB_SHA}"
+          docker image inspect "colonymind-qualified:${GITHUB_SHA}" --format '{{.Id}}' > "${RUNNER_TEMP}/colonymind-image-id.txt"
+      - name: Retain the qualified release image
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-container
+          path: |
+            ${{ runner.temp }}/colonymind-image.tar
+            ${{ runner.temp }}/colonymind-image-id.txt
+          compression-level: 0
+          retention-days: 3
+          if-no-files-found: error

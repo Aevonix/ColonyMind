@@ -1,0 +1,425 @@
+"""Sidecar client: settings, bearer key, short timeouts and a circuit breaker."""
+
+from __future__ import annotations
+
+import contextvars
+from dataclasses import dataclass
+import json
+import logging
+import os
+from pathlib import Path
+import re
+import threading
+import time
+from typing import Any, Callable, Mapping
+
+import httpx
+
+logger = logging.getLogger(__name__)
+
+PLUGIN_ID = "colonymind"
+WORKER_PROFILE = "colonymind-act"
+DEFAULT_URL = "http://127.0.0.1:7777"
+MIND_STATE_ROUTE = "/v1/mind/state"
+NARRATIVE_ROUTE = "/v1/mind/narrative"
+# The constitution (architecture 4.2): identity.yaml agent.{name, values, boundaries} rendered as one
+# paragraph of at most 1,500 characters. The same render as colonymind.config.render_constitution,
+# repeated here because the adapter never imports the sidecar.
+CONSTITUTION_CHARS = 1500
+CONSTITUTION_ITEMS = 12
+CONSTITUTION_ITEM_CHARS = 160
+
+
+# The session a hook or tool call acts for, sent as ``X-ColonyMind-Session``: the sidecar refuses memory, people and
+# answer routes to a registered hand session even where the request body names no session.
+ACTING_SESSION: contextvars.ContextVar[str] = contextvars.ContextVar("colonymind_acting_session", default="")
+
+
+def acting(session: Any, call: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
+    """Run ``call`` with the client's requests naming ``session``."""
+    token = ACTING_SESSION.set(str(session or ""))
+    try:
+        return call(*args, **kwargs)
+    finally:
+        ACTING_SESSION.reset(token)
+
+
+class SidecarUnavailable(RuntimeError):
+    """The sidecar gave no answer: connection refused, timeout or open breaker."""
+
+    def __init__(self, message: str = "", *, delivered: bool = False):
+        super().__init__(message)
+        self.delivered = delivered
+
+
+def final_answer(reason: str, *, block: bool = False) -> Any:
+    """The one answer for a plugin tool call that cannot succeed this turn, whatever asked: ``retry: false``,
+    which the memory provider's system note calls final, so the model answers instead of spending the turn's
+    iterations on other spellings. A tool returns the JSON; the guard (``block``) a ``pre_tool_call`` block,
+    whose message Hermes hands the model as the call's error."""
+    if block:
+        return {"action": "block", "message": f"{reason} (retry: false)"}
+    return json.dumps({"unavailable": True, "retry": False, "reason": reason}, ensure_ascii=False)
+
+
+# The request never reached the sidecar; any other transport error may have.
+_NOT_SENT = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout, httpx.UnsupportedProtocol,
+             httpx.ProxyError)
+
+
+def hermes_home() -> Path:
+    try:
+        from hermes_constants import get_hermes_home
+        return Path(get_hermes_home()).expanduser()
+    except ImportError:
+        return Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes").expanduser()
+
+
+def hermes_config() -> dict[str, Any]:
+    """The merged Hermes config; falls back to the raw file outside Hermes."""
+    try:
+        from hermes_cli.config import load_config_readonly
+        loaded = load_config_readonly()
+        return loaded if isinstance(loaded, Mapping) else {}
+    except Exception:
+        return read_yaml(hermes_home() / "config.yaml")
+
+
+def plugin_section(config: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    config = hermes_config() if config is None else config
+    plugins = config.get("plugins") if isinstance(config, Mapping) else None
+    section = plugins.get(PLUGIN_ID) if isinstance(plugins, Mapping) else None
+    return dict(section) if isinstance(section, Mapping) else {}
+
+
+_YAML_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_YAML_LOCK = threading.Lock()
+
+
+def read_yaml(path: str | os.PathLike[str]) -> dict[str, Any]:
+    """Read a YAML mapping, cached by mtime; missing or invalid files read as {}."""
+    path = Path(path)
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return {}
+    with _YAML_LOCK:
+        cached = _YAML_CACHE.get(str(path))
+        if cached is not None and cached[0] == mtime:
+            return cached[1]
+    try:
+        import yaml
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        value = dict(loaded) if isinstance(loaded, Mapping) else {}
+    except Exception as error:
+        logger.warning("could not read %s: %s", path.name, type(error).__name__)
+        value = {}
+    with _YAML_LOCK:
+        _YAML_CACHE[str(path)] = (mtime, value)
+    return value
+
+
+def constitution_list(value: Any) -> list[str]:
+    """``agent.values`` or ``agent.boundaries``: at most 12 distinct one-line strings of 1 to 160 characters."""
+    if not isinstance(value, (list, tuple)):
+        return []
+    items: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        text = " ".join(item.split())
+        if 1 <= len(text) <= CONSTITUTION_ITEM_CHARS and text not in items:
+            items.append(text)
+        if len(items) >= CONSTITUTION_ITEMS:
+            break
+    return items
+
+
+def render_constitution(identity: Any, *, limit: int | None = CONSTITUTION_CHARS) -> str:
+    """``You are <name>. Your values: a; b. Your boundaries: x; y.``, empty lists omitted; over ``limit``, whole
+    values held back from the last, then boundaries, and said (the sidecar's render, which must not drift)."""
+    agent = identity.get("agent") if isinstance(identity, Mapping) else None
+    agent = agent if isinstance(agent, Mapping) else {}
+    name = " ".join(str(agent.get("name") or "").split())
+    values, boundaries = constitution_list(agent.get("values")), constitution_list(agent.get("boundaries"))
+    held = 0
+    while True:
+        text = " ".join(part for part in (
+            f"You are {name}." if name else "", "Your values: " + "; ".join(values) + "." if values else "",
+            "Your boundaries: " + "; ".join(boundaries) + "." if boundaries else "",
+            f"({held} more item{'' if held == 1 else 's'} held back: over the {limit}-character limit.)" if held else "")
+            if part)
+        if limit is None or len(text) <= limit or not (values or boundaries):
+            return text if limit is None else text[:limit]
+        (values or boundaries).pop()
+        held += 1
+
+
+@dataclass
+class Settings:
+    sidecar_url: str
+    key_file: Path
+    api_key: str
+    home: Path
+    hermes_home: Path
+    outbox_path: Path
+    worker_profile: str = WORKER_PROFILE
+    body_ledger_path: Path | None = None
+    tool_origin_servers: tuple[str, ...] = ("google",)
+
+    def mind(self) -> dict[str, Any]:
+        value = read_yaml(self.home / "colonymind.yaml").get("mind")
+        return dict(value) if isinstance(value, Mapping) else {}
+
+    def guests(self) -> dict[str, frozenset[str]]:
+        """``guests`` in ``colonymind.yaml`` (docs/HERMES-ADAPTER.md, Owner and guest), the operator's explicit opt-ins:
+        ``executor_platforms``, the platforms whose non-owner sessions keep every tool, and ``tools``, the extra tools
+        a non-owner session may call anywhere (never one that runs this machine). A list counts only when every
+        entry is a non-empty name; anything else opts nothing in."""
+        section = read_yaml(self.home / "colonymind.yaml").get("guests")
+        section = section if isinstance(section, Mapping) else {}
+
+        def names(key: str, lower: bool) -> frozenset[str]:
+            value = section.get(key)
+            if not isinstance(value, list) or not all(isinstance(item, str) and item.strip() for item in value):
+                return frozenset()
+            return frozenset(item.strip().lower() if lower else item.strip() for item in value)
+        return {"executor_platforms": names("executor_platforms", True), "tools": names("tools", False)}
+
+    def identity(self) -> dict[str, Any]:
+        return read_yaml(self.home / "identity.yaml")
+
+    def constitution(self) -> str:
+        """The owner-authored constitution from ``identity.yaml``, at most 1,500 characters."""
+        return render_constitution(self.identity())
+
+    def budget(self, name: str, default: int) -> int:
+        """One ``mind.budgets`` value from ``colonymind.yaml`` (architecture 7.1)."""
+        budgets = self.mind().get("budgets")
+        value = budgets.get(name) if isinstance(budgets, Mapping) else None
+        try:
+            return int(value) if value is not None else default
+        except (TypeError, ValueError):
+            return default
+
+    def owner_handles(self) -> dict[str, list[str]]:
+        """The owner's messaging handles from ``identity.yaml`` as ``{platform: [id, ...]}``."""
+        owner = self.identity().get("owner")
+        raw = owner.get("handles") if isinstance(owner, Mapping) else None
+        handles: dict[str, list[str]] = {}
+
+        def add(platform: Any, value: Any) -> None:
+            platform, value = str(platform or "").strip().lower(), str(value or "").strip()
+            if platform and value and value not in handles.setdefault(platform, []):
+                handles[platform].append(value)
+
+        if isinstance(raw, Mapping):
+            for platform, value in raw.items():
+                for item in value if isinstance(value, (list, tuple, set)) else [value]:
+                    add(platform, item)
+        elif isinstance(raw, (list, tuple)):
+            for item in raw:
+                if isinstance(item, Mapping):
+                    add(item.get("platform"), item.get("id") or item.get("handle") or item.get("address"))
+                elif isinstance(item, str) and ("=" in item or ":" in item):
+                    platform, _, value = item.replace(":", "=", 1).partition("=")
+                    add(platform, value)
+        for platform in ("sms", "rcs"):
+            phone = self.owner_phone_handle(platform)
+            if phone:
+                add(platform, phone)
+        return handles
+
+    def owner_sms_handle(self) -> str:
+        return self.owner_phone_handle("sms")
+
+    def owner_rcs_handle(self) -> str:
+        return self.owner_phone_handle("rcs")
+
+    def owner_phone_handle(self, platform: str) -> str:
+        """The deployment's explicit phone binding; same validation as colonymind.config.owner_phone_handle."""
+        if platform not in {"sms", "rcs"}:
+            return ""
+        value = os.environ.get(f"COLONYMIND_OWNER_{platform.upper()}_HANDLE")
+        if value is None:
+            owner = read_yaml(self.home / "colonymind.yaml").get("owner")
+            value = owner.get(f"{platform}_handle") if isinstance(owner, Mapping) else None
+        if not isinstance(value, str):
+            return ""
+        value = value.strip()
+        return value if re.fullmatch(r"\+[1-9][0-9]{6,14}", value) else ""
+
+    def owner_handle(self) -> tuple[str, str] | None:
+        """The owner's first messaging handle as ``(platform, handle)`` from ``identity.yaml``."""
+        for platform, values in self.owner_handles().items():
+            if values:
+                return platform, values[0]
+        return None
+
+    def owner_contact_id(self) -> str:
+        """The owner's sidecar contact: ``colonymind.yaml`` ``owner.contact_id`` (written by
+        ``colonymind init``), else the same key in ``identity.yaml``."""
+        for source in (read_yaml(self.home / "colonymind.yaml"), self.identity()):
+            owner = source.get("owner")
+            if isinstance(owner, Mapping) and owner.get("contact_id"):
+                return str(owner["contact_id"])
+        return ""
+
+
+def load_settings(config: Mapping[str, Any] | None = None) -> Settings:
+    section = plugin_section(config)
+    servers = section.get("tool_origin_servers", ["google"])
+    if not isinstance(servers, list) or not all(isinstance(item, str) and item for item in servers):
+        servers = []
+    home = hermes_home()
+    instance = Path(os.environ.get("COLONYMIND_HOME") or Path.home() / ".colonymind").expanduser()
+    key_file = Path(section.get("key_file") or instance / "api.key").expanduser()
+    api_key = os.environ.get("COLONYMIND_API_KEY", "").strip()
+    if not api_key:
+        try:
+            api_key = key_file.read_text(encoding="utf-8").strip().splitlines()[0].strip()
+        except (OSError, IndexError):
+            api_key = ""
+    url = str(section.get("sidecar_url") or os.environ.get("COLONYMIND_URL") or "").strip()
+    if not url:
+        sidecar = read_yaml(key_file.parent / "colonymind.yaml").get("sidecar")
+        if isinstance(sidecar, Mapping) and sidecar.get("port"):
+            url = f"http://{sidecar.get('host') or '127.0.0.1'}:{sidecar['port']}"
+    return Settings(
+        sidecar_url=(url or DEFAULT_URL).rstrip("/"), key_file=key_file, api_key=api_key,
+        home=key_file.parent, hermes_home=home,
+        outbox_path=Path(section.get("turn_outbox_path")
+                         or home / "state" / "colonymind-turn-outbox.sqlite3"),
+        worker_profile=str(section.get("worker_profile") or WORKER_PROFILE),
+        body_ledger_path=Path(section.get("body_ledger_path") or home / "state" / "colonymind-body.sqlite3"),
+        tool_origin_servers=tuple(servers),
+    )
+
+
+class ColonyMindClient:
+    """Synchronous HTTP client with a bearer key, short timeouts and a breaker."""
+
+    def __init__(self, settings: Settings | None = None, *, url: str | None = None,
+                 api_key: str | None = None, timeout: float = 5.0, cooldown: float = 30.0):
+        self.url = (url or (settings.sidecar_url if settings else DEFAULT_URL)).rstrip("/")
+        self.api_key = api_key if api_key is not None else (settings.api_key if settings else "")
+        self.timeout = timeout
+        self.cooldown = cooldown
+        self._lock = threading.Lock()
+        self._failures = 0
+        self._open_until = 0.0
+        self._mind_routes: tuple[float, bool] | None = None
+        self._narrative_failed_at: float | None = None
+
+    def headers(self) -> dict[str, str]:
+        session = ACTING_SESSION.get()
+        return ({"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}) | (
+            {"X-ColonyMind-Session": session} if session else {})
+
+    @property
+    def breaker_open(self) -> bool:
+        with self._lock:
+            return time.monotonic() < self._open_until
+
+    def request(self, method: str, path: str, *, timeout: float | None = None,
+                **kwargs: Any) -> httpx.Response:
+        if self.breaker_open:
+            raise SidecarUnavailable("circuit breaker open")
+        try:
+            with httpx.Client(timeout=timeout or self.timeout, trust_env=False) as client:
+                response = client.request(method, f"{self.url}{path}", headers=self.headers(),
+                                          **kwargs)
+        except (httpx.TransportError, OSError) as error:
+            with self._lock:
+                self._failures += 1
+                if self._failures >= 3:
+                    self._open_until = time.monotonic() + self.cooldown
+            raise SidecarUnavailable(type(error).__name__,
+                                     delivered=not isinstance(error, _NOT_SENT)) from error
+        with self._lock:
+            self._failures = 0
+        return response
+
+    def get(self, path: str, **kwargs: Any) -> httpx.Response:
+        return self.request("GET", path, **kwargs)
+
+    def post(self, path: str, **kwargs: Any) -> httpx.Response:
+        return self.request("POST", path, **kwargs)
+
+    def put(self, path: str, **kwargs: Any) -> httpx.Response:
+        return self.request("PUT", path, **kwargs)
+
+    def patch(self, path: str, **kwargs: Any) -> httpx.Response:
+        return self.request("PATCH", path, **kwargs)
+
+    def has_mind_routes(self, *, ttl: float = 300.0) -> bool | None:
+        """Whether this sidecar serves ``/v1/mind/*``; None while unreachable."""
+        with self._lock:
+            cached = self._mind_routes
+        if cached is not None and time.monotonic() - cached[0] < ttl:
+            return cached[1]
+        try:
+            present = self.get(MIND_STATE_ROUTE, timeout=2).status_code != 404
+        except SidecarUnavailable:
+            return None
+        with self._lock:
+            self._mind_routes = (time.monotonic(), present)
+        return present
+
+    def mind_state(self, timeout: float = 3.0) -> dict[str, Any] | None:
+        """``GET /v1/mind/state`` when the route exists; None otherwise."""
+        try:
+            if self.has_mind_routes() is not True:
+                return None
+            response = self.get(MIND_STATE_ROUTE, timeout=timeout)
+            value = response.json() if response.is_success else None
+        except (SidecarUnavailable, ValueError):
+            return None
+        return value if isinstance(value, dict) else None
+
+    def narrative(self, *, timeout: float = 2.0, ttl: float = 60.0) -> dict[str, Any] | None:
+        """Fetch optional narrative without raising; cache failures for ttl seconds, never successful responses."""
+        with self._lock:
+            failed_at = self._narrative_failed_at
+        if failed_at is not None and time.monotonic() - failed_at < ttl:
+            return None
+        value: dict[str, Any] | None = None
+        try:
+            if self.has_mind_routes() is True:
+                response = self.get(NARRATIVE_ROUTE, timeout=timeout)
+                body = response.json() if response.is_success else None
+                value = body if isinstance(body, dict) else None
+        except (SidecarUnavailable, ValueError):
+            value = None
+        with self._lock:
+            self._narrative_failed_at = None if value is not None else time.monotonic()
+        return value
+
+    def resolve_contact(self, platform: str, handle: str, *, create: bool = False,
+                        timeout: float = 4.0) -> dict[str, Any] | None:
+        """The contact behind a messaging handle, or None when there is none."""
+        if not handle:
+            return None
+        params = {"gateway": platform or "", "address": handle}
+        if create:
+            params["create"] = "true"
+        response = self.get("/v1/host/contacts/resolve", params=params, timeout=timeout)
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        value = response.json()
+        return value if isinstance(value, dict) and value.get("contact_id") else None
+
+    def health(self, timeout: float = 3.0) -> dict[str, Any] | None:
+        try:
+            response = self.get("/v1/host/health", timeout=timeout)
+            return response.json() if response.is_success else None
+        except (SidecarUnavailable, ValueError):
+            return None
+
+
+__all__ = [
+    "CONSTITUTION_CHARS", "DEFAULT_URL", "MIND_STATE_ROUTE", "NARRATIVE_ROUTE", "PLUGIN_ID", "WORKER_PROFILE",
+    "ColonyMindClient", "Settings", "SidecarUnavailable", "constitution_list", "final_answer", "hermes_config",
+    "hermes_home", "load_settings", "plugin_section", "read_yaml", "render_constitution",
+]

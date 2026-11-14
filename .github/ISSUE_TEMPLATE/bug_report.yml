@@ -1,0 +1,83 @@
+name: Bug report
+description: Something in ColonyMind does not work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. For a security problem, do not use this form: report it privately as
+        [SECURITY.md](https://github.com/Aevonix/ColonyMind/blob/main/SECURITY.md) describes.
+
+        Everything you paste here is public. Replace every key, token and password with `<redacted>`, and remove
+        names, host names, addresses and paths you do not want public.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what did you expect?
+      placeholder: After a restart, the agent no longer recalls what I told it yesterday.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce it
+      description: The smallest set of steps, commands or messages that shows the problem.
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `colonymind doctor --json`
+      description: >-
+        Run `colonymind doctor --json` and paste its output. Read it first: when a configuration file does not parse,
+        it can quote the line, key and all. Replace every key, token and password with `<redacted>`.
+      render: json
+    validations:
+      required: true
+  - type: input
+    id: colonymind-version
+    attributes:
+      label: ColonyMind version
+      description: "`pip show colonymind`, or `pipx list` if you installed with pipx."
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: input
+    id: hermes-version
+    attributes:
+      label: Hermes version
+      description: The first line of `hermes --version`.
+      placeholder: Hermes Agent v0.21.3
+    validations:
+      required: true
+  - type: input
+    id: python-version
+    attributes:
+      label: Python version
+      description: The interpreter ColonyMind runs on (`python --version` in its environment).
+      placeholder: "3.12"
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Operating system
+      placeholder: Ubuntu 24.04, macOS 15
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      description: >-
+        From the sidecar or the Hermes gateway, around the time of the problem. Replace every key, token and password
+        with `<redacted>`.
+      render: text
+  - type: checkboxes
+    id: redacted
+    attributes:
+      label: Before you submit
+      options:
+        - label: I replaced every key, token and password in what I pasted with `<redacted>`.
+          required: true

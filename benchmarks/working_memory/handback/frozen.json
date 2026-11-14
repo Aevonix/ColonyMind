@@ -1,0 +1,17 @@
+{
+  "version": "wm-handback-2",
+  "sets": [
+    {
+      "seed": 1301,
+      "sha256": "d57f5ca44b34e6621b94efb60a5e4156968f4582aeea3a3aa8677b487e2e6058"
+    },
+    {
+      "seed": 1302,
+      "sha256": "eb009b5cac36fe4570282905b4df1f8e6c7aafaf9095aadcece742326dcca658"
+    },
+    {
+      "seed": 1303,
+      "sha256": "8f43418a5d4c143a1fc04fdde61c9458dfac6dfebc0a0aac9e3b96861af8d2f8"
+    }
+  ]
+}

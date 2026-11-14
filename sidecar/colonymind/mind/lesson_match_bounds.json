@@ -1,0 +1,919 @@
+{
+ "about": "Lesson match bounds: for each embedding measured, the cosine at or above which a lesson and a work (a task or an owner turn) are related, chosen on the labelled dev set (python -m colonymind.mind.lesson_match --record). Each entry keeps every pair's score, so its choice can be recomputed.",
+ "choice": {
+  "rule": "meaning",
+  "precision_floor": 0.8,
+  "dev_set_sha256": "9fc08b0d29dbcb0d51a67ddec99e8b9917dd8143c9c7876834f87f52c99984cc",
+  "about": "Related pairs each rule found on the dev set at the precision floor (0 when the rule's precision stays under it), per embedding measured: lexical is the earlier rule (at least two shared terms and a third of the lesson's title and when-to-use terms), meaning the cosine bound, meaning_or_lexical either. Compared embedder by embedder, never summed: meaning found more than lexical on Qwen3-Embedding-8B, and on Qwen3-Embedding-0.6B no rule kept the floor (all three found none). No rule found more than meaning on either, and meaning ships alone.",
+  "found_at_floor": {
+   "Qwen/Qwen3-Embedding-0.6B": {
+    "lexical": 0,
+    "meaning": 0,
+    "meaning_or_lexical": 0
+   },
+   "Qwen/Qwen3-Embedding-8B": {
+    "lexical": 0,
+    "meaning": 16,
+    "meaning_or_lexical": 0
+   }
+  },
+  "precision": {
+   "Qwen/Qwen3-Embedding-0.6B": {
+    "lexical": 0.28,
+    "meaning": 0.6666666666666666,
+    "meaning_or_lexical": 0.6666666666666666
+   },
+   "Qwen/Qwen3-Embedding-8B": {
+    "lexical": 0.28,
+    "meaning": 0.8,
+    "meaning_or_lexical": 0.6557377049180327
+   }
+  },
+  "recall": {
+   "Qwen/Qwen3-Embedding-0.6B": {
+    "lexical": 0.175,
+    "meaning": 1.0,
+    "meaning_or_lexical": 1.0
+   },
+   "Qwen/Qwen3-Embedding-8B": {
+    "lexical": 0.175,
+    "meaning": 0.4,
+    "meaning_or_lexical": 1.0
+   }
+  }
+ },
+ "measurements": [
+  {
+   "dev_set": {
+    "name": "lesson-match-dev-1",
+    "sha256": "9fc08b0d29dbcb0d51a67ddec99e8b9917dd8143c9c7876834f87f52c99984cc",
+    "pairs": 80,
+    "related": 40
+   },
+   "embedding": {
+    "requested_model": "Qwen/Qwen3-Embedding-0.6B",
+    "served_model": "Qwen/Qwen3-Embedding-0.6B",
+    "declared_revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+    "dimensions": 1024,
+    "document_format": "raw-text-v1",
+    "query_format": "prefix-v1:Instruct: Given a search query, retrieve relevant memories that answer it\nQuery: ",
+    "normalization": "unspecified",
+    "quantization": "unspecified",
+    "request_dimensions": null,
+    "fingerprint": "a1acc2d4a000c635e098b4d6158593ece66f5e724066faa0087b9ec79cad2b96"
+   },
+   "precision_floor": 0.8,
+   "bound": 0.2717785873903782,
+   "floor_met": false,
+   "at_bound": {
+    "threshold": 0.2717785873903782,
+    "candidates": 60,
+    "tp": 40,
+    "fp": 20,
+    "fn": 0,
+    "tn": 20,
+    "precision": 0.6666666666666666,
+    "recall": 1.0,
+    "f1": 0.8
+   },
+   "pairs": [
+    {
+     "id": "related-order-code-1",
+     "related": true,
+     "score": 0.3658508390245777
+    },
+    {
+     "id": "related-order-code-2",
+     "related": true,
+     "score": 0.601928177551757
+    },
+    {
+     "id": "near-order-code",
+     "related": false,
+     "score": 0.5422176004204757
+    },
+    {
+     "id": "far-order-code",
+     "related": false,
+     "score": 0.19290903259713107
+    },
+    {
+     "id": "related-slot-1",
+     "related": true,
+     "score": 0.46519356663818023
+    },
+    {
+     "id": "related-slot-2",
+     "related": true,
+     "score": 0.6452778482389182
+    },
+    {
+     "id": "near-slot",
+     "related": false,
+     "score": 0.4509456510922572
+    },
+    {
+     "id": "far-slot",
+     "related": false,
+     "score": 0.26608734803545947
+    },
+    {
+     "id": "related-shipping-fee-1",
+     "related": true,
+     "score": 0.5670531857384884
+    },
+    {
+     "id": "related-shipping-fee-2",
+     "related": true,
+     "score": 0.5654832957712451
+    },
+    {
+     "id": "near-shipping-fee",
+     "related": false,
+     "score": 0.48226757419195265
+    },
+    {
+     "id": "far-shipping-fee",
+     "related": false,
+     "score": 0.19227086114572453
+    },
+    {
+     "id": "related-surcharge-1",
+     "related": true,
+     "score": 0.4472891550919892
+    },
+    {
+     "id": "related-surcharge-2",
+     "related": true,
+     "score": 0.5609575604257978
+    },
+    {
+     "id": "near-surcharge",
+     "related": false,
+     "score": 0.6389573530882436
+    },
+    {
+     "id": "far-surcharge",
+     "related": false,
+     "score": 0.16482702321500114
+    },
+    {
+     "id": "related-bin-1",
+     "related": true,
+     "score": 0.40971287811873663
+    },
+    {
+     "id": "related-bin-2",
+     "related": true,
+     "score": 0.47512957940757283
+    },
+    {
+     "id": "near-bin",
+     "related": false,
+     "score": 0.4311275917747533
+    },
+    {
+     "id": "far-bin",
+     "related": false,
+     "score": 0.17216654507594817
+    },
+    {
+     "id": "related-handling-fee-1",
+     "related": true,
+     "score": 0.49952129882872665
+    },
+    {
+     "id": "related-handling-fee-2",
+     "related": true,
+     "score": 0.5292630911846931
+    },
+    {
+     "id": "near-handling-fee",
+     "related": false,
+     "score": 0.7055290462657697
+    },
+    {
+     "id": "far-handling-fee",
+     "related": false,
+     "score": 0.21176555704927974
+    },
+    {
+     "id": "related-request-file-1",
+     "related": true,
+     "score": 0.36353665259944157
+    },
+    {
+     "id": "related-request-file-2",
+     "related": true,
+     "score": 0.3996011190413664
+    },
+    {
+     "id": "near-request-file",
+     "related": false,
+     "score": 0.36662829320970924
+    },
+    {
+     "id": "far-request-file",
+     "related": false,
+     "score": 0.0920978246445884
+    },
+    {
+     "id": "related-config-1",
+     "related": true,
+     "score": 0.38189143621212746
+    },
+    {
+     "id": "related-config-2",
+     "related": true,
+     "score": 0.3308515977018228
+    },
+    {
+     "id": "near-config",
+     "related": false,
+     "score": 0.48540359671961286
+    },
+    {
+     "id": "far-config",
+     "related": false,
+     "score": 0.14837619926996873
+    },
+    {
+     "id": "related-tides-1",
+     "related": true,
+     "score": 0.38882867994145337
+    },
+    {
+     "id": "related-tides-2",
+     "related": true,
+     "score": 0.6370086304496463
+    },
+    {
+     "id": "near-tides",
+     "related": false,
+     "score": 0.45364474103349667
+    },
+    {
+     "id": "far-tides",
+     "related": false,
+     "score": 0.23508504701312238
+    },
+    {
+     "id": "related-archive-1",
+     "related": true,
+     "score": 0.4975072778246985
+    },
+    {
+     "id": "related-archive-2",
+     "related": true,
+     "score": 0.41156817294495074
+    },
+    {
+     "id": "near-archive",
+     "related": false,
+     "score": 0.5503851326265111
+    },
+    {
+     "id": "far-archive",
+     "related": false,
+     "score": 0.19555591487778068
+    },
+    {
+     "id": "related-lookup-1",
+     "related": true,
+     "score": 0.4075269649230931
+    },
+    {
+     "id": "related-lookup-2",
+     "related": true,
+     "score": 0.4396864291977598
+    },
+    {
+     "id": "near-lookup",
+     "related": false,
+     "score": 0.49944989262029454
+    },
+    {
+     "id": "far-lookup",
+     "related": false,
+     "score": 0.09460983984078081
+    },
+    {
+     "id": "related-dashes-1",
+     "related": true,
+     "score": 0.4382082285609139
+    },
+    {
+     "id": "related-dashes-2",
+     "related": true,
+     "score": 0.2774698267452969
+    },
+    {
+     "id": "near-dashes",
+     "related": false,
+     "score": 0.46656610106882457
+    },
+    {
+     "id": "far-dashes",
+     "related": false,
+     "score": 0.2616712749683432
+    },
+    {
+     "id": "related-keys-1",
+     "related": true,
+     "score": 0.38880853888808375
+    },
+    {
+     "id": "related-keys-2",
+     "related": true,
+     "score": 0.5841697866469604
+    },
+    {
+     "id": "near-keys",
+     "related": false,
+     "score": 0.6464657322784
+    },
+    {
+     "id": "far-keys",
+     "related": false,
+     "score": 0.18046737042492103
+    },
+    {
+     "id": "related-crates-1",
+     "related": true,
+     "score": 0.5188970030272892
+    },
+    {
+     "id": "related-crates-2",
+     "related": true,
+     "score": 0.49429176876669534
+    },
+    {
+     "id": "near-crates",
+     "related": false,
+     "score": 0.5486155999357479
+    },
+    {
+     "id": "far-crates",
+     "related": false,
+     "score": 0.22590765441713156
+    },
+    {
+     "id": "related-tidal-1",
+     "related": true,
+     "score": 0.3996118474843211
+    },
+    {
+     "id": "related-tidal-2",
+     "related": true,
+     "score": 0.49189582167946766
+    },
+    {
+     "id": "near-tidal",
+     "related": false,
+     "score": 0.4608630892197963
+    },
+    {
+     "id": "far-tidal",
+     "related": false,
+     "score": 0.07777428261380057
+    },
+    {
+     "id": "related-reports-1",
+     "related": true,
+     "score": 0.45100494700749594
+    },
+    {
+     "id": "related-reports-2",
+     "related": true,
+     "score": 0.4681143036732327
+    },
+    {
+     "id": "near-reports",
+     "related": false,
+     "score": 0.4710931164691435
+    },
+    {
+     "id": "far-reports",
+     "related": false,
+     "score": 0.20991906619703296
+    },
+    {
+     "id": "related-records-1",
+     "related": true,
+     "score": 0.4151292337879123
+    },
+    {
+     "id": "related-records-2",
+     "related": true,
+     "score": 0.4360496916088659
+    },
+    {
+     "id": "near-records",
+     "related": false,
+     "score": 0.5562298852293489
+    },
+    {
+     "id": "far-records",
+     "related": false,
+     "score": 0.20807808851566914
+    },
+    {
+     "id": "related-channel-1",
+     "related": true,
+     "score": 0.5421149592378977
+    },
+    {
+     "id": "related-channel-2",
+     "related": true,
+     "score": 0.2854629483524687
+    },
+    {
+     "id": "near-channel",
+     "related": false,
+     "score": 0.4054037608340783
+    },
+    {
+     "id": "far-channel",
+     "related": false,
+     "score": 0.11409746714952392
+    },
+    {
+     "id": "related-digest-1",
+     "related": true,
+     "score": 0.5741394728348433
+    },
+    {
+     "id": "related-digest-2",
+     "related": true,
+     "score": 0.4749504638385441
+    },
+    {
+     "id": "near-digest",
+     "related": false,
+     "score": 0.7040110695802783
+    },
+    {
+     "id": "far-digest",
+     "related": false,
+     "score": 0.24444674422343726
+    },
+    {
+     "id": "related-fern-1",
+     "related": true,
+     "score": 0.4414786887098796
+    },
+    {
+     "id": "related-fern-2",
+     "related": true,
+     "score": 0.4533831705310223
+    },
+    {
+     "id": "near-fern",
+     "related": false,
+     "score": 0.5025086398796482
+    },
+    {
+     "id": "far-fern",
+     "related": false,
+     "score": 0.16336511355102407
+    }
+   ]
+  },
+  {
+   "dev_set": {
+    "name": "lesson-match-dev-1",
+    "sha256": "9fc08b0d29dbcb0d51a67ddec99e8b9917dd8143c9c7876834f87f52c99984cc",
+    "pairs": 80,
+    "related": 40
+   },
+   "embedding": {
+    "requested_model": "Qwen/Qwen3-Embedding-8B",
+    "served_model": "Qwen/Qwen3-Embedding-8B",
+    "declared_revision": "1d8ad4ca9b3dd8059ad90a75d4983776a23d44af",
+    "dimensions": 4096,
+    "document_format": "raw-text-v1",
+    "query_format": "prefix-v1:Instruct: Given a search query, retrieve relevant memories that answer it\nQuery: ",
+    "normalization": "unspecified",
+    "quantization": "unspecified",
+    "request_dimensions": null,
+    "fingerprint": "6c7eee768fdc9bd6fe4de5ab79b3616108a180859f643334c351c20d994fcb47"
+   },
+   "precision_floor": 0.8,
+   "bound": 0.541865030680085,
+   "floor_met": true,
+   "at_bound": {
+    "threshold": 0.541865030680085,
+    "candidates": 20,
+    "tp": 16,
+    "fp": 4,
+    "fn": 24,
+    "tn": 36,
+    "precision": 0.8,
+    "recall": 0.4,
+    "f1": 0.5333333333333333
+   },
+   "pairs": [
+    {
+     "id": "related-order-code-1",
+     "related": true,
+     "score": 0.39890557452894027
+    },
+    {
+     "id": "related-order-code-2",
+     "related": true,
+     "score": 0.6227788819000482
+    },
+    {
+     "id": "near-order-code",
+     "related": false,
+     "score": 0.6170535445073447
+    },
+    {
+     "id": "far-order-code",
+     "related": false,
+     "score": 0.19403261058634758
+    },
+    {
+     "id": "related-slot-1",
+     "related": true,
+     "score": 0.5756656901462109
+    },
+    {
+     "id": "related-slot-2",
+     "related": true,
+     "score": 0.6960544132668678
+    },
+    {
+     "id": "near-slot",
+     "related": false,
+     "score": 0.5103118030194692
+    },
+    {
+     "id": "far-slot",
+     "related": false,
+     "score": 0.25811933705674106
+    },
+    {
+     "id": "related-shipping-fee-1",
+     "related": true,
+     "score": 0.6045911679280005
+    },
+    {
+     "id": "related-shipping-fee-2",
+     "related": true,
+     "score": 0.5723396809567226
+    },
+    {
+     "id": "near-shipping-fee",
+     "related": false,
+     "score": 0.5199985623423555
+    },
+    {
+     "id": "far-shipping-fee",
+     "related": false,
+     "score": 0.16309422194326806
+    },
+    {
+     "id": "related-surcharge-1",
+     "related": true,
+     "score": 0.4896565610497951
+    },
+    {
+     "id": "related-surcharge-2",
+     "related": true,
+     "score": 0.6413781629440581
+    },
+    {
+     "id": "near-surcharge",
+     "related": false,
+     "score": 0.522343724748438
+    },
+    {
+     "id": "far-surcharge",
+     "related": false,
+     "score": 0.2004216347220838
+    },
+    {
+     "id": "related-bin-1",
+     "related": true,
+     "score": 0.41789747204140865
+    },
+    {
+     "id": "related-bin-2",
+     "related": true,
+     "score": 0.5726441674708374
+    },
+    {
+     "id": "near-bin",
+     "related": false,
+     "score": 0.4729641027445946
+    },
+    {
+     "id": "far-bin",
+     "related": false,
+     "score": 0.17072553787952066
+    },
+    {
+     "id": "related-handling-fee-1",
+     "related": true,
+     "score": 0.5452031629729894
+    },
+    {
+     "id": "related-handling-fee-2",
+     "related": true,
+     "score": 0.6199070153995903
+    },
+    {
+     "id": "near-handling-fee",
+     "related": false,
+     "score": 0.6126796016675239
+    },
+    {
+     "id": "far-handling-fee",
+     "related": false,
+     "score": 0.19643736146772905
+    },
+    {
+     "id": "related-request-file-1",
+     "related": true,
+     "score": 0.3468387295491918
+    },
+    {
+     "id": "related-request-file-2",
+     "related": true,
+     "score": 0.4604423964575881
+    },
+    {
+     "id": "near-request-file",
+     "related": false,
+     "score": 0.40617544578522113
+    },
+    {
+     "id": "far-request-file",
+     "related": false,
+     "score": 0.06140103058019889
+    },
+    {
+     "id": "related-config-1",
+     "related": true,
+     "score": 0.35986769701079196
+    },
+    {
+     "id": "related-config-2",
+     "related": true,
+     "score": 0.3671378571878413
+    },
+    {
+     "id": "near-config",
+     "related": false,
+     "score": 0.4173011454502253
+    },
+    {
+     "id": "far-config",
+     "related": false,
+     "score": 0.0746638065227298
+    },
+    {
+     "id": "related-tides-1",
+     "related": true,
+     "score": 0.5664660390267385
+    },
+    {
+     "id": "related-tides-2",
+     "related": true,
+     "score": 0.6145436208593618
+    },
+    {
+     "id": "near-tides",
+     "related": false,
+     "score": 0.3995790178129418
+    },
+    {
+     "id": "far-tides",
+     "related": false,
+     "score": 0.3190478950193304
+    },
+    {
+     "id": "related-archive-1",
+     "related": true,
+     "score": 0.4847821878663666
+    },
+    {
+     "id": "related-archive-2",
+     "related": true,
+     "score": 0.3579757279710126
+    },
+    {
+     "id": "near-archive",
+     "related": false,
+     "score": 0.5855963038279361
+    },
+    {
+     "id": "far-archive",
+     "related": false,
+     "score": 0.24479787603622838
+    },
+    {
+     "id": "related-lookup-1",
+     "related": true,
+     "score": 0.5121330466700379
+    },
+    {
+     "id": "related-lookup-2",
+     "related": true,
+     "score": 0.47611170095648786
+    },
+    {
+     "id": "near-lookup",
+     "related": false,
+     "score": 0.4674747643063682
+    },
+    {
+     "id": "far-lookup",
+     "related": false,
+     "score": 0.11640016152873175
+    },
+    {
+     "id": "related-dashes-1",
+     "related": true,
+     "score": 0.46471240316438867
+    },
+    {
+     "id": "related-dashes-2",
+     "related": true,
+     "score": 0.4008966358614544
+    },
+    {
+     "id": "near-dashes",
+     "related": false,
+     "score": 0.4446615069429634
+    },
+    {
+     "id": "far-dashes",
+     "related": false,
+     "score": 0.27822668848816057
+    },
+    {
+     "id": "related-keys-1",
+     "related": true,
+     "score": 0.5809387463126712
+    },
+    {
+     "id": "related-keys-2",
+     "related": true,
+     "score": 0.6381771726118971
+    },
+    {
+     "id": "near-keys",
+     "related": false,
+     "score": 0.5385268983871805
+    },
+    {
+     "id": "far-keys",
+     "related": false,
+     "score": 0.24715129100358915
+    },
+    {
+     "id": "related-crates-1",
+     "related": true,
+     "score": 0.6622626477658504
+    },
+    {
+     "id": "related-crates-2",
+     "related": true,
+     "score": 0.5308579802679745
+    },
+    {
+     "id": "near-crates",
+     "related": false,
+     "score": 0.5857247581668243
+    },
+    {
+     "id": "far-crates",
+     "related": false,
+     "score": 0.1600657729438393
+    },
+    {
+     "id": "related-tidal-1",
+     "related": true,
+     "score": 0.46286381147420447
+    },
+    {
+     "id": "related-tidal-2",
+     "related": true,
+     "score": 0.5220641625027141
+    },
+    {
+     "id": "near-tidal",
+     "related": false,
+     "score": 0.44416933930640473
+    },
+    {
+     "id": "far-tidal",
+     "related": false,
+     "score": 0.14853089244550619
+    },
+    {
+     "id": "related-reports-1",
+     "related": true,
+     "score": 0.38998533776224664
+    },
+    {
+     "id": "related-reports-2",
+     "related": true,
+     "score": 0.4452170278470076
+    },
+    {
+     "id": "near-reports",
+     "related": false,
+     "score": 0.4413023335350282
+    },
+    {
+     "id": "far-reports",
+     "related": false,
+     "score": 0.16588585170729525
+    },
+    {
+     "id": "related-records-1",
+     "related": true,
+     "score": 0.39332639435295286
+    },
+    {
+     "id": "related-records-2",
+     "related": true,
+     "score": 0.4185862550456009
+    },
+    {
+     "id": "near-records",
+     "related": false,
+     "score": 0.5082220321295313
+    },
+    {
+     "id": "far-records",
+     "related": false,
+     "score": 0.18523645739486694
+    },
+    {
+     "id": "related-channel-1",
+     "related": true,
+     "score": 0.5652901230699493
+    },
+    {
+     "id": "related-channel-2",
+     "related": true,
+     "score": 0.30623944152417554
+    },
+    {
+     "id": "near-channel",
+     "related": false,
+     "score": 0.30820286548120773
+    },
+    {
+     "id": "far-channel",
+     "related": false,
+     "score": 0.12647084722571225
+    },
+    {
+     "id": "related-digest-1",
+     "related": true,
+     "score": 0.625733741859696
+    },
+    {
+     "id": "related-digest-2",
+     "related": true,
+     "score": 0.4620072630214075
+    },
+    {
+     "id": "near-digest",
+     "related": false,
+     "score": 0.5257737319786111
+    },
+    {
+     "id": "far-digest",
+     "related": false,
+     "score": 0.18857608159797362
+    },
+    {
+     "id": "related-fern-1",
+     "related": true,
+     "score": 0.5225976640669517
+    },
+    {
+     "id": "related-fern-2",
+     "related": true,
+     "score": 0.4340941027322867
+    },
+    {
+     "id": "near-fern",
+     "related": false,
+     "score": 0.4685947856498692
+    },
+    {
+     "id": "far-fern",
+     "related": false,
+     "score": 0.11424653814608712
+    }
+   ]
+  }
+ ]
+}

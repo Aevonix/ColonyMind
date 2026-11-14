@@ -1,0 +1,796 @@
+"""ColonyMind Vector Store — LanceDB wrapper.
+
+Provides CRUD + ANN search across typed collections.  Each
+``Collection`` maps to a separate LanceDB table.  All vector
+operations degrade gracefully when the store is not initialized.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from contextlib import closing, contextmanager
+from dataclasses import dataclass
+from datetime import timedelta
+import json
+import logging
+import math
+import os
+from pathlib import Path
+import re
+import time
+from typing import Any, Optional
+
+import pyarrow as pa
+
+from colonymind.vector.collections import Collection
+from colonymind.vector.compaction import Compaction
+from colonymind.vector.query import VectorItem, VectorResult
+
+logger = logging.getLogger(__name__)
+
+# LanceDB's json_extract() requires LargeBinary but our metadata column is Utf8.
+# Detect filters that use json_extract(metadata, ...) so we can apply them in Python.
+_METADATA_JSON_FILTER_RE = re.compile(
+    r"\bjson_extract\s*\(\s*metadata\b", re.IGNORECASE
+)
+
+# Parse individual json_extract(metadata, '$.key') <op> <value> conditions.
+_JSON_COND_RE = re.compile(
+    r"json_extract\s*\(\s*metadata\s*,\s*['\"]?\$\.(\w+)['\"]?\s*\)"
+    r"\s*(>=|<=|!=|<>|>|<|=|LIKE)"
+    r"\s*(%?'[^']*'%?|%?\"[^\"]*\"%?|[-\d.]+)",
+    re.IGNORECASE,
+)
+
+
+def _eval_metadata_filter(meta_str: str, filter_expr: str) -> bool:
+    """Evaluate a filter expression containing json_extract(metadata,...) in Python.
+
+    Handles the patterns actually used in the codebase:
+    - ``json_extract(metadata, '$.key') >= <number>``
+    - ``json_extract(metadata, '$.key') LIKE '%value%'``
+    Multiple conditions are treated as AND (all must pass).
+    """
+    try:
+        meta = json.loads(meta_str) if meta_str else {}
+    except (json.JSONDecodeError, TypeError):
+        meta = {}
+
+    for match in _JSON_COND_RE.finditer(filter_expr):
+        key = match.group(1)
+        op = match.group(2).upper()
+        raw_val = match.group(3).strip()
+
+        meta_val = meta.get(key)
+
+        if op == "LIKE":
+            # Strip surrounding % and quotes for a substring match
+            pattern = raw_val.strip("'\"").replace("%", "")
+            if pattern not in str(meta_val if meta_val is not None else ""):
+                return False
+            continue
+
+        # Numeric or string comparison — strip quotes first
+        val_str = raw_val.strip("'\"")
+        try:
+            num_val = float(val_str)
+            num_meta = float(meta_val) if meta_val is not None else 0.0
+            if op == ">=" and not (num_meta >= num_val):
+                return False
+            elif op == "<=" and not (num_meta <= num_val):
+                return False
+            elif op == ">" and not (num_meta > num_val):
+                return False
+            elif op == "<" and not (num_meta < num_val):
+                return False
+            elif op == "=" and not (num_meta == num_val):
+                return False
+            elif op in ("!=", "<>") and not (num_meta != num_val):
+                return False
+        except (ValueError, TypeError):
+            str_meta = str(meta_val if meta_val is not None else "")
+            if op == "=" and str_meta != val_str:
+                return False
+            elif op in ("!=", "<>") and str_meta == val_str:
+                return False
+
+    return True
+
+
+# A pass waits at most this long for the reads begun before it, then prunes anyway: a read that
+# long is stuck, and the pass holds every write back while it waits.
+READ_DRAIN_SECONDS = 300.0
+# The first prune of a pass keeps every version committed from this long before the version that
+# was current when the pass began. Lance takes its cutoff after the compaction, so this covers the
+# compaction's own duration (minutes for a first pass over tens of thousands of fragments).
+KEEP_SLACK_SECONDS = 3600.0
+DRAIN_POLL_SECONDS = 0.02
+
+
+class InFlightReads:
+    """The Lance reads under way on a store, each counted in the era it began.
+
+    A read opens a table's latest version and reads that version's files as it goes, so a prune
+    that removes the version deletes the files under it (Lance answers "Not found"). A compaction
+    pass ``drain``s before it prunes: it waits for every read begun before the call, while reads
+    that begin meanwhile go ahead (they open the version the pass keeps).
+    """
+
+    def __init__(self) -> None:
+        self._era = 0
+        self._open: dict[int, int] = {}
+
+    @contextmanager
+    def hold(self):
+        """Count one read, from before it opens its table until it has read the last row it needs."""
+        era = self._era
+        self._open[era] = self._open.get(era, 0) + 1
+        try:
+            yield
+        finally:
+            if self._open[era] == 1:
+                del self._open[era]
+            else:
+                self._open[era] -= 1
+
+    def _begun_before(self, era: int) -> int:
+        return sum(count for began, count in self._open.items() if began < era)
+
+    async def drain(self, timeout: float) -> int:
+        """Wait up to ``timeout`` seconds for every read begun before this call to end; how many still run."""
+        self._era += 1
+        era, deadline = self._era, time.monotonic() + timeout
+        while self._begun_before(era) and time.monotonic() < deadline:
+            await asyncio.sleep(DRAIN_POLL_SECONDS)
+        return self._begun_before(era)
+
+
+@dataclass(frozen=True)
+class PrunedVersions:
+    old_versions_removed: int
+    bytes_removed: int
+
+
+@dataclass(frozen=True)
+class PurgeStats:
+    """A table's pass: its compaction, and what its prunes removed together."""
+    compaction: Any
+    prune: PrunedVersions
+
+
+def _newest_manifest_time(path: Path) -> Optional[float]:
+    """When the newest version manifest of the table at ``path`` was written; None when unreadable."""
+    newest = None
+    try:
+        with os.scandir(path / '_versions') as entries:
+            for entry in entries:
+                if entry.name.endswith('.manifest') and not entry.name.startswith('.'):
+                    written = entry.stat().st_mtime
+                    newest = written if newest is None else max(newest, written)
+    except OSError:
+        return None
+    return newest
+
+
+def _vanished_manifest(error: BaseException) -> bool:
+    """Lance's "Not found" for a version manifest: another cleaner deleted it while a prune read it."""
+    text = str(error)
+    return 'Not found' in text and '_versions' in text and '.manifest' in text
+
+
+def _base_schema(dims: int) -> pa.Schema:
+    """Build the Arrow schema shared by all collection tables."""
+    return pa.schema([
+        pa.field("id", pa.utf8()),
+        pa.field("text", pa.utf8()),
+        pa.field("vector", pa.list_(pa.float32(), dims)),
+        pa.field("metadata", pa.utf8()),
+        pa.field("scope_key", pa.utf8()),
+        pa.field("modality", pa.utf8()),
+        pa.field("image_hash", pa.utf8()),
+        pa.field("image_ref", pa.utf8()),
+        pa.field("thumbnail_ref", pa.utf8()),
+        pa.field("caption", pa.utf8()),
+        pa.field("created_at", pa.float64()),
+        pa.field("updated_at", pa.float64()),
+    ])
+
+
+class VectorStore:
+    """LanceDB-backed vector store.  One table per Collection."""
+
+    def __init__(self, data_dir: str, *, identity=None, catalog=None) -> None:
+        self._data_dir = data_dir
+        self._db = None
+        self._dims: int | None = None
+        self._loop = None
+        self._erasure_tasks = set()
+        self.identity = identity
+        self.catalog = catalog
+        if (identity is None) != (catalog is None):
+            raise ValueError('Managed indexes require both embedding identity and source-ledger catalog')
+        self._generation_dbs = {}
+        # Held around every Lance commit made through or beside this store, and
+        # for a compaction pass: a table rewrite after erasure snapshots and
+        # replaces a whole table, and would drop any row another writer commits
+        # in between; and Lance's own auto-cleanup, which runs inside a commit,
+        # would prune beside the pass.
+        self.write_lock = asyncio.Lock()
+        # Every read of a table, so a pass never prunes a version one still reads.
+        self.reads = InFlightReads()
+        self.read_drain_seconds = READ_DRAIN_SECONDS
+        # Compaction after an erasure, each night and past a version threshold:
+        # one background task, one table at a time (``compaction.py``).
+        self.compaction = Compaction(self)
+
+    async def connect(self, dimensions: int) -> None:
+        """Open (or create) the LanceDB database directory."""
+        import lancedb
+
+        self._loop = asyncio.get_running_loop()
+        os.makedirs(self._data_dir, exist_ok=True)
+        self._db = await lancedb.connect_async(self._data_dir)
+        self._dims = dimensions
+        if self.identity is not None and self.identity.dimensions != dimensions:
+            raise ValueError('Embedding identity dimension disagrees with selected pipeline')
+        if self.catalog is not None:
+            self.catalog.initialize(self.identity, legacy_exists=bool(await self._db.table_names()))
+            self._generation_dbs['legacy'] = self._db
+        logger.info("VectorStore connected (path=%s, dims=%d)", self._data_dir, dimensions)
+
+    async def ensure_collections(self, dimensions: int) -> None:
+        """Create any missing collection tables."""
+        if self._db is None:
+            await self.connect(dimensions)
+
+        db = self._db
+        if self.catalog is not None:
+            active = self.catalog.active()
+            if active['fingerprint'] != self.identity.fingerprint:
+                return  # Never relabel or overwrite an existing unknown index.
+            db = await self._generation_db(active)
+        existing = set(await db.table_names())
+        schema = _base_schema(dimensions)
+        for col in Collection:
+            if col.value not in existing:
+                await db.create_table(col.value, schema=schema)
+                logger.info("Created vector collection: %s", col.value)
+
+    async def _generation_db(self, generation):
+        key = generation['id']
+        if key not in self._generation_dbs:
+            import lancedb
+            if not re.fullmatch(r'[0-9a-f]{32}', key):
+                raise ValueError('Invalid vector generation identifier')
+            path = Path(self._data_dir) / 'generations' / key
+            path.mkdir(parents=True, exist_ok=True)
+            self._generation_dbs[key] = await lancedb.connect_async(str(path))
+        return self._generation_dbs[key]
+
+    async def _table(self, collection, *, write=False, semantic=False, generation=None):
+        if self.catalog is None:
+            return await self._db.open_table(collection.value)
+        if generation is None:
+            generation = (self.catalog.write_generation(self.identity) if write else
+                          self.catalog.read_generation(self.identity) if semantic else self.catalog.active())
+        db = await self._generation_db(generation)
+        if write and collection.value not in await db.table_names():
+            await db.create_table(collection.value, schema=_base_schema(generation['identity']['dimensions']), exist_ok=True)
+        return await db.open_table(collection.value)
+
+    def _eligible(self, collection, entry_id, metadata):
+        return self.catalog is None or not (
+            self.catalog.deleted(collection.value, str(entry_id)) or self.catalog.source_erased(metadata))
+
+    def _validate_vector(self, vector):
+        if self._dims and len(vector) != self._dims:
+            raise ValueError(f'Vector dimension mismatch: expected {self._dims}, got {len(vector)}; rebuild a separate index generation')
+        if not vector or not all(math.isfinite(value) for value in vector) or not any(vector):
+            raise ValueError('Vector must contain finite nonzero values')
+
+    @staticmethod
+    def _quoted(value):
+        return "'" + str(value).replace("'", "''") + "'"
+
+    # ------------------------------------------------------------------
+    # CRUD
+    # ------------------------------------------------------------------
+
+    async def add(
+        self,
+        collection: Collection,
+        id: str,
+        text: str,
+        vector: list[float],
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Add a single vector entry."""
+        now = time.time()
+        meta = metadata or {}
+        meta.setdefault("embedded_at", now)
+        meta.setdefault("modality", "text")
+
+        # Dimension validation
+        self._validate_vector(vector)
+        if not self._eligible(collection, id, meta):
+            return
+        if self.identity is not None:
+            meta = {**meta, 'embedding_fingerprint': self.identity.fingerprint,
+                    'requested_model': self.identity.requested_model,
+                    'served_model': self.identity.served_model,
+                    'declared_revision': self.identity.declared_revision}
+
+        async with self.write_lock:
+            table = await self._table(collection, write=True)
+            await table.add([{
+                "id": id,
+                "text": text,
+                "vector": vector,
+                "metadata": json.dumps(meta),
+                "modality": meta.get("modality", "text"),
+                "image_hash": meta.get("image_hash", ""),
+                "image_ref": meta.get("image_ref", ""),
+                "thumbnail_ref": meta.get("thumbnail_ref", ""),
+                "caption": meta.get("caption", ""),
+                "created_at": now,
+                "updated_at": now,
+            }])
+            if not self._eligible(collection, id, meta):
+                await table.delete('id = ' + self._quoted(id))
+
+    async def add_batch(
+        self,
+        collection: Collection,
+        items: list[VectorItem],
+    ) -> None:
+        """Add a batch of vector entries."""
+        if not items:
+            return
+        now = time.time()
+
+        # Dimension validation on first item
+        for item in items:
+            self._validate_vector(item.vector)
+
+        rows = []
+        for item in items:
+            meta = item.metadata or {}
+            if not self._eligible(collection, item.id, meta):
+                continue
+            if self.identity is not None:
+                meta = {**meta, 'embedding_fingerprint': self.identity.fingerprint}
+            meta.setdefault("embedded_at", now)
+            meta.setdefault("modality", "text")
+            rows.append({
+                "id": item.id,
+                "text": item.text,
+                "vector": item.vector,
+                "metadata": json.dumps(meta),
+                "modality": meta.get("modality", "text"),
+                "image_hash": meta.get("image_hash", ""),
+                "image_ref": meta.get("image_ref", ""),
+                "thumbnail_ref": meta.get("thumbnail_ref", ""),
+                "caption": meta.get("caption", ""),
+                "created_at": now,
+                "updated_at": now,
+            })
+        if rows:
+            async with self.write_lock:
+                table = await self._table(collection, write=True)
+                await table.add(rows)
+                for item in items:
+                    if not self._eligible(collection, item.id, item.metadata):
+                        await table.delete('id = ' + self._quoted(item.id))
+
+    async def search(
+        self,
+        collection: Collection,
+        query_vector: list[float],
+        limit: int = 10,
+        filter: Optional[str] = None,
+        min_score: float = 0.0,
+    ) -> list[VectorResult]:
+        """ANN search on a collection.  Returns results sorted by score descending."""
+        from colonymind.memory import producers
+        self._validate_vector(query_vector)
+        generation = (await producers.read(self.catalog.read_generation, self.identity)
+                      if self.catalog is not None else None)
+        with self.reads.hold():
+            table = await self._table(collection, semantic=True, generation=generation)
+            query = table.vector_search(query_vector).distance_type("cosine")
+
+            if filter and _METADATA_JSON_FILTER_RE.search(filter):
+                # json_extract(metadata, ...) requires LargeBinary but the column is
+                # Utf8 — the SQL planner rejects it.  Fetch a larger candidate set
+                # without the metadata filter and apply it in Python instead.
+                query = query.limit(max(limit * 20, 200))
+                raw = await query.to_pandas()
+                mask = raw["metadata"].apply(
+                    lambda m: _eval_metadata_filter(str(m) if m is not None else "{}", filter)
+                )
+                results = raw[mask].head(limit)
+            else:
+                query = query.limit(limit)
+                if filter:
+                    query = query.where(filter)
+                results = await query.to_pandas()
+
+        out: list[VectorResult] = []
+        for _, row in results.iterrows():
+            # LanceDB returns _distance (cosine distance); convert to similarity
+            score = 1.0 - float(row.get("_distance", 0.0))
+            if score < min_score:
+                continue
+            meta_str = row.get("metadata", "{}")
+            try:
+                meta = json.loads(meta_str) if isinstance(meta_str, str) else {}
+            except (json.JSONDecodeError, TypeError):
+                meta = {}
+            out.append(VectorResult(
+                id=str(row["id"]),
+                score=score,
+                text=str(row.get("text", "")),
+                metadata=meta,
+            ))
+
+        if self.catalog is not None:
+            from colonymind.memory import curated
+            out = await producers.read(lambda: curated.fenced_read(self.catalog.ledger,
+                lambda: [hit for hit in out if self._eligible(collection, hit.id, hit.metadata)], empty=[]), default=[])
+        return out
+
+    async def search_cross_modal(
+        self,
+        collection: Collection,
+        query_vector: list[float],
+        limit: int = 10,
+        filter_modality: Optional[str] = None,
+        min_score: float = 0.0,
+    ) -> list[dict[str, Any]]:
+        """Cross-modal search — text query finds images, image query finds text.
+
+        Works because multimodal models produce vectors in the same
+        embedding space regardless of input type.
+
+        Parameters
+        ----------
+        filter_modality : str, optional
+            Only return results of this modality ("text" or "image").
+            None = return all modalities.
+        """
+        filter_clause = None
+        if filter_modality:
+            filter_clause = f"modality = '{filter_modality}'"
+
+        results = await self.search(
+            collection, query_vector, limit=limit,
+            filter=filter_clause, min_score=min_score,
+        )
+
+        # Enrich with modality-specific fields
+        enriched = []
+        for r in results:
+            meta = r.metadata or {}
+            entry = {
+                "id": r.id,
+                "score": r.score,
+                "text": r.text,
+                "modality": meta.get("modality", "text"),
+                "image_ref": meta.get("image_ref", ""),
+                "image_hash": meta.get("image_hash", ""),
+                "thumbnail_ref": meta.get("thumbnail_ref", ""),
+                "caption": meta.get("caption", ""),
+                "metadata": meta,
+            }
+            enriched.append(entry)
+        return enriched
+
+    async def delete(self, collection: Collection, id: str) -> None:
+        """Delete a single entry by ID."""
+        if self.catalog is None:
+            async with self.write_lock:
+                table = await self._table(collection)
+                await table.delete('id = ' + self._quoted(id))
+            return
+        self.catalog.delete(collection.value, id)
+        # Exact ID removal covers active, staged, unknown legacy and retained generations.
+        for generation in self.catalog.generations():
+            db = await self._generation_db(generation)
+            if collection.value in await db.table_names():
+                async with self.write_lock:
+                    await (await db.open_table(collection.value)).delete('id = ' + self._quoted(id))
+
+    async def update(
+        self,
+        collection: Collection,
+        id: str,
+        text: str,
+        vector: list[float],
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Validate first, then atomically replace an entry in one generation."""
+        self._validate_vector(vector)
+        meta = dict(metadata or {})
+        if not self._eligible(collection, id, meta):
+            return
+        now = time.time()
+        meta.setdefault('embedded_at', now)
+        if self.identity is not None:
+            meta['embedding_fingerprint'] = self.identity.fingerprint
+        row = {'id': id, 'text': text, 'vector': vector, 'metadata': json.dumps(meta),
+               'modality': meta.get('modality', 'text'), 'image_hash': meta.get('image_hash', ''),
+               'image_ref': meta.get('image_ref', ''), 'thumbnail_ref': meta.get('thumbnail_ref', ''),
+               'caption': meta.get('caption', ''), 'created_at': now, 'updated_at': now}
+        async with self.write_lock:
+            table = await self._table(collection, write=True)
+            await table.merge_insert('id').when_matched_update_all().when_not_matched_insert_all().execute([row])
+            if not self._eligible(collection, id, meta):
+                await table.delete('id = ' + self._quoted(id))
+
+    async def get(self, collection: Collection, id: str) -> Optional[VectorResult]:
+        """Fetch a single entry by ID."""
+        with self.reads.hold():
+            table = await self._table(collection)
+            results = await table.query().where('id = ' + self._quoted(id)).limit(1).to_pandas()
+        if results.empty:
+            return None
+        row = results.iloc[0]
+        meta_str = row.get("metadata", "{}")
+        try:
+            meta = json.loads(meta_str) if isinstance(meta_str, str) else {}
+        except (json.JSONDecodeError, TypeError):
+            meta = {}
+        if not self._eligible(collection, row['id'], meta):
+            return None
+        return VectorResult(
+            id=str(row["id"]),
+            score=1.0,
+            text=str(row.get("text", "")),
+            metadata=meta,
+        )
+
+    async def count(self, collection: Collection) -> int:
+        """Return the number of entries in a collection."""
+        with self.reads.hold():
+            table = await self._table(collection)
+            return await table.count_rows()
+
+    async def scan_all(self, collection: Collection) -> list[dict[str, Any]]:
+        """Return eligible rows for re-embedding and migration, retaining stored rows."""
+        with self.reads.hold():
+            table = await self._table(collection)
+            df = await table.to_pandas()
+        if df.empty:
+            return []
+        from colonymind.memory import curated
+        return curated.fenced_read(self.catalog.ledger if self.catalog is not None else None,
+            lambda: self._scan_eligible(collection, df), empty=[])
+
+    def _scan_eligible(self, collection, df):
+        selected = []
+        for row in df.to_dict(orient="records"):
+            raw = row.get('metadata', '{}')
+            try:
+                metadata = json.loads(raw) if isinstance(raw, str) else (raw or {})
+            except (json.JSONDecodeError, TypeError):
+                metadata = {}
+            if self._eligible(collection, row['id'], metadata):
+                selected.append(row)
+        return selected
+
+    async def check_index_health(self, expected_identity) -> None:
+        """Check managed provenance and bounded reads of the active index.
+
+        Per-row model labels are legacy annotations, not the managed generation's
+        embedding identity. Exhaustive discovery remains available separately.
+        """
+        from colonymind.vector.indexes import EmbeddingIdentity, IncompatibleIndex
+
+        if self.catalog is None or self.identity != expected_identity:
+            raise IncompatibleIndex("Embedding pipeline and managed index identity differ")
+        active = self.catalog.read_generation(expected_identity)
+        if (active["status"] != "ready" or active["identity"] is None
+                or EmbeddingIdentity(**active["identity"]) != expected_identity):
+            raise IncompatibleIndex("Active embedding generation is not verified and ready")
+        db = await self._generation_db(active)
+        existing = set(await db.table_names())
+        collections = [col for col in Collection if col.value in existing]
+        if not collections:
+            raise IncompatibleIndex("Active embedding generation has no readable collections")
+        for col in collections:
+            with self.reads.hold():
+                table = await db.open_table(col.value)
+                schema = await table.schema()
+                if schema.field("vector").type.list_size != expected_identity.dimensions:
+                    raise IncompatibleIndex("Active vector width differs from its embedding identity")
+                # Exercise actual storage without streaming all metadata or vectors.
+                await table.query().select(["id"]).limit(1).to_list()
+
+    async def close(self) -> None:
+        """Release database resources."""
+        if self._erasure_tasks:
+            await asyncio.gather(*(asyncio.wrap_future(task) for task in tuple(self._erasure_tasks)),
+                                 return_exceptions=True)
+        await self.compaction.close()
+        self._db = None
+        self._generation_dbs.clear()
+
+    def erase_forgotten_sources(self, turn_ids):
+        """Schedule the existing eraser on the store's loop after a committed forget.
+
+        The request answers with the fence receipt without waiting for erasure.
+        Close drains the background work before closing Lance.
+        """
+        async def erase():
+            await self.erase_source_projections(turn_ids, purge=False)
+            await self.compaction.schedule('erasure')
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop is not self._loop:
+            work = erase()
+            try:
+                task = asyncio.run_coroutine_threadsafe(work, self._loop)
+            except Exception:
+                work.close()
+                raise
+        else:
+            task = loop.create_task(erase())
+        self._erasure_tasks.add(task)
+
+        def finished(task):
+            self._erasure_tasks.discard(task)
+            if not task.cancelled() and task.exception() is not None:
+                logger.error("Source vector erasure failed", exc_info=task.exception())
+        task.add_done_callback(finished)
+        return task
+
+    async def erase_source_projections(self, turn_ids, *, purge=True):
+        """Remove exact linked rows even when the old graph row is already gone.
+
+        With ``purge`` this waits for an erasure compaction of every table, so
+        the erased text also leaves the Lance data files and version history
+        rather than only the current view. The forget route passes
+        ``purge=False`` and schedules that compaction after it answers: a first
+        compaction of a large store takes minutes.
+        """
+        if self.catalog is None:
+            return 0
+        selected = {'turn:' + value for value in turn_ids}
+        if not selected:
+            return 0
+
+        def erased_ids(batch, collection):
+            # Arrow conversion, JSON parsing and per-source SQLite checks can
+            # dominate a large scan. Each connection is opened and used by
+            # this worker; none is passed across threads.
+            matched = []
+            for row in batch.to_pylist():
+                meta = json.loads(row['metadata'] or '{}')
+                if meta.get('source_uri') not in selected:
+                    continue
+                from colonymind.memory import curated
+                try:
+                    if not curated.available(self.catalog.ledger):
+                        raise RuntimeError('curated_backend_unavailable')
+                    # Permanent deletion needs a strict read before consulting
+                    # eligibility, whose conservative fence can withhold on faults.
+                    with closing(self.catalog.ledger._connect()) as conn:
+                        forgotten = curated._is_forgotten(self.catalog.ledger, meta, conn=conn)
+                    if not forgotten and meta.get('source_projection'):
+                        from colonymind.turns.source_vectors import _hydrate_current
+                        if _hydrate_current(self.catalog.ledger, meta) is not None:
+                            continue
+                    erased = self.catalog.source_erased(meta)
+                    if not curated.available(self.catalog.ledger):
+                        raise RuntimeError('curated_backend_unavailable')
+                except Exception as error:
+                    logger.warning("Source vector erasure skipped: predicate unavailable (%s)", type(error).__name__)
+                    continue
+                if erased:
+                    self.catalog.delete(collection.value, row['id'])
+                    matched.append(row['id'])
+            return matched
+
+        deleted = set()
+        for generation in await asyncio.to_thread(self.catalog.generations):
+            db = await self._generation_db(generation)
+            names = await db.table_names()
+            for collection in Collection:
+                if collection.value not in names:
+                    continue
+                # The whole table is read first, as one counted read, and only
+                # then deleted from: a compaction pass holds the write lock
+                # while it waits for the reads begun before it, so a read that
+                # waited for the lock between batches would wait for itself.
+                matched = []
+                with self.reads.hold():
+                    table = await db.open_table(collection.value)
+                    batches = await table.query().select(['id', 'metadata']).to_batches(max_batch_length=1024)
+                    async for batch in batches:
+                        matched += await asyncio.to_thread(erased_ids, batch, collection)
+                for start in range(0, len(matched), 1024):
+                    bounded = matched[start:start + 1024]
+                    # Under the write lock, so a purge's table rewrite (snapshot,
+                    # then overwrite) never brings the rows back, on a handle
+                    # opened under it: a pass may have pruned the scan's version.
+                    async with self.write_lock:
+                        await (await db.open_table(collection.value)).delete(
+                            'id IN (' + ','.join(self._quoted(value) for value in bounded) + ')')
+                    deleted.update((collection.value, value) for value in bounded)
+        if purge:
+            # Every table, unconditionally, so a retry after a failed compaction
+            # still finishes the job and earlier soft deletes are purged as well.
+            await self.compaction.schedule('erasure')
+        return len(deleted)
+
+    async def _purge_deleted(self, db, name):
+        """Rewrite a table so soft-deleted rows leave its data files and history.
+
+        ``table.delete`` only writes a deletion vector under a new manifest.
+        ``optimize`` merges small fragments, dropping deleted rows on the way,
+        and prunes older versions. Compaction leaves a lone fragment with few
+        deletions untouched, so its surviving rows are rewritten instead.
+
+        The pass holds the store's write lock from start to end, so no commit
+        runs beside it. A rewrite lands on whatever version is current when it
+        commits and would drop rows another writer committed after its
+        snapshot. And tables created by earlier releases carry Lance's own
+        auto-cleanup (``lance.auto_cleanup.interval`` and ``older_than`` in
+        their manifest config, which the lancedb 0.39 Python API can neither
+        read nor unset). It runs inside a commit, and a commit beside a pass
+        set it off to delete the manifests the pass was pruning ("Not found:
+        .../_versions/<n>.manifest").
+
+        Reads are not held back. A read opens the latest version and reads its
+        files as it goes, so nothing a read may still need is pruned: the pass
+        first waits for the reads begun before it (none then holds an older
+        version than the current one), compacts and prunes only what is older
+        than the current version, waits for the reads begun before that commit,
+        and only then prunes everything but the latest version. A version
+        manifest that vanishes under a prune anyway (a cleaner in another
+        process) is retried once.
+        """
+        path = Path(db.uri) / (name + '.lance')
+        async with self.write_lock:
+            table = await db.open_table(name)
+            if not hasattr(table, 'optimize'):
+                logger.warning('LanceDB cannot compact %s; deleted rows stay on disk until a reindex', name)
+                return None
+            await self._settle_reads(name)
+            current = await asyncio.to_thread(_newest_manifest_time, path)
+            keep_since = 0.0 if current is None else current - KEEP_SLACK_SECONDS
+            passes = [await self._optimize(db, name, keep_since=keep_since)]
+            await self._settle_reads(name)
+            passes.append(await self._optimize(db, name))
+            pending = path / '_deletions'
+            if pending.is_dir() and any(pending.iterdir()):
+                logger.info('Rewriting vector table %s to purge deleted rows', name)
+                table = await db.open_table(name)
+                await db.create_table(name, data=await table.to_arrow(), mode='overwrite')
+                await self._settle_reads(name)
+                passes.append(await self._optimize(db, name))
+        return PurgeStats(passes[0].compaction, PrunedVersions(
+            sum(stats.prune.old_versions_removed for stats in passes),
+            sum(stats.prune.bytes_removed for stats in passes)))
+
+    async def _settle_reads(self, name):
+        running = await self.reads.drain(self.read_drain_seconds)
+        if running:
+            logger.warning('vector compaction of %s: %d read(s) begun before its prune still running after %.0f s; '
+                           'pruning anyway', name, running, self.read_drain_seconds)
+
+    async def _optimize(self, db, name, *, keep_since=None):
+        """Compact ``name`` and prune its versions committed before ``keep_since`` (epoch seconds;
+        None prunes all but the latest), on a fresh handle, once more if a manifest vanished."""
+        for attempt in (1, 2):
+            older_than = timedelta(0) if keep_since is None else timedelta(seconds=max(0.0, time.time() - keep_since))
+            try:
+                return await (await db.open_table(name)).optimize(cleanup_older_than=older_than)
+            except Exception as error:      # lancedb raises RuntimeError("lance error: ...")
+                if attempt == 2 or not _vanished_manifest(error):
+                    raise
+                logger.warning('vector compaction of %s: a version manifest vanished under the prune (%s); '
+                               'retrying once', name, error)

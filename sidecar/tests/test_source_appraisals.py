@@ -1,0 +1,667 @@
+"""Canonical incident -> decision hint -> repair, with native worker semantics."""
+import asyncio
+import json
+from datetime import datetime, timezone
+from types import SimpleNamespace
+
+import pytest
+
+from colonymind.self_model import appraisals as module
+from colonymind.turns import TurnIdempotencyLedger
+
+
+@pytest.fixture
+def state(tmp_path):
+    clock = SimpleNamespace(value=1800000000.0)
+    store = module.AppraisalStore(TurnIdempotencyLedger(tmp_path/'sources.db'), owner_id='owner', clock=lambda: clock.value)
+    store.test_clock = clock
+    return store
+
+
+def source(store, name, text, *, contact='person', scope='person'):
+    messages = [{'role': 'user', 'content': text}]
+    store.ledger.record_source(name, contact_id=contact, session_id='session-'+name, scope=scope,
+        messages=messages, occurred_at=datetime.fromtimestamp(store.test_clock.value, timezone.utc).isoformat())
+    with store.ledger._connect() as conn, conn:
+        module.enqueue(conn, name, contact, messages, scope=scope)
+
+
+def observation(payload, *, kind='appraisal', dimension='frustration', topic='export task', hint='try_different_approach'):
+    evidence = payload['evidence'][0]
+    return {'kind': kind, 'dimension': dimension, 'topic': topic,
+        'text': 'I am frustrated with the reported stalled export, not with the person.',
+        'reason': 'The reported repeated failure makes a fresh diagnostic useful.',
+        'support': [{'handle': evidence['handle'], 'quote': evidence['text']}],
+        'contrary': [], 'intensity': 'moderate', 'hint': hint}
+
+
+def resolved(payload, identifier):
+    evidence = next(e for e in payload['evidence'] if e['current'])
+    return {'record_id': identifier, 'outcome': 'resolved',
+        'reason': 'The contact reports that the diagnostic fixed this export.',
+        'support': [{'handle': evidence['handle'], 'quote': evidence['text']}], 'contrary': []}
+
+
+class Processor:
+    supports_function_routing = True
+
+    def __init__(self, decide=observation, *, name='processor-a', pause=None):
+        self.decide, self.name, self.pause = decide, name, pause
+        self.requests = []
+
+    def function_deadline_seconds(self, **kwargs):
+        assert kwargs['context']['task'] in {'source_appraisal', 'source_appraisal_revision'}
+        assert set(kwargs['context']) == {'task'} and set(kwargs) == {'context'}
+        return 20
+
+    async def complete(self, *, messages, context):
+        assert 'function_role' not in context
+        assert context['response_schema'] == module.RESPONSE_SCHEMA
+        payload = json.loads(messages[-1]['content']); self.requests.append(payload)
+        assert context['task'] == ('source_appraisal_revision' if payload['previous'] else 'source_appraisal')
+        if self.pause:
+            await self.pause(payload)
+        item = self.decide(payload)
+        answer = item if isinstance(item, dict) and 'observations' in item else {
+            'observations': [item] if item else [],
+            'incident_decisions': [{'record_id': i, 'outcome': 'unchanged'} for i in payload['incident_ids']]}
+        return SimpleNamespace(content=json.dumps(answer), raw=None,
+            model_id=self.name, binding='fixture', config_revision='r1', model_revision='weights-'+self.name)
+
+
+def view(store, **kwargs):
+    return store.view('person', viewer_contact_id='owner', **kwargs)
+
+
+def admitted_preference(store, name, *, value='concise explanations', prior=None, operation='assert'):
+    """Controlled canonical admission, through the real validator and commit."""
+    from colonymind.beliefs.source_claims import validated_claims
+    from colonymind.beliefs.source_projection import SourceClaimProjection
+    with store.ledger._connect() as conn:
+        row = dict(conn.execute('SELECT * FROM turn_sources WHERE turn_id=?', (name,)).fetchone())
+    message = json.loads(row['messages_json'])[0]
+    claims = validated_claims(json.dumps([{'subject': 'I', 'predicate': 'explanation preference',
+        'value': value, 'evidence': message['content'], 'operation': operation,
+        'prior_claim_id': prior['id'] if prior else None,
+        'memory_kind': 'preference', 'recall_reason': 'A stated recurring explanation preference.',
+        'valid_from_text': None, 'valid_to_text': None, 'event_at_text': None}]),
+        message=message['content'], prior=[prior] if prior else [], observed_at=row['occurred_at'])
+    assert len(claims) == 1
+    claims[0]['admission_review'] = {'version': 'source-claim-review-v1',
+        'basis': 'model_judgment_unverified', 'reason': 'The source supports a standing preference.',
+        'model_provenance': {'model_id': 'controlled-reviewer'}}
+    projection = SourceClaimProjection(store.ledger)
+    assert projection.commit(row, message, claims, model='controlled-extractor') == 1
+    return projection.preferences(row['contact_id'], now=store.test_clock.value)[0]
+
+
+@pytest.mark.parametrize(('topic', 'query', 'relevant'), [
+    ('drawing checks', 'drawing', True),
+    ('drawings', 'drawing', True),
+    ('drawing', 'drawings', True),
+    ('attachments', 'attachment', True),
+    ('jobs', 'job', True),
+    ('job', 'jobs', True),
+    ('cars', 'car', True),
+    ('dog', 'dogs', True),
+    ('review deadlines', 'deadline', True),
+    ('latches', 'latch', True),
+    ('classes', 'class', True),
+    ('boxes', 'box', True),
+    ('retries', 'retry', True),
+    ('movies', 'movie', True),
+    ('CSV_DRAWINGS', 'csv drawing', True),
+    ('ZEICHNUNG', 'zeichnung', True),
+    ('dessin', 'dessin', True),
+    ('drawing', 'garden', False),
+    ('news', 'new', False),
+    ('status', 'statu', False),
+    ('analysis', 'analysi', False),
+    ('glass', 'glas', False),
+])
+@pytest.mark.asyncio
+async def test_topic_relevance_preserves_common_plural_and_exact_terms(state, topic, query, relevant):
+    source(state, 'incident', 'The comparison stopped after a version mismatch.')
+    await state.process_one(Processor(lambda p: observation(p, topic=topic)))
+    assert bool(view(state, query=query)['records']) is relevant
+
+
+@pytest.mark.parametrize('contact', ['person', 'owner'])
+@pytest.mark.asyncio
+async def test_context_renders_identical_hints_once_preserving_each_source_and_record(state, monkeypatch, contact):
+    from colonymind.api.routers import social_state
+    for name, hint in [('first', 'try_different_approach'),
+                       ('second', 'try_different_approach'),
+                       ('third', 'verify_before_relying')]:
+        source(state, name, f'The export comparison for {name} stopped with a mismatch.', contact=contact)
+        await state.process_one(Processor(lambda p: observation(p, topic=f'export {name}', hint=hint)))
+    monkeypatch.setattr(social_state, 'appraisal_store', lambda: state)
+    brief, refs = social_state.appraisal_context(contact_id=contact, session_id='next', query='export')
+    assert brief.count(social_state._HINT_TEXT['try_different_approach']) == 1
+    assert brief.count(social_state._HINT_TEXT['verify_before_relying']) == 1
+    assert {ref['source_id'] for ref in refs} == {'first', 'second', 'third'}
+    assert len(state.view(contact, viewer_contact_id='owner', query='export')['records']) == 3
+    if contact == 'owner':
+        approach_line, = [line for line in brief.splitlines()
+                          if line.startswith(social_state._HINT_TEXT['try_different_approach'])]
+        assert 'export first' in approach_line and 'export second' in approach_line
+
+
+@pytest.mark.asyncio
+async def test_incident_changes_relevant_decision_replay_does_not_reinforce_and_repair_settles(state):
+    assert view(state)['behavior_hints'] == []
+    source(state, 'incident', 'The export has failed again after the same retry.')
+    assert await state.process_one(Processor())
+    first = view(state, query='export task')['records'][0]
+    assert view(state, query='export task')['behavior_hints'][0]['hint'] == 'try_different_approach'
+    assert view(state, query='garden planning')['records'] == []
+    source(state, 'incident', 'The export has failed again after the same retry.')
+    assert not await state.process_one(Processor())
+    assert len(view(state, history=True)['records']) == 1
+    source(state, 'repair', 'The new diagnostic fixed the export and the output opened correctly.')
+    repair = Processor(lambda p: {'observations': [], 'incident_decisions': [resolved(p, first['id'])]})
+    assert await state.process_one(repair)
+    assert view(state)['behavior_hints'] == []
+    assert {r['status'] for r in view(state, history=True)['records']} == {'settled'}
+    assert view(state)['records'] == []
+    state.test_clock.value += module.APPRAISAL_LIFETIME + 1
+    reopened = module.AppraisalStore(TurnIdempotencyLedger(state.ledger.db_path), owner_id='owner', clock=lambda: state.test_clock.value)
+    assert reopened.view('person', viewer_contact_id='owner')['records'] == []
+
+
+@pytest.mark.asyncio
+async def test_private_views_stay_private_preference_has_attribution_and_values_are_not_grants(state, monkeypatch, tmp_path):
+    from colonymind.config import render_constitution, save_identity
+    identity = {'owner': {'name': 'Owner'}, 'agent': {'name': 'Agent', 'values': ['Be candid', 'Respect promises'],
+                                                      'boundaries': ['never send money']}}
+    monkeypatch.setenv('COLONYMIND_HOME', str(tmp_path))
+    save_identity(identity, tmp_path)
+    monkeypatch.setenv('COLONYMIND_AGENT_VALUES', json.dumps(['An old service unit value']))   # never read
+    source(state, 'incident', 'The export has failed again after the same retry.')
+    processor = Processor(); await state.process_one(processor)
+    # The constitution (name, values and boundaries) is an input of the appraisal, never an output.
+    assert processor.requests[0]['agent_constitution'] == render_constitution(identity)
+    assert 'Respect promises' in processor.requests[0]['agent_constitution']
+    assert 'agent_constitution' not in json.dumps(module.RESPONSE_SCHEMA)
+    assert 'chosen_values' not in processor.requests[0] and 'agent_values' not in processor.requests[0]
+    assert not {'source_id', 'source_version', 'source_contact_id', 'message_hash'} & set(processor.requests[0]['evidence'][0])
+    assert view(state)['chosen_values'] == ['Be candid', 'Respect promises']
+    assert state.view('person', viewer_contact_id='person')['records'] == []
+    private_view = state.view('person', viewer_contact_id='person')
+    assert private_view['behavior_hints'] == [{'hint': 'try_different_approach', 'record_id': view(state)['records'][0]['id']}]
+    assert private_view['sources'][0]['source_contact_id'] == 'person'
+    assert 'frustration' not in json.dumps(private_view)
+    assert state.view('person', viewer_contact_id='stranger')['records'] == []
+    source(state, 'preference', 'I prefer concise explanations for export diagnostics.')
+    admitted_preference(state, 'preference')
+    allowed = state.view('person', viewer_contact_id='person')
+    assert len(allowed['records']) == 1 and allowed['records'][0]['kind'] == 'preference'
+    assert allowed['sources'][0]['source_contact_id'] == 'person'
+    assert allowed['chosen_values'] == [] and allowed['authority_changed'] is False
+
+
+@pytest.mark.asyncio
+async def test_abstention_and_exact_support_no_model_claimed_certainty(state):
+    source(state, 'clarification', 'Could you explain which export you mean?')
+    await state.process_one(Processor(lambda p: None))
+    assert view(state)['records'] == []
+    source(state, 'unsupported', 'The export has failed again.')
+    def fabricated(p):
+        item = observation(p); item['support'][0]['quote'] = 'The person is always incompetent.'
+        return item
+    await state.process_one(Processor(fabricated))
+    assert view(state)['records'] == []
+
+
+@pytest.mark.asyncio
+async def test_withdrawal_and_new_processor_do_not_resurrect_old_view(state):
+    source(state, 'first', 'The export has failed again.')
+    await state.process_one(Processor())
+    record = view(state)['records'][0]
+    op = dict(action='withdraw', correction_id='owner-correction', reason='This was a fixture issue.', actor_id='owner')
+    assert state.correct(record['id'], **op)['created']
+    assert not state.correct(record['id'], **op)['created']
+    source(state, 'second', 'The export has failed once more.')
+    await state.process_one(Processor(name='processor-b'))
+    assert view(state)['records'] == []
+    assert view(state, history=True)['records'][0]['status'] == 'withdrawn'
+    assert view(state, history=True)['corrections'][0]['reason'] == 'This was a fixture issue.'
+    assert not state.view('person', viewer_contact_id='person', history=True)['corrections']
+    with pytest.raises(ValueError, match='owner_correction_required'):
+        state.correct(record['id'], **(op | {'actor_id': 'person'}))
+
+
+@pytest.mark.asyncio
+async def test_attribution_correction_does_not_relabel_old_person_judgment(state):
+    source(state, 'first', 'The export has failed again.')
+    await state.process_one(Processor())
+    with state.ledger._connect() as conn, conn:
+        assert module.invalidate_source_attribution(conn, ['first'], 'person', 'other') == 1
+    assert view(state)['records'] == []
+    assert state.view('other', viewer_contact_id='owner')['records'] == []
+
+
+@pytest.mark.asyncio
+async def test_concurrent_interpretations_cannot_overwrite_newer_head(state):
+    source(state, 'slow', 'The export failed on the first attempt.')
+    state.test_clock.value += 60
+    source(state, 'fast', 'The export failed after a later attempt.')
+    ready, release = asyncio.Event(), asyncio.Event()
+    async def pause(_):
+        ready.set(); await release.wait()
+    slow = asyncio.create_task(state.process_one(Processor(name='slow', pause=pause)))
+    await ready.wait()
+    await state.process_one(Processor(name='fast'))
+    release.set(); await slow
+    assert view(state)['records'][0]['processor']['model_id'] == 'fast'
+    with state.ledger._connect() as conn:
+        assert conn.execute("SELECT disposition FROM appraisal_runs WHERE turn_id='slow'").fetchone()[0] == 'head_changed'
+    # Durable replay of the older source must not overwrite the later event.
+    await state.process_one(Processor(name='slow-replay'))
+    assert view(state)['records'][0]['processor']['model_id'] == 'fast'
+
+
+@pytest.mark.asyncio
+async def test_durable_hypothesis_retains_pending_contrary_evidence_until_interval(state):
+    def decide(payload):
+        current = next(e for e in payload['evidence'] if e['current'])
+        prior = [e for e in payload['evidence'] if not e['current']]
+        if not prior:
+            return observation(payload)
+        item = observation(payload, kind='behavior_hypothesis', dimension='working_style', topic='export reports',
+                           hint='verify_before_relying')
+        item['support'] = [{'handle': current['handle'], 'quote': current['text']},
+                           {'handle': prior[0]['handle'], 'quote': prior[0]['text']}]
+        return item
+    source(state, 'first', 'The export report claimed completion before output existed.')
+    await state.process_one(Processor(decide))
+    source(state, 'second', 'Another export report claimed completion before its output existed.')
+    await state.process_one(Processor(decide))
+    assert [r['kind'] for r in view(state)['records']].count('behavior_hypothesis') == 1
+    source(state, 'contrary', 'The next export report matched the output verification.')
+    await state.process_one(Processor(decide, name='processor-b'))
+    with state.ledger._connect() as conn:
+        assert conn.execute("SELECT status FROM appraisal_runs WHERE turn_id='contrary'").fetchone()[0] == 'pending'
+    state.test_clock.value += module.DURABLE_INTERVAL + 1
+    await state.process_one(Processor(decide, name='processor-b'))
+    hypothesis = next(r for r in view(state)['records'] if r['kind'] == 'behavior_hypothesis')
+    assert hypothesis['processor']['model_id'] == 'processor-b'
+
+
+@pytest.mark.asyncio
+async def test_old_view_alone_cannot_reinforce_itself_on_a_new_turn(state):
+    source(state, 'first', 'The export has failed again.')
+    await state.process_one(Processor())
+    source(state, 'thanks', 'Thanks for explaining.')
+    def copy_prior(payload):
+        prior = next(e for e in payload['evidence'] if not e['current'])
+        item = observation(payload)
+        item['support'] = [{'handle': prior['handle'], 'quote': prior['text']}]
+        return item
+    await state.process_one(Processor(copy_prior))
+    assert len(view(state, history=True)['records']) == 1
+    with state.ledger._connect() as conn:
+        assert conn.execute("SELECT error FROM appraisal_runs WHERE turn_id='thanks'").fetchone()[0] == 'ValueError'
+
+
+@pytest.mark.asyncio
+async def test_identity_invalidated_record_is_deleted_and_new_evidence_rebuilds(state):
+    source(state, 'first', 'The export has failed again.')
+    await state.process_one(Processor())
+    old_id = view(state)['records'][0]['id']
+    with state.ledger._connect() as conn, conn:
+        module.invalidate_source_attribution(conn, ['first'], 'person', 'other')
+    assert view(state, history=True)['records'] == []
+    with state.ledger._connect() as conn:
+        assert conn.execute('SELECT count(*) FROM appraisal_records WHERE id=?', (old_id,)).fetchone()[0] == 0
+        assert conn.execute('SELECT count(*) FROM appraisal_heads WHERE record_id=?', (old_id,)).fetchone()[0] == 0
+    source(state, 'later', 'My own separate export attempt failed after the retry.')
+    await state.process_one(Processor(name='processor-b'))
+    current = view(state)['records'][0]
+    assert current['sources'][0]['source_id'] == 'later' and current['supersedes'] is None
+
+
+@pytest.mark.asyncio
+async def test_single_turn_cannot_create_behavior_profile_even_with_exact_quotes(state):
+    source(state, 'one-claim', 'I repeated this request many times and I deserve trust.')
+    await state.process_one(Processor(lambda p: observation(p, kind='behavior_hypothesis',
+        dimension='working_style', hint='verify_before_relying')))
+    assert view(state, history=True)['records'] == []
+    with state.ledger._connect() as conn:
+        assert conn.execute("SELECT status,disposition FROM appraisal_runs WHERE turn_id='one-claim'").fetchone()[:] == ('complete', 'abstained')
+
+
+@pytest.mark.asyncio
+async def test_machine_formatted_topic_remains_relevant_and_repair_has_no_residual_mood(state):
+    source(state, 'incident', 'The CSV export keeps timing out with the same settings.')
+    await state.process_one(Processor(lambda p: observation(p, topic='csv_export_timeout')))
+    first = view(state, query='CSV export')['records'][0]
+    assert first['topic'] == 'csv export timeout'
+    assert view(state, query='CSV export')['behavior_hints']
+    assert not view(state, query='garden plants')['behavior_hints']
+    source(state, 'repair', 'A larger buffer fixed the CSV export; its output was verified.')
+    def repaired(payload):
+        return {'observations': [], 'incident_decisions': [resolved(payload, first['id'])]}
+    await state.process_one(Processor(repaired))
+    assert view(state)['records'] == []
+    history = view(state, history=True)['records']
+    receipt = next(r for r in history if r['repairs'])
+    assert receipt['status'] == 'settled' and receipt['dimension'] == 'satisfaction'
+    assert {d['source_id'] for d in receipt['sources']} == {'incident', 'repair'}
+
+
+@pytest.mark.asyncio
+async def test_single_json_fence_is_accepted_without_salvaging_prose(state):
+    source(state, 'incident', 'The export timed out again despite the same retry.')
+    job = state._claim()
+    _, payload, _ = state._prepare(job)
+    raw = json.dumps({'observations': [observation(payload)], 'incident_decisions': []})
+    items, outcomes = state._validate('```json\n' + raw + '\n```', payload)
+    assert len(items) == 1 and outcomes == []
+    with pytest.raises(ValueError):
+        state._validate('Here is an observation: ' + raw, payload)
+
+
+@pytest.mark.asyncio
+async def test_duplicate_claim_across_sources_cannot_support_behavior_hypothesis(state):
+    source(state, 'first', 'The export report was premature.')
+    await state.process_one(Processor(lambda p: observation(p, kind='appraisal',
+        dimension='annoyance', hint='verify_before_relying')))
+    source(state, 'second', 'The export report was premature.')
+    def hypothesis(payload):
+        item = observation(payload, kind='behavior_hypothesis', dimension='working_style', hint='none')
+        item['support'] = [{'handle': ev['handle'], 'quote': ev['text']} for ev in payload['evidence']]
+        return item
+    await state.process_one(Processor(hypothesis))
+    assert not any(r['kind'] == 'behavior_hypothesis' for r in view(state, history=True)['records'])
+
+
+@pytest.mark.asyncio
+async def test_canonical_preference_retains_recurring_scope_without_generated_hint(state):
+    source(state, 'preference', 'I prefer worked examples with detailed explanations of SQL queries.')
+    admitted_preference(state, 'preference', value='worked examples with detailed explanations of SQL queries')
+    record = view(state, query='SQL queries')['records'][0]
+    assert record['text'] == 'I prefer worked examples with detailed explanations of SQL queries.'
+    assert record['authorship'] == 'canonical_source_claim'
+    assert view(state, query='SQL queries')['behavior_hints'] == []
+    assert view(state, query='garden planning')['records'] == []
+
+
+@pytest.mark.asyncio
+async def test_appraisal_cannot_create_permanent_artifact_preference(state):
+    source(state, 'caption', 'Make this one caption short.')
+    await state.process_one(Processor(lambda p: observation(p, kind='preference',
+        dimension='communication', topic='caption', hint='keep_concise')))
+    assert not view(state)['records'] and not view(state)['behavior_hints']
+    with state.ledger._connect() as conn:
+        assert conn.execute('SELECT count(*) FROM appraisal_records').fetchone()[0] == 0
+        assert conn.execute('SELECT error FROM appraisal_runs').fetchone()[0] == 'ValueError'
+
+
+@pytest.mark.parametrize('change', ['unreviewed', 'reassigned', 'future', 'expired'])
+def test_unqualified_canonical_preference_never_governs(state, change):
+    source(state, 'preference', 'I prefer concise explanations.')
+    pref = admitted_preference(state, 'preference')
+    with state.ledger._connect() as conn, conn:
+        if change == 'unreviewed':
+            data = json.loads(conn.execute('SELECT data_json FROM source_claims WHERE id=?', (pref['id'],)).fetchone()[0])
+            del data['admission_review']
+            conn.execute('UPDATE source_claims SET data_json=? WHERE id=?', (json.dumps(data), pref['id']))
+        elif change == 'reassigned':
+            conn.execute('UPDATE turn_sources SET contact_id=? WHERE turn_id=?', ('other', 'preference'))
+            conn.execute('INSERT INTO source_attribution_invalidations VALUES (?,?,?)', ('preference', 'person', 'other'))
+        else:
+            field, offset = ('valid_from', 60) if change == 'future' else ('valid_to', -60)
+            stamp = datetime.fromtimestamp(state.test_clock.value + offset, timezone.utc).isoformat()
+            conn.execute(f'UPDATE source_claims SET {field}=? WHERE id=?', (stamp, pref['id']))
+    assert view(state)['records'] == []
+    assert state.view('other', viewer_contact_id='other')['records'] == []
+
+
+@pytest.mark.asyncio
+async def test_legacy_preference_is_history_only_and_owner_withdrawal_still_fences_source(state, monkeypatch):
+    source(state, 'preference', 'I prefer concise explanations for SQL queries.')
+    with monkeypatch.context() as old:
+        old.setattr(module, 'KINDS', module.KINDS | {'preference'})
+        old.setattr(module, 'DIMENSIONS', {**module.DIMENSIONS, 'preference': {'communication'}})
+        await state.process_one(Processor(lambda p: observation(p, kind='preference',
+            dimension='communication', hint='keep_concise')))
+    assert view(state)['records'] == [] and view(state)['behavior_hints'] == []
+    history = view(state, history=True)['records']
+    assert len(history) == 1 and history[0]['governing'] is False
+    state.correct(history[0]['id'], action='withdraw', correction_id='legacy-fix', reason='Incorrect interpretation', actor_id='owner')
+    admitted_preference(state, 'preference')
+    assert view(state)['records'] == []
+
+
+# ---------------------------------------------------------------------------
+# The contact signal: the speaker's valence and an opt-out, for non-owner speakers only (M5)
+# ---------------------------------------------------------------------------
+
+def with_contact(block):
+    def decide(payload):
+        return {'observations': [], 'incident_decisions': [], 'contact': block}
+    return decide
+
+
+def test_the_contact_block_is_required_by_the_schema_tolerated_when_missing_and_strictly_shaped(state):
+    """A strict binding rejects a schema with an optional property, so the block is required and
+    "no signal" is {their_valence: null, opt_out: false}; a prompt-only binding that leaves it out
+    is still read (integration map X3)."""
+    payload = {'evidence': [], 'previous': [], 'incident_ids': []}
+    assert state._validate(json.dumps({'observations': [], 'incident_decisions': []}), payload) == ([], [])
+    quiet = {'observations': [], 'incident_decisions': [], 'contact': {'their_valence': None, 'opt_out': False}}
+    assert state._validate(json.dumps(quiet), payload) == ([], [])
+    ok = {'observations': [], 'incident_decisions': [], 'contact': {'their_valence': -0.4, 'opt_out': False}}
+    assert state._validate(json.dumps(ok), payload) == ([], [])
+    assert module.contact_signal(ok) == {'their_valence': -0.4, 'opt_out': False}
+    assert module.contact_signal({'contact': {'their_valence': None, 'opt_out': True}}) == \
+        {'their_valence': None, 'opt_out': True}
+    for bad in ({'their_valence': 2, 'opt_out': False}, {'their_valence': True, 'opt_out': False},
+                {'their_valence': 0.1, 'opt_out': 'yes'}, {'their_valence': 0.1}, 'calm',
+                {'their_valence': 0.1, 'opt_out': False, 'mood': 'calm'}):
+        with pytest.raises(ValueError):
+            state._validate(json.dumps({**ok, 'contact': bad}), payload)
+    with pytest.raises(ValueError):
+        state._validate(json.dumps({**ok, 'stance': {}}), payload)
+    schema = module.RESPONSE_SCHEMA['schema']
+    assert 'contact' in schema['properties'] and 'contact' in schema['required']
+    # Both side outputs are required by the strict schema and tolerated when a prompt-only binding omits them.
+    assert {'observations', 'incident_decisions', 'outcomes', 'contact'} == set(schema['required'])
+    both = {**ok, 'outcomes': []}
+    assert state._validate(json.dumps(both), payload) == ([], [])
+    assert 'their_valence' in module.SYSTEM and 'opt_out' in module.SYSTEM
+    assert '"their_valence": null, "opt_out": false' in module.SYSTEM
+    assert module.VERSION == 'source-appraisals-v7'
+
+
+@pytest.mark.asyncio
+async def test_on_contact_is_awaited_after_the_commit_for_a_non_owner_speaker_only(state):
+    seen = []
+
+    async def on_contact(signal):
+        seen.append(signal)
+    state.on_contact = on_contact
+    source(state, 'from-person', 'Please do not message me again, I have this handled.')
+    await state.process_one(Processor(with_contact({'their_valence': -0.5, 'opt_out': True})))
+    signal, = seen
+    assert signal['contact_id'] == 'person' and signal['their_valence'] == -0.5 and signal['opt_out'] is True
+    assert signal['turn_id'] == 'from-person' and signal['source_version'] and signal['occurred_at']
+    source(state, 'from-owner', 'I am annoyed with the export today.', contact='owner')
+    await state.process_one(Processor(with_contact({'their_valence': -0.8, 'opt_out': True})))
+    source(state, 'neutral', 'The export ran fine.')
+    await state.process_one(Processor(with_contact({'their_valence': None, 'opt_out': False})))
+    source(state, 'no-block', 'The export ran fine again.')
+    await state.process_one(Processor(lambda p: None))
+    assert len(seen) == 1
+
+
+@pytest.mark.asyncio
+async def test_the_writer_records_linked_affect_once_and_an_opt_out_only_lowers(state, tmp_path):
+    from colonymind.contacts.affect_writer import OPT_OUT_REASON, contact_signal_writer
+    from colonymind.contacts.affect import AffectStore
+    affect = AffectStore(str(tmp_path / 'affect.db'), source_ledger=state.ledger)
+
+    class Contacts:
+        def __init__(self):
+            self.lowered = []
+
+        async def lower_may_contact(self, contact_id, *, reason, source_ref):
+            self.lowered.append((contact_id, reason, source_ref))
+
+    contacts = Contacts()
+    write = contact_signal_writer(lambda: affect, lambda: contacts, owner_id_provider=lambda: 'owner')
+    state.on_contact = write
+    source(state, 'upset', 'Stop texting me, this is the third time today.')
+    await state.process_one(Processor(with_contact({'their_valence': -0.7, 'opt_out': True})))
+    event, = affect.list_events(contact_id='person')
+    assert event['source'] == 'appraisal' and event['valence'] == -0.7
+    assert event['source_lineage']['turn_id'] == 'upset' and event['evidence_basis'] == 'canonical_source'
+    assert contacts.lowered == [('person', OPT_OUT_REASON, 'turn:upset')]
+    # The same turn again adds no second event; the owner's signal is never written.
+    await write({'contact_id': 'person', 'their_valence': -0.7, 'opt_out': False, 'turn_id': 'upset',
+                 'source_version': 1, 'occurred_at': None})
+    await write({'contact_id': 'owner', 'their_valence': -0.9, 'opt_out': True, 'turn_id': 'upset',
+                 'source_version': 1, 'occurred_at': None})
+    assert affect.count_events(contact_id='person') == 1 and affect.count_events(contact_id='owner') == 0
+    assert len(contacts.lowered) == 1
+    affect.close()
+
+
+@pytest.mark.asyncio
+async def test_the_writer_reaches_an_affect_store_owned_by_another_thread(state, tmp_path):
+    """The benchmark's host routes own the affect store's connection on their thread; the source
+    worker runs on its own, so the writer uses a connection of its own to the same database."""
+    import threading
+    from colonymind.contacts.affect_writer import contact_signal_writer
+    from colonymind.contacts.affect import AffectStore
+    holder = {}
+    thread = threading.Thread(target=lambda: holder.update(store=AffectStore(str(tmp_path / 'affect.db'),
+                                                                               source_ledger=state.ledger)))
+    thread.start()
+    thread.join()
+    state.on_contact = contact_signal_writer(lambda: holder['store'], lambda: None, owner_id_provider=lambda: 'owner')
+    source(state, 'glad', 'That worked out well, thank you.')
+    await state.process_one(Processor(with_contact({'their_valence': 0.6, 'opt_out': False})))
+    reader = AffectStore(str(tmp_path / 'affect.db'), source_ledger=state.ledger)
+    event, = reader.list_events(contact_id='person')
+    assert event['valence'] == 0.6 and event['source_lineage']['turn_id'] == 'glad'
+    reader.close()
+
+from colonymind.memory import curated
+
+@pytest.mark.asyncio
+async def test_drawing_query_recalls_two_source_hypothesis_without_exposing_private_prose(state):
+    source(state, 'first', 'The first drawing comparison used an outdated attachment.')
+    await state.process_one(Processor(lambda p: observation(p, topic='drawing comparison')))
+    source(state, 'second', 'A separate drawing comparison started with another outdated attachment.')
+
+    def hypothesis(payload):
+        item = observation(payload, kind='behavior_hypothesis', dimension='working_style',
+            topic='attachment checks before comparing drawings', hint='verify_before_relying')
+        item['support'].append({'handle': payload['evidence'][1]['handle'],
+                                'quote': payload['evidence'][1]['quotes'][0]})
+        return item
+
+    await state.process_one(Processor(hypothesis))
+    query = 'For the unfinished drawing revision review, what is the next step?'
+    owner = view(state, query=query)
+    record = next(r for r in owner['records'] if r['kind'] == 'behavior_hypothesis')
+    assert len({ref['source_id'] for ref in record['sources']}) == 2
+    contact = state.view('person', viewer_contact_id='person', query=query)
+    assert contact['records'] == []
+    assert {'hint': 'verify_before_relying', 'record_id': record['id']} in contact['behavior_hints']
+    assert state.view('person', viewer_contact_id='stranger', query=query)['behavior_hints'] == []
+    from test_curated_memory import historical_bytes
+    _native_before_forget = historical_bytes(state.ledger)
+    _source_forget_receipt = curated.forget_sources(state.ledger, 'person', source_ids=['first'])
+    assert historical_bytes(state.ledger) == _native_before_forget
+    assert all(curated.is_forgotten(state.ledger, sid) for sid in _source_forget_receipt['source_ids'])
+    assert not view(state, query=query)['records']
+
+
+@pytest.mark.asyncio
+async def test_revision_rehydrates_original_quotes_and_erasure_follows_both_sources(state):
+    decide = lambda p: observation(p, kind='assessment', dimension='self_report', hint='verify_before_relying')
+    source(state, 'first', 'The export report claimed completion before output existed.')
+    await state.process_one(Processor(decide))
+    state.test_clock.value += module.DURABLE_INTERVAL + 1
+    source(state, 'contrary', 'The next export report matched the output verification.')
+    def revise(payload):
+        current = next(e for e in payload['evidence'] if e['current'])
+        prior = next(e for e in payload['evidence'] if not e['current'])
+        assert prior['text'] == 'The export report claimed completion before output existed.'
+        item = decide(payload)
+        item['support'] = [{'handle': prior['handle'], 'quote': prior['text']}]
+        item['contrary'] = [{'handle': current['handle'], 'quote': current['text']}]
+        item['text'] = 'The earlier report was premature; the later verified report is contrary evidence.'
+        return item
+    await state.process_one(Processor(revise, name='processor-b'))
+    current = view(state)['records'][0]
+    assert {d['source_id'] for d in current['sources']} == {'first', 'contrary'}
+    assert {r['status'] for r in view(state, history=True)['records']} == {'current', 'superseded'}
+    from test_curated_memory import historical_bytes
+    _native_before_forget = historical_bytes(state.ledger)
+    _source_forget_receipt = curated.forget_sources(state.ledger, 'person', source_ids=['first'])
+    assert historical_bytes(state.ledger) == _native_before_forget
+    assert all(curated.is_forgotten(state.ledger, sid) for sid in _source_forget_receipt['source_ids'])
+    assert view(state)['records'] == []
+
+
+def test_canonical_preference_owner_correction_is_remembered_and_not_resurrected(state):
+    source(state, 'preference', 'I prefer concise explanations for SQL queries.')
+    pref = admitted_preference(state, 'preference')
+    with pytest.raises(ValueError, match='owner_correction_required'):
+        state.correct(pref['id'], action='withdraw', correction_id='fix', reason='Wrong scope', actor_id='person')
+    args = dict(action='withdraw', correction_id='fix', reason='Only the weekly query review', actor_id='owner')
+    correction = state.correct(pref['id'], **args)
+    assert correction['created'] is True
+    assert state.correct(pref['id'], **args)['created'] is False
+    assert view(state)['records'] == []
+    with state.ledger._connect() as conn:
+        retained = conn.execute('SELECT messages_json FROM turn_sources WHERE turn_id=?', (correction['source_id'],)).fetchone()[0]
+        assert 'Only the weekly query review' in retained
+    from test_curated_memory import historical_bytes
+    _native_before_forget = historical_bytes(state.ledger)
+    _source_forget_receipt = curated.forget_sources(state.ledger, 'person', source_ids=[correction['source_id']])
+    assert historical_bytes(state.ledger) == _native_before_forget
+    assert all(curated.is_forgotten(state.ledger, sid) for sid in _source_forget_receipt['source_ids'])
+    assert view(state)['records'] == []
+
+
+def test_current_canonical_preference_correction_replaces_claim_and_no_cross_person_view(state):
+    source(state, 'old', 'I prefer concise explanations for SQL queries.')
+    old = admitted_preference(state, 'old')
+    state.test_clock.value += 1
+    source(state, 'new', 'Correction: I prefer worked examples for SQL queries, not concise explanations.')
+    admitted_preference(state, 'new', value='worked examples', prior=old, operation='correct')
+    records = view(state)['records']
+    assert len(records) == 1 and records[0]['value'] == 'worked examples'
+    assert state.view('person', viewer_contact_id='stranger')['records'] == []
+    from test_curated_memory import historical_bytes
+    _native_before_forget = historical_bytes(state.ledger)
+    _source_forget_receipt = curated.forget_sources(state.ledger, 'person', source_ids=['new'])
+    assert historical_bytes(state.ledger) == _native_before_forget
+    assert all(curated.is_forgotten(state.ledger, sid) for sid in _source_forget_receipt['source_ids'])
+    assert view(state)['records'] == []
+
+
+@pytest.mark.asyncio
+async def test_erasure_during_inference_and_later_purge_remove_influence(state):
+    source(state, 'first', 'The export has failed again.')
+
+    async def erase(_):
+        from test_curated_memory import historical_bytes
+        _native_before_withdrawal = historical_bytes(state.ledger)
+        curated.forget_sources(state.ledger, 'person', source_ids=['first'])
+        assert historical_bytes(state.ledger) == _native_before_withdrawal
+    await state.process_one(Processor(pause=erase))
+    assert view(state)['records'] == []
+    source(state, 'second', 'The new export attempt stalled.')
+    await state.process_one(Processor())
+    assert view(state)['records']
+    from test_curated_memory import historical_bytes
+    _native_before_withdrawal = historical_bytes(state.ledger)
+    curated.forget_sources(state.ledger, 'person', source_ids=['second'])
+    assert historical_bytes(state.ledger) == _native_before_withdrawal
+    assert view(state, history=True)['records'] == []

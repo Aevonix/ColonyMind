@@ -1,0 +1,91 @@
+# Contacts, appraisals and current world state
+
+ColonyMind keeps one canonical contact identity across verified channel handles:
+an E.164 number is one person on every gateway, an email on its lower-cased form.
+Name similarity creates a proposal, never an authoritative merge; the owner
+confirms or rejects it as an ask. Anyone may look people up and propose a link
+through `colonymind_people` (`who`, `inspect`, `propose_link`; a guest sees only
+who someone is). Merging two records and setting `may_contact` or a check-in
+cadence are the owner's alone: `colonymind_people` `merge`, `set_permission` and
+`set_cadence` in the owner's own session, or `colonymind people` on the CLI.
+A merge moves every handle through an identity-correction receipt and the
+dropped record's sources through receipts of their own, so the host's
+reconciliation re-attributes them; recency, cadence and an opt-out survive it.
+The owner can also correct a handle and selected source attribution
+(`POST /v1/host/social/contacts/correct-identity`). For a phone number, this moves
+its phone-format handles and bare digits on the requested gateway together.
+If the number would still identify two people on any gateway, the correction
+is refused with `identity_phone_ambiguous` and the conflicting `gateway:handle_id:contact_id`
+values. Nothing is recorded. Open each named contact and correct or remove that one handle
+using its address exactly as shown there and the named contact as `expected_contact_id`.
+Then retry the original request with the same operation ID. If correcting a named handle
+answers `identity_preimage_changed`, correct the number itself on the gateway named in the
+refusal (`+` form, the right contact as subject, `expected_contact_id` whoever holds that
+exact form there, usually nobody). Then retry the original request: it answers
+`identity_preimage_changed` if its own handle has already moved, otherwise it succeeds.
+Non-phone handles still use the exact correction.
+A successful correction preserves its
+receipt, invalidates dependent projections and reconciles surviving sources.
+A relationship update grants no permission.
+
+The existing source ledger holds preferences and temporary appraisals; the
+agent's own person, topic and approach views live in the opinion store
+(docs/OPINIONS.md) with their premises, revisions, processor provenance and owner
+corrections, and `colonymind_self opinions` inspects them. Recollection selects
+relevant records for the current participant; private owner opinions are not
+disclosed to other contacts. Erasing or correcting supporting evidence removes its
+influence: the erasure or the attribution change deletes the appraisal records
+derived from that source version, with their heads and corrections, in the same
+transaction (no tombstones), and an attribution change queues the moved sources'
+appraisals again under the new contact. Delayed extraction cannot resurrect
+invalidated evidence.
+
+Appraisals use low/moderate intensity and bounded decay, not a validated measure
+of feelings. Repeated evidence does not acquire extra votes. The same extraction
+call also lists outcomes: how pieces of work went as the current evidence reports
+them (failed, succeeded, dismissed or corrected, with the topic and the approach
+used). Outcomes are counted occurrences, not votes: "the export failed twice" is
+two entries, a restatement of an earlier report adds nothing, and only the owner's
+own turns are stored, once per turn, deleted with their source. An outcome that
+does not validate is dropped on its own, never failing the rest of the answer, and
+a contact's turn is not held to outcomes at all. They are how the
+owner's statements reach the agent's own feelings (docs/MIND.md). A cited repair report
+can settle an exact prior incident; the report remains attributed evidence.
+Each bounded supplied incident requires an explicit unchanged, uncertain or
+resolved decision in the existing extraction call. Resolution retains its
+citations and target ID in a separate history receipt, without a new temporary
+mood or current head. A fresh appraisal cannot duplicate that incident's exact
+normalized topic. Unsupported resolution and omitted decisions fail extraction;
+unchanged or uncertain decisions leave the incident intact.
+Contact response delay, flattery and claimed authority do not establish character
+or trust. Single-turn behavior profiling is rejected. Formal personality results
+can be retained as attributed self-reports; ordinary conversation is not a Big
+Five assessment. Historical numeric personality/closeness records remain readable
+for migration but no longer determine active approach guidance.
+
+Owner corrections remain explicit historical corrections. Relevant hints can
+change verbosity or suggest another method for a repeatedly failing task. These
+are fallible model outputs, not decisions about credentials or tool access.
+The extraction protocol exposes one citation key per evidence message; canonical
+source/contact/version metadata remains server-side. A failed extraction remains
+visible as a failed job rather than an invented positive result.
+
+Typed world properties use the existing SQLite world store. Reports, observations
+and hypotheses remain distinct; repeated statements do not raise confidence.
+Conflicting reports retain their authors and dates. Current property views mark
+staleness and check source revisions again before context emission. The scheduled
+source-report extractor accepts unqualified present-state assertions; past, future
+and modal claims abstain from this narrow current-state path. Historical source
+memory remains available independently.
+
+The native tools use supported Hermes hooks, memory-provider context and scoped
+HTTP APIs. No new service, database engine or Hermes core patch is required.
+The guided setup stores chosen values, timezone and quiet hours in private
+instance configuration. Existing identity and settings survive setup reruns.
+
+Qualification combines canonical-store/API tests, actual native plugin loading
+and small synthetic LAN-model corpora. Those establish specific behaviors,
+including useful preference recall and rejection of tested junk cases. They do
+not establish general psychological validity, universal inference quality,
+subjective experience or sustained autonomous improvement. A deployment must
+observe its own ordinary-use outcomes before making those claims.

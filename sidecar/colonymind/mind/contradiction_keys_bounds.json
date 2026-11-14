@@ -1,0 +1,341 @@
+{
+ "about": "Key similarity bounds for the night's contradiction candidates by meaning, each measured on the labelled dev set for one embedding (python -m colonymind.mind.contradiction_keys --record). The night uses the bound measured for its own embedding (the same model at the same width); each entry keeps every pair's score, so its choice can be recomputed.",
+ "measurements": [
+  {
+   "dev_set": {
+    "name": "contradiction-keys-dev-2",
+    "sha256": "51bbbf9c0de8e7eebe62125fa568646c7e047f49f45ef7102b2656cd2ad30f92",
+    "pairs": 60,
+    "same_fact": 30
+   },
+   "embedding": {
+    "requested_model": "Qwen/Qwen3-Embedding-0.6B",
+    "served_model": "unknown",
+    "declared_revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+    "dimensions": 1024,
+    "document_format": "raw-text-v1",
+    "query_format": "prefix-v1:Instruct: Given a search query, retrieve relevant memories that answer it\nQuery: ",
+    "normalization": "provider-l2",
+    "quantization": "unspecified",
+    "request_dimensions": null,
+    "fingerprint": "46a3c0360dd5e1bf53d76419dbf6db98b0c8750016378343a54920c847961a59"
+   },
+   "precision_floor": 0.8,
+   "bound": 0.8625428574668274,
+   "floor_met": true,
+   "at_bound": {
+    "threshold": 0.8625428574668274,
+    "candidates": 15,
+    "tp": 12,
+    "fp": 3,
+    "fn": 18,
+    "tn": 27,
+    "precision": 0.8,
+    "recall": 0.4,
+    "f1": 0.5333333333333333
+   },
+   "pairs": [
+    {
+     "id": "same-01",
+     "same_fact": true,
+     "score": 0.7262144617887825
+    },
+    {
+     "id": "same-02",
+     "same_fact": true,
+     "score": 0.7121685175356279
+    },
+    {
+     "id": "same-03",
+     "same_fact": true,
+     "score": 0.948457315649381
+    },
+    {
+     "id": "same-04",
+     "same_fact": true,
+     "score": 0.8891274378496499
+    },
+    {
+     "id": "same-05",
+     "same_fact": true,
+     "score": 0.8805514080548773
+    },
+    {
+     "id": "same-06",
+     "same_fact": true,
+     "score": 0.8017861359051659
+    },
+    {
+     "id": "same-07",
+     "same_fact": true,
+     "score": 0.8552450414905891
+    },
+    {
+     "id": "same-08",
+     "same_fact": true,
+     "score": 0.8347476769392572
+    },
+    {
+     "id": "same-09",
+     "same_fact": true,
+     "score": 0.8998707009254071
+    },
+    {
+     "id": "same-10",
+     "same_fact": true,
+     "score": 0.9312435057848409
+    },
+    {
+     "id": "same-11",
+     "same_fact": true,
+     "score": 0.8158795330534124
+    },
+    {
+     "id": "same-12",
+     "same_fact": true,
+     "score": 0.7215472702417982
+    },
+    {
+     "id": "same-13",
+     "same_fact": true,
+     "score": 0.9565538625739805
+    },
+    {
+     "id": "same-14",
+     "same_fact": true,
+     "score": 0.8809266897267308
+    },
+    {
+     "id": "same-15",
+     "same_fact": true,
+     "score": 0.835809740236429
+    },
+    {
+     "id": "same-16",
+     "same_fact": true,
+     "score": 0.8648032124743134
+    },
+    {
+     "id": "same-17",
+     "same_fact": true,
+     "score": 0.8303371136441874
+    },
+    {
+     "id": "same-18",
+     "same_fact": true,
+     "score": 0.8305933604012765
+    },
+    {
+     "id": "same-19",
+     "same_fact": true,
+     "score": 0.8128924866735466
+    },
+    {
+     "id": "same-20",
+     "same_fact": true,
+     "score": 0.8226303231155622
+    },
+    {
+     "id": "same-21",
+     "same_fact": true,
+     "score": 0.8357244658376374
+    },
+    {
+     "id": "same-22",
+     "same_fact": true,
+     "score": 0.8194966019393601
+    },
+    {
+     "id": "same-23",
+     "same_fact": true,
+     "score": 0.9425161372153136
+    },
+    {
+     "id": "same-24",
+     "same_fact": true,
+     "score": 0.8403387267319762
+    },
+    {
+     "id": "same-25",
+     "same_fact": true,
+     "score": 0.7694989282247114
+    },
+    {
+     "id": "same-26",
+     "same_fact": true,
+     "score": 0.8432173062748676
+    },
+    {
+     "id": "same-27",
+     "same_fact": true,
+     "score": 0.7678596725489646
+    },
+    {
+     "id": "same-28",
+     "same_fact": true,
+     "score": 0.9091666842018675
+    },
+    {
+     "id": "same-29",
+     "same_fact": true,
+     "score": 0.8633806007556684
+    },
+    {
+     "id": "same-30",
+     "same_fact": true,
+     "score": 0.8915457267144706
+    },
+    {
+     "id": "different-01",
+     "same_fact": false,
+     "score": 0.829388422928886
+    },
+    {
+     "id": "different-02",
+     "same_fact": false,
+     "score": 0.8031030505458444
+    },
+    {
+     "id": "different-03",
+     "same_fact": false,
+     "score": 0.847482597235566
+    },
+    {
+     "id": "different-04",
+     "same_fact": false,
+     "score": 0.8313950903572073
+    },
+    {
+     "id": "different-05",
+     "same_fact": false,
+     "score": 0.8140385128100418
+    },
+    {
+     "id": "different-06",
+     "same_fact": false,
+     "score": 0.8213204575814503
+    },
+    {
+     "id": "different-07",
+     "same_fact": false,
+     "score": 0.8228135659359354
+    },
+    {
+     "id": "different-08",
+     "same_fact": false,
+     "score": 0.7635887065816604
+    },
+    {
+     "id": "different-09",
+     "same_fact": false,
+     "score": 0.8617051141779863
+    },
+    {
+     "id": "different-10",
+     "same_fact": false,
+     "score": 0.6941019456385145
+    },
+    {
+     "id": "different-11",
+     "same_fact": false,
+     "score": 0.6418642847315373
+    },
+    {
+     "id": "different-12",
+     "same_fact": false,
+     "score": 0.7710527480003745
+    },
+    {
+     "id": "different-13",
+     "same_fact": false,
+     "score": 0.7619728835097952
+    },
+    {
+     "id": "different-14",
+     "same_fact": false,
+     "score": 0.8660907165230252
+    },
+    {
+     "id": "different-15",
+     "same_fact": false,
+     "score": 0.8434352565066221
+    },
+    {
+     "id": "different-16",
+     "same_fact": false,
+     "score": 0.7869251634897028
+    },
+    {
+     "id": "different-17",
+     "same_fact": false,
+     "score": 0.7063404331990596
+    },
+    {
+     "id": "different-18",
+     "same_fact": false,
+     "score": 0.7522308290893954
+    },
+    {
+     "id": "different-19",
+     "same_fact": false,
+     "score": 0.8257087936841578
+    },
+    {
+     "id": "different-20",
+     "same_fact": false,
+     "score": 0.8133835775661135
+    },
+    {
+     "id": "different-21",
+     "same_fact": false,
+     "score": 0.8806404620973404
+    },
+    {
+     "id": "different-22",
+     "same_fact": false,
+     "score": 0.695622487950371
+    },
+    {
+     "id": "different-23",
+     "same_fact": false,
+     "score": 0.7691225791840632
+    },
+    {
+     "id": "different-24",
+     "same_fact": false,
+     "score": 0.8392936621774437
+    },
+    {
+     "id": "different-25",
+     "same_fact": false,
+     "score": 0.6750737545731066
+    },
+    {
+     "id": "different-26",
+     "same_fact": false,
+     "score": 0.8895616338804819
+    },
+    {
+     "id": "different-27",
+     "same_fact": false,
+     "score": 0.6605548489253467
+    },
+    {
+     "id": "different-28",
+     "same_fact": false,
+     "score": 0.7701750352863402
+    },
+    {
+     "id": "different-29",
+     "same_fact": false,
+     "score": 0.7397928846729991
+    },
+    {
+     "id": "different-30",
+     "same_fact": false,
+     "score": 0.8271952075715759
+    }
+   ]
+  }
+ ]
+}

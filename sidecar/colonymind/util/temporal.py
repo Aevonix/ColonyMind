@@ -1,0 +1,446 @@
+"""Temporal reference frame for ColonyMind (v0.21.0).
+
+The single source of truth for "now" and timezone handling across the sidecar.
+Everything that needs to reason about wall-clock time — context assembly, the
+timeline tool, briefings, autonomy triggers — should go through this module so
+the agent gets a consistent, editable sense of time.
+
+Three independent, editable timezones (per the design):
+  * AGENT timezone   — where the ColonyMind agent "lives" (its home reference frame).
+                       Editable; defaults to COLONYMIND_AGENT_TIMEZONE, then the host
+                       system tz, then UTC.
+  * CONTACT timezone — a per-contact field (contacts.timezone). Editable per
+                       contact. Lets the agent reason "it's 9am my time / 3pm
+                       theirs".
+  * COMMUNICATION tz — resolved per turn: an explicit override on the turn, else
+                       the contact's tz, else the agent tz.
+
+Owner context renders the agent's home clock in the agent timezone and separately
+labels the owner's latest phone report; other contacts retain these frames.
+
+Stdlib only (datetime + zoneinfo). No third-party deps.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import re
+import time
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+from typing import Any, Optional
+
+from colonymind.identity import get_persona_name
+
+try:  # py3.9+
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+except Exception:  # pragma: no cover - very old python
+    ZoneInfo = None  # type: ignore
+    class ZoneInfoNotFoundError(Exception):  # type: ignore
+        pass
+
+logger = logging.getLogger(__name__)
+
+UTC = timezone.utc
+
+
+# --------------------------------------------------------------------------- #
+# State (editable agent / default-contact timezone)                           #
+# --------------------------------------------------------------------------- #
+
+# A host's arrival stamp in front of a message (Hermes gateway message timestamps: ``[Tue 2026-04-28
+# 13:40:53 CEST]``, or the older ``[2026-04-13T17:02:06+0200]``) says when the message came. It is not
+# a date the message asks about, nor words to search for: every stamped message carries it.
+ARRIVAL_STAMP = re.compile(
+    r"^\s*\[(?:[A-Z][a-z]{2} \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?: [A-Za-z0-9_+\-/:]+)?"
+    r"|\d{4}-\d{2}-\d{2}T[^\]]+)\]\s*")
+
+
+def strip_arrival_stamps(text: str) -> str:
+    """``text`` without its leading arrival stamps (several in a row are all removed)."""
+    while (match := ARRIVAL_STAMP.match(text)) is not None:
+        text = text[match.end():]
+    return text
+
+
+def _state_dir() -> Path:
+    return Path(os.environ.get("COLONYMIND_STATE_DIR", os.path.expanduser("~/.colonymind")))
+
+
+def _state_path() -> Path:
+    return _state_dir() / "temporal.json"
+
+
+def _load_state() -> dict:
+    try:
+        with open(_state_path()) as f:
+            return json.load(f) or {}
+    except Exception:
+        return {}
+
+
+def _save_state(state: dict) -> None:
+    try:
+        p = _state_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".json.tmp")
+        with open(tmp, "w") as f:
+            json.dump(state, f, indent=2)
+        os.replace(tmp, p)
+    except Exception as exc:  # pragma: no cover
+        logger.warning("Failed to persist temporal state: %s", exc)
+
+
+def is_valid_timezone(tz: Optional[str]) -> bool:
+    if not tz:
+        return False
+    if tz.upper() == "UTC":
+        return True
+    if ZoneInfo is None:
+        return False
+    try:
+        ZoneInfo(tz)
+        return True
+    except (ZoneInfoNotFoundError, ValueError, KeyError):
+        return False
+
+
+def _system_timezone() -> Optional[str]:
+    """Best-effort IANA name of the host's local timezone."""
+    # /etc/localtime symlink → .../zoneinfo/<Area>/<City>
+    try:
+        p = Path("/etc/localtime")
+        if p.is_symlink():
+            target = os.readlink(p)
+            if "zoneinfo/" in target:
+                name = target.split("zoneinfo/", 1)[1]
+                if is_valid_timezone(name):
+                    return name
+    except Exception:
+        pass
+    tz = os.environ.get("TZ")
+    if is_valid_timezone(tz):
+        return tz
+    return None
+
+
+def agent_timezone() -> str:
+    """The agent's home timezone (IANA name). Always returns a usable value."""
+    env = os.environ.get("COLONYMIND_AGENT_TIMEZONE")
+    if is_valid_timezone(env):
+        return env  # type: ignore[return-value]
+    stored = _load_state().get("agent_timezone")
+    if is_valid_timezone(stored):
+        return stored
+    sys_tz = _system_timezone()
+    if sys_tz:
+        return sys_tz
+    return "UTC"
+
+
+def set_agent_timezone(tz: str) -> str:
+    """Persist the agent home timezone. Raises ValueError if invalid."""
+    if not is_valid_timezone(tz):
+        raise ValueError(f"Invalid IANA timezone: {tz!r}")
+    state = _load_state()
+    state["agent_timezone"] = tz
+    _save_state(state)
+    return tz
+
+
+def default_contact_timezone() -> Optional[str]:
+    """Fallback tz for contacts that have none set (optional)."""
+    env = os.environ.get("COLONYMIND_DEFAULT_CONTACT_TIMEZONE")
+    if is_valid_timezone(env):
+        return env  # type: ignore[return-value]
+    stored = _load_state().get("default_contact_timezone")
+    return stored if is_valid_timezone(stored) else None
+
+
+def set_default_contact_timezone(tz: Optional[str]) -> Optional[str]:
+    if tz is not None and not is_valid_timezone(tz):
+        raise ValueError(f"Invalid IANA timezone: {tz!r}")
+    state = _load_state()
+    state["default_contact_timezone"] = tz
+    _save_state(state)
+    return tz
+
+
+def resolve_communication_timezone(
+    contact_tz: Optional[str] = None,
+    override_tz: Optional[str] = None,
+) -> str:
+    """Per-communication tz: explicit override → contact → default → agent."""
+    for cand in (override_tz, contact_tz, default_contact_timezone()):
+        if is_valid_timezone(cand):
+            return cand  # type: ignore[return-value]
+    return agent_timezone()
+
+
+# --------------------------------------------------------------------------- #
+# Now / conversion                                                            #
+# --------------------------------------------------------------------------- #
+
+def _zone(tz: str):
+    if tz.upper() == "UTC" or ZoneInfo is None:
+        return UTC
+    try:
+        return ZoneInfo(tz)
+    except Exception:
+        return UTC
+
+
+def now_utc() -> datetime:
+    """The one wall clock: ``time.time``, which Hermes' clock and the mind's read too. Every "now" in the
+    sidecar, a stamp a store writes or a comparison the mind makes, reads it (never ``datetime.now``, which
+    a host's shift of ``time.time`` does not reach), so a host that shifts it (the paired harness's body
+    clock) moves them all together."""
+    return datetime.fromtimestamp(time.time(), UTC)
+
+
+def ledger_stamp() -> str:
+    """``now_utc`` in the format of the ledger's SQLite stamps (``strftime('%Y-%m-%dT%H:%M:%fZ', 'now')``), for
+    a stamp the mind compares with its clock (a turn's ``ingested_at``): SQLite reads the real clock."""
+    return now_utc().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+def now_local() -> datetime:
+    """Naive local time from the same clock, for the older components that keep naive stamps."""
+    return datetime.fromtimestamp(time.time())
+
+
+def now_in(tz: str) -> datetime:
+    return now_utc().astimezone(_zone(tz))
+
+
+def to_zone(dt: datetime, tz: str) -> datetime:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(_zone(tz))
+
+
+def parse_utc_text(value: Any) -> Optional[datetime]:
+    """Parse a stored ISO stamp, assuming UTC for naive times and retaining explicit offsets.
+
+    Empty or invalid stamps return None. Unlike ``parse_iso``, whitespace is not
+    stripped and only an invalid ISO value is caught.
+    """
+    if not value:
+        return None
+    return _parse_utc_text(value)
+
+
+def _parse_utc_text(value: Any) -> Optional[datetime]:
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def parse_utc(value: Any) -> Optional[datetime]:
+    """A stored ISO stamp or datetime; aware datetimes pass through unchanged."""
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
+    return _parse_utc_text(value)
+
+
+def parse_utc_timestamp(value: Any) -> Optional[datetime]:
+    """A stored stamp, datetime or Unix timestamp (including zero and booleans).
+
+    Invalid ISO stamps return None; out-of-range numeric timestamps still raise.
+    """
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(float(value), UTC)
+    return _parse_utc_text(value)
+
+
+def parse_iso(value) -> Optional[datetime]:
+    """Parse an ISO-8601 string (or pass through a datetime) → aware UTC dt."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
+    try:
+        s = str(value).strip().replace("Z", "+00:00")
+        dt = datetime.fromisoformat(s)
+        return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------- #
+# Human-friendly formatting                                                   #
+# --------------------------------------------------------------------------- #
+
+def format_clock(dt: datetime, tz: Optional[str] = None) -> str:
+    """e.g. 'Thu, Jun 12, 12:37 AM EDT'."""
+    if tz:
+        dt = to_zone(dt, tz)
+    elif dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    label = dt.strftime("%Z") or "UTC"
+    # %-I is platform-specific; strip a leading zero portably.
+    hm = dt.strftime("%I:%M %p").lstrip("0")
+    return f"{dt.strftime('%a, %b %d')}, {hm} {label}"
+
+
+def humanize_delta(ts, ref: Optional[datetime] = None) -> str:
+    """'6h ago', 'in 2d', 'just now'. Accepts datetime or ISO string."""
+    dt = parse_iso(ts)
+    if dt is None:
+        return "unknown"
+    ref = ref or now_utc()
+    if ref.tzinfo is None:
+        ref = ref.replace(tzinfo=UTC)
+    delta = ref - dt
+    secs = delta.total_seconds()
+    future = secs < 0
+    secs = abs(secs)
+
+    if secs < 45:
+        return "just now"
+    if secs < 90 * 60:
+        val, unit = round(secs / 60), "m"
+    elif secs < 36 * 3600:
+        val, unit = round(secs / 3600), "h"
+    elif secs < 14 * 86400:
+        val, unit = round(secs / 86400), "d"
+    elif secs < 8 * 7 * 86400:
+        val, unit = round(secs / (7 * 86400)), "w"
+    elif secs < 365 * 86400:
+        val, unit = round(secs / (30 * 86400)), "mo"
+    else:
+        val, unit = round(secs / (365 * 86400)), "y"
+    return f"in {val}{unit}" if future else f"{val}{unit} ago"
+
+
+def bucket(ts, tz: Optional[str] = None) -> str:
+    """Coarse calendar bucket in the given tz: today / yesterday / this week..."""
+    dt = parse_iso(ts)
+    if dt is None:
+        return "unknown"
+    tz = tz or agent_timezone()
+    local = to_zone(dt, tz)
+    today = now_in(tz).date()
+    d = (today - local.date()).days
+    if d < 0:
+        return "upcoming"
+    if d == 0:
+        return "today"
+    if d == 1:
+        return "yesterday"
+    if d < 7:
+        return "earlier this week"
+    if d < 14:
+        return "last week"
+    if d < 31:
+        return f"{d // 7}w ago"
+    if d < 365:
+        return f"{d // 30}mo ago"
+    return f"{d // 365}y ago"
+
+
+_REL_RE = re.compile(r"^\s*(\d+)\s*([smhdw])\s*$", re.IGNORECASE)
+
+
+def parse_relative_since(value, default_hours: float = 24.0) -> str:
+    """Turn a window spec into an ISO 'since' timestamp (UTC).
+
+    Accepts relative durations ('30m', '24h', '7d', '2w'), the words
+    'today'/'yesterday', or an absolute ISO date/time. Falls back to
+    ``default_hours`` ago when empty/unparseable.
+    """
+    if not value:
+        return (now_utc() - timedelta(hours=default_hours)).isoformat()
+    s = str(value).strip()
+    m = _REL_RE.match(s)
+    if m:
+        n = int(m.group(1))
+        mult = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}[m.group(2).lower()]
+        return (now_utc() - timedelta(seconds=n * mult)).isoformat()
+    low = s.lower()
+    if low in ("today", "yesterday"):
+        local = now_in(agent_timezone())
+        if low == "yesterday":
+            local = local - timedelta(days=1)
+        start = local.replace(hour=0, minute=0, second=0, microsecond=0)
+        return start.astimezone(UTC).isoformat()
+    dt = parse_iso(s)
+    if dt is not None:
+        return dt.isoformat()
+    return (now_utc() - timedelta(hours=default_hours)).isoformat()
+
+
+def _home_clock(captured: datetime) -> tuple[str, str]:
+    """The agent's home clock line at ``captured``, and its zone as that line names it."""
+    zone = agent_timezone()
+    home = to_zone(captured, zone)
+    named = f"{home.strftime('%Z')} ({zone})"
+    hm = home.strftime("%I:%M %p").lstrip("0")
+    return f"{get_persona_name()}'s time: {home.strftime('%A')} {hm} {named}.", named
+
+
+def describe_agent_now(captured: Optional[datetime] = None) -> str:
+    """The public clock never uses a contact's recorded or reported timezone."""
+    return _home_clock(captured if captured is not None else now_utc())[0]
+
+
+def describe_owner_now(contact_tz: Optional[str], contact_label: str, contact=None) -> str:
+    """The agent's home clock and the owner's last phone report, from one instant."""
+    captured = now_utc()
+    line, home = _home_clock(captured)
+    lines = [line]
+    label = " ".join(contact_label.split())
+    reported = parse_iso(getattr(contact, "location_reported_at", None))
+    age = max(0, (captured - reported).total_seconds()) if reported else None
+    if age is not None and age <= 24 * 3600 and is_valid_timezone(contact_tz):
+        place = ", ".join(" ".join(str(value).split()) for value in (
+            getattr(contact, "location_city", None), getattr(contact, "location_region", None)) if value)
+        place = place or "location unspecified"
+        country = getattr(contact, "location_country_code", None)
+        if country and country != "US":
+            place += f" ({country})"
+        local = to_zone(captured, contact_tz).strftime("%I:%M %p").lstrip("0")
+        elapsed = f"{int(age // 60)} min" if age < 3600 else f"{int(age // 3600)} h"
+        lines.append(f"{label}: {place}, local time {local} ({contact_tz}), reported {elapsed} ago.")
+    else:
+        lines.append(f"{label}'s location: no recent report; assume {home}.")
+    return "\n".join(lines)
+
+
+def describe_now(agent_tz: Optional[str] = None,
+                 contact_tz: Optional[str] = None,
+                 contact_label: str = "the contact", *,
+                 override_tz: Optional[str] = None,
+                 owner: bool = False, location_contact=None) -> str:
+    """One instant in explicitly labeled frames, with phone provenance for the owner.
+
+    Sent with every turn and replayed as history, so it is as short as the
+    frames allow: the UTC instant, the agent's zone when it differs, the
+    contact's recorded zone when there is one, an override when given."""
+    if owner:
+        return describe_owner_now(contact_tz, contact_label, location_contact)
+    atz = agent_tz or agent_timezone()
+    captured = now_utc()
+    def clock(tz):
+        return to_zone(captured, tz).isoformat(timespec="seconds")
+    parts = [f"Now: {clock('UTC')} UTC"]
+    if atz and atz not in ("UTC", "Etc/UTC"):
+        parts.append(f"agent zone {atz}: {clock(atz)}")
+    if is_valid_timezone(contact_tz):
+        parts.append(f"{contact_label}'s recorded zone {contact_tz}: {clock(contact_tz)} (a recorded zone is not "
+                     "evidence of current location)")
+    else:
+        parts.append(f"{contact_label}'s zone and location unknown")
+    if is_valid_timezone(override_tz):
+        parts.append(f"communication override {override_tz}: {clock(override_tz)}")
+    return "; ".join(parts) + "."

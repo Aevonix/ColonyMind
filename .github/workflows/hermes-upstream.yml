@@ -1,0 +1,120 @@
+name: Latest Hermes compatibility
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: latest-hermes-compatibility
+  cancel-in-progress: true
+
+jobs:
+  latest-stable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      # The tests that read Hermes' source take it from this checkout and require a reviewed revision: a new
+      # release fails them until its revision is reviewed and pinned (tests/hermes_adapter/hermes_source.py).
+      HERMES_SOURCE_ROOT: ${{ github.workspace }}/.qualification/hermes
+    steps:
+      - uses: actions/checkout@v6
+      - name: Select the latest published stable release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json, os, subprocess
+          release = json.loads(subprocess.check_output([
+              'gh', 'api', 'repos/NousResearch/hermes-agent/releases/latest']))
+          tag = release['tag_name']
+          assert tag and '\n' not in tag and '\r' not in tag
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
+              stream.write('tag=' + tag + '\n')
+          PY
+      - uses: actions/checkout@v6
+        with:
+          repository: NousResearch/hermes-agent
+          ref: ${{ steps.release.outputs.tag }}
+          path: .qualification/hermes
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            sidecar/pyproject.toml
+            .qualification/hermes/pyproject.toml
+      - name: Record the selected runtime
+        env:
+          HERMES_RELEASE: ${{ steps.release.outputs.tag }}
+        run: |
+          python - <<'PY'
+          import os, subprocess
+          revision = subprocess.check_output([
+              'git', '-C', '.qualification/hermes', 'rev-parse', 'HEAD'], text=True).strip()
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as stream:
+              stream.write('Hermes release: ' + os.environ['HERMES_RELEASE'] + '\n\n')
+              stream.write('Exact commit: `' + revision + '`\n\n')
+              stream.write('Stock upstream release, no patches. No deployment or pin is changed.\n')
+          PY
+      - name: Build the distributions
+        run: |
+          python -m pip install build "setuptools>=77" wheel
+          python -m build --no-isolation --outdir dist .
+          python -m build --no-isolation --outdir dist ./sidecar
+      - name: Install adapter, sidecar and the latest stock Hermes for the adapter tests
+        id: adapter
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ripgrep
+          rg --version
+          # Hermes' dependency pins target Python 3.14; lift only that condition for this test interpreter. A pin
+          # carries it alone, or first or last among several conditions.
+          python - <<'PY'
+          import os, re, tomllib
+          from pathlib import Path
+          hermes = tomllib.loads(Path(".qualification/hermes/pyproject.toml").read_text())
+          only_314 = r"python_version\s*>=\s*'3\.14'"
+
+          def lift(pin):
+              pin = re.sub(r"\s*;\s*" + only_314 + r"\s*$", "", pin)
+              pin = re.sub(r";\s*" + only_314 + r"\s+and\s+", "; ", pin)
+              return re.sub(r"\s+and\s+" + only_314 + r"\s*$", "", pin)
+
+          lines = [lift(pin) for pin in hermes["project"]["dependencies"]]
+          assert lines and not any("python_version" in line for line in lines), lines
+          Path(os.environ["RUNNER_TEMP"], "hermes-dependencies.txt").write_text("\n".join(lines) + "\n")
+          # Hermes' own installer resolves with uv and the override list of its pyproject.toml ([tool.uv]
+          # override-dependencies); pip stops at the pins that list settles. A release without the list gets none.
+          overrides = hermes.get("tool", {}).get("uv", {}).get("override-dependencies", [])
+          Path(os.environ["RUNNER_TEMP"], "hermes-overrides.txt").write_text("".join(line + "\n" for line in overrides))
+          PY
+          python -m pip install 'uv==0.11.31'
+          uv pip install --python "$(command -v python)" --overrides "${RUNNER_TEMP}/hermes-overrides.txt" \
+            -e ./.qualification/hermes -r "${RUNNER_TEMP}/hermes-dependencies.txt" -e '.[test]' ./sidecar
+          # pip check may name the one conflict Hermes ships with, the older Pillow browser-harness asks for,
+          # and nothing else.
+          python - <<'PY'
+          import subprocess, sys
+          lines = subprocess.run([sys.executable, "-m", "pip", "check"], capture_output=True, text=True).stdout.splitlines()
+          print("\n".join(lines))
+          others = [line for line in lines if not (line.startswith("browser-harness ") and "pillow" in line.lower())]
+          assert others in ([], ["No broken requirements found."]), others
+          PY
+      - name: Qualify built artifacts against the latest stock Hermes
+        if: ${{ !cancelled() && steps.adapter.outcome == 'success' }}
+        run: python -m pytest tests/hermes_adapter -q -ra --junitxml=upstream-adapter.xml
+      - name: Retain every test outcome
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: latest-hermes-qualification
+          path: |
+            upstream-adapter.xml
+          if-no-files-found: warn

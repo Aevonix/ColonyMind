@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "work-status.json",
+  "title": "Work status and separate owner overlay",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "operation_status",
+    "owner_overlay"
+  ],
+  "properties": {
+    "status": {
+      "enum": [
+        "proven",
+        "partial",
+        "unproven",
+        "failed"
+      ]
+    },
+    "operation_status": {
+      "enum": [
+        "verified",
+        "observed",
+        "ran",
+        "failed",
+        "dispatched",
+        "unknown"
+      ]
+    },
+    "owner_overlay": {
+      "type": "null"
+    }
+  }
+}

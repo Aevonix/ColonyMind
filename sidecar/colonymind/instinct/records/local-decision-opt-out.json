@@ -1,0 +1,58 @@
+{
+  "records": [
+    {
+      "accuracy": 0.887324,
+      "bars": {
+        "no": 1.01,
+        "yes": 0.8
+      },
+      "fingerprint": "804f237ad51caf9fe6aca5a683714ca59d1db5f1d262c0569cea7d1632410e43",
+      "fitted_at": "2026-09-30T12:40:51.312481+00:00",
+      "maps": {
+        "yes": [
+          [
+            0.4861,
+            0.0
+          ],
+          [
+            0.7265,
+            0.333333
+          ],
+          [
+            0.7495,
+            0.5
+          ],
+          [
+            0.7893,
+            0.666667
+          ],
+          [
+            0.8387,
+            0.833333
+          ],
+          [
+            0.8439,
+            1.0
+          ]
+        ]
+      },
+      "method": "isotonic",
+      "model": "",
+      "n": 71,
+      "parent_revision": "",
+      "point": "opt_out",
+      "provider_kind": "local-decision.v1/letters-r1",
+      "revision": "typed-decisions@1c5edc17a7acd8701df6fc341c0d179f1c62c982",
+      "source": "nightly fit: 71 labels, isotonic",
+      "support": {
+        "yes": [
+          0.1601,
+          0.8439
+        ]
+      },
+      "temperature": 1.0,
+      "tier": "fast",
+      "version": "e87ba850c45509bb"
+    }
+  ]
+}

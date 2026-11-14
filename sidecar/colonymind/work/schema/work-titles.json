@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "work-titles.json",
+  "$defs": {
+    "WorkTitle": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^w[1-9][0-9]?$",
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 128,
+          "pattern": "^\\S+(?: [^\\s]+){2,7}$",
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title"
+      ],
+      "title": "WorkTitle",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "titles": {
+      "items": {
+        "$ref": "#/$defs/WorkTitle"
+      },
+      "maxItems": 16,
+      "title": "Titles",
+      "type": "array"
+    }
+  },
+  "required": [
+    "titles"
+  ],
+  "title": "WorkTitles",
+  "type": "object"
+}

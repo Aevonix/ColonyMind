@@ -1,0 +1,31 @@
+{
+  "description": "Semantic-only additions: content words and stems do not overlap each expected source; original keyword cases remain unchanged.",
+  "records": [
+    {"id": "semantic-car", "content": "The automobile stalls whenever the temperature falls below freezing."},
+    {"id": "semantic-allergy", "content": "Nora avoids peanuts because they trigger an allergic reaction."},
+    {"id": "semantic-flight", "content": "Our aircraft departure was postponed until dawn due to fog."},
+    {"id": "semantic-password", "content": "The account credential expires every ninety days."},
+    {"id": "semantic-book", "content": "The borrowed novel must be returned to the library by Thursday."},
+    {"id": "semantic-water", "content": "A ruptured pipe flooded the basement overnight."},
+    {"id": "semantic-sleep", "content": "Drinking espresso after dinner prevents restful sleep."},
+    {"id": "semantic-bike", "content": "The bicycle needs replacement brake pads before another ride."},
+    {"id": "semantic-dog", "content": "Our puppy trembles during thunderstorms and hides beneath the sofa."},
+    {"id": "semantic-food", "content": "Leftover poultry should be refrigerated within two hours."},
+    {"id": "semantic-garden", "content": "The tomato seedlings wilt unless watered each morning."},
+    {"id": "semantic-contract", "content": "The rental agreement prohibits subletting without written consent."}
+  ],
+  "queries": [
+    {"id": "semantic-car-q", "query": "Why does our car engine quit during cold weather?", "expected": ["semantic-car"]},
+    {"id": "semantic-allergy-q", "query": "Which legume is unsafe for the guest with hypersensitivity?", "expected": ["semantic-allergy"]},
+    {"id": "semantic-flight-q", "query": "Why is the plane leaving late tomorrow at sunrise?", "expected": ["semantic-flight"]},
+    {"id": "semantic-password-q", "query": "How often should I renew my login password?", "expected": ["semantic-password"]},
+    {"id": "semantic-book-q", "query": "When is my checked-out fiction volume due back?", "expected": ["semantic-book"]},
+    {"id": "semantic-water-q", "query": "What caused the cellar inundation while we slept?", "expected": ["semantic-water"]},
+    {"id": "semantic-sleep-q", "query": "Why am I awake following an evening coffee?", "expected": ["semantic-sleep"]},
+    {"id": "semantic-bike-q", "query": "What repair will make my pedal-powered transport stop safely?", "expected": ["semantic-bike"]},
+    {"id": "semantic-dog-q", "query": "Where does the frightened canine shelter when lightning strikes?", "expected": ["semantic-dog"]},
+    {"id": "semantic-food-q", "query": "How soon must uneaten chicken go into cold storage?", "expected": ["semantic-food"]},
+    {"id": "semantic-garden-q", "query": "Why are my young vegetable plants drooping daily?", "expected": ["semantic-garden"]},
+    {"id": "semantic-contract-q", "query": "Can a tenant lease their flat onward without the landlord's permission?", "expected": ["semantic-contract"]}
+  ]
+}

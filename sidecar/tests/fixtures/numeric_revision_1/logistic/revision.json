@@ -1,0 +1,43 @@
+{
+  "features": [
+    {
+      "time": "how_sin"
+    },
+    {
+      "time": "how_cos"
+    },
+    {
+      "input": "hours_since_owner_turn"
+    },
+    {
+      "input": "channel=a"
+    },
+    {
+      "const": 1
+    }
+  ],
+  "outputs": [
+    {
+      "event": "reply_60m"
+    }
+  ],
+  "standardisation": {
+    "hours_since_owner_turn": {
+      "mean": 4.0,
+      "scale": 4.0
+    },
+    "channel=a": {
+      "mean": 0.0,
+      "scale": 1.0
+    }
+  },
+  "anchor": {
+    "type": "constant",
+    "p": 0.5
+  },
+  "schema": "numeric-revision-1",
+  "learner": "fixture",
+  "variant": "logistic",
+  "tz": "UTC",
+  "weights_digest": "4516d7011cb59586b6bead3b810638325d2dc405bb145c51958728effb00c529"
+}

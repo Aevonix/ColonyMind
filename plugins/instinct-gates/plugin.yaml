@@ -1,0 +1,14 @@
+name: colonymind-gates
+version: 1.0.0
+description: |
+  Optional gates on stock Hermes seams, decided by ColonyMind's Instinct and
+  measured in shadow before they act: a cron job's pre-run script that skips
+  a fire with nothing new, inbound triage for non-owner messages (shadow only),
+  and a screen for instructions aimed at the assistant in untrusted tool
+  results. Every gate is off until its configuration enables it, and every
+  gate fails open.
+author: Aevonix
+entry_point: __init__.py
+category: general
+requires:
+  - httpx

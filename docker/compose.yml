@@ -1,0 +1,44 @@
+# Stock Hermes plus ColonyMind, in one container, with one model endpoint.
+#
+#   export OWNER_HANDLES=telegram=123456789 MODEL_URL=http://host.docker.internal:11434/v1 MODEL=qwen3:8b
+#   docker compose -f docker/compose.yml up -d
+#
+# Compose checks the variables this file requires for every command, `exec` and `down` as much as `up`: export them
+# in the shell you run it from, or put them in a .env file next to this one. Then `docker compose -f
+# docker/compose.yml exec agent colonymind doctor` checks the install. docs/INSTALL.md ("Container") explains every
+# setting.
+#
+# Hermes' data lives in one volume (/opt/data, Hermes' standard mount) and ColonyMind's instance in another
+# (/var/lib/colonymind). The sidecar listens on the container's loopback only; nothing is published.
+services:
+  agent:
+    image: ghcr.io/aevonix/colonymind:latest
+    restart: unless-stopped
+    command: ["gateway", "run"]
+    # A model server on this machine is reachable as host.docker.internal.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      # The user inside that owns both volumes; set them to your own ids when you bind-mount host directories.
+      HERMES_UID: ${HERMES_UID:-10000}
+      HERMES_GID: ${HERMES_GID:-10000}
+      TZ: ${TZ:-UTC}
+      # You, the owner. Your handles are how your messages are told from everyone else's: without them only the
+      # terminal inside the container counts as you, and your messages from a chat platform are refused.
+      COLONYMIND_INIT_OWNER_NAME: ${OWNER_NAME:-Owner}
+      COLONYMIND_INIT_OWNER_HANDLES: ${OWNER_HANDLES:?set OWNER_HANDLES to your handles, PLATFORM=ID separated by commas}
+      COLONYMIND_INIT_AGENT_NAME: ${AGENT_NAME:-Assistant}
+      # One OpenAI-compatible model endpoint, for Hermes and for ColonyMind. A local server needs no key.
+      COLONYMIND_CONTAINER_MODEL_URL: ${MODEL_URL:?set MODEL_URL to an OpenAI-compatible endpoint, for example http://host.docker.internal:11434/v1}
+      COLONYMIND_CONTAINER_MODEL: ${MODEL:?set MODEL to the model that endpoint serves}
+      COLONYMIND_CONTAINER_MODEL_KEY: ${MODEL_API_KEY:-}
+      # A chat platform for Hermes' gateway, for example Telegram (see Hermes' messaging guide):
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS:-}
+    volumes:
+      - hermes-data:/opt/data
+      - colonymind-data:/var/lib/colonymind
+
+volumes:
+  hermes-data:
+  colonymind-data:

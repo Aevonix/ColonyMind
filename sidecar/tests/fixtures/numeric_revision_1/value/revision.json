@@ -1,0 +1,51 @@
+{
+  "features": [
+    {
+      "stream": "a",
+      "lag": 1
+    },
+    {
+      "stream": "b",
+      "lag": 1
+    },
+    {
+      "stream": "a",
+      "lag": 2
+    },
+    {
+      "time": "hod_sin"
+    },
+    {
+      "time": "hod_cos"
+    },
+    {
+      "const": 1
+    }
+  ],
+  "outputs": [
+    {
+      "stream": "a"
+    },
+    {
+      "stream": "b"
+    }
+  ],
+  "standardisation": {
+    "a": {
+      "mean": 10.0,
+      "scale": 2.0
+    },
+    "b": {
+      "mean": 0.5,
+      "scale": 0.25
+    }
+  },
+  "anchor": {
+    "type": "persistence"
+  },
+  "schema": "numeric-revision-1",
+  "learner": "fixture",
+  "variant": "value",
+  "tz": "UTC",
+  "weights_digest": "005ad91ff1ca06559b037c5686148177ca25c580a65f501869fc429844c51be5"
+}

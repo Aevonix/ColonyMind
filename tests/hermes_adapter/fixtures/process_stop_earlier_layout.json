@@ -1,0 +1,36 @@
+{
+  "source_path": "plugins/colonymind-hands/reconcile.py",
+  "source_sha256": "863eb176caed41b18576a7a164310437bad10a2aacfd0d94309f7f17ff33e35b",
+  "cases": [
+    {
+      "kill_result": null,
+      "stopped": [
+        "child"
+      ]
+    },
+    {
+      "kill_result": {
+        "error": "failed"
+      },
+      "stopped": [
+        "child"
+      ]
+    },
+    {
+      "kill_result": {
+        "status": "killed"
+      },
+      "stopped": [
+        "child"
+      ]
+    },
+    {
+      "kill_result": {
+        "status": "already_exited"
+      },
+      "stopped": [
+        "child"
+      ]
+    }
+  ]
+}

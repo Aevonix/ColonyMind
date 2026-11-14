@@ -1,0 +1,202 @@
+# Semantic recollection from canonical evidence
+
+Canonical messages and retained image descriptions now produce semantic
+candidates as well as lexical candidates. Both enter the existing temporal
+claim handling, reranker and context budget. There is one memory packet per
+turn. A vector ranks potentially relevant evidence; it never determines truth.
+
+After scoped claim expansion and time filtering, repeated exact plain quotations
+from the same known participant and role occupy one candidate slot. This prevents
+copies of a past question from crowding useful evidence out of an undated packet.
+The first candidate retains its own complete source handle and timestamps; it
+does not combine occurrences into a new fact. Distinct speakers, checkpoint
+text, unknown attribution, assertion/conflict bundles and time-qualified events
+remain separate. Erasure can expose another surviving occurrence on later recall.
+No source rows or search projections are deleted by selection.
+
+A checkpoint's copy of a message from its own session carries that message's
+source message hash (the hash covers the session, the role and the words). When
+a person-scope candidate for the same message has the same words (a quotation of
+it, or the complete message recalled with its claims), the copy goes with that
+candidate wherever it goes, even when time filtering or the reply rule leaves
+the original out, so an agent's reply is shown only beside the message it
+answers, as the original would be. Identical copies from several checkpoints
+occupy one slot, chosen after time filtering, so each copy's own date decides
+whether it answers a dated question; what only a checkpoint holds stays
+recallable. A copy with only part of a longer candidate's words stays: the
+reranker reads each candidate's first 1,500 characters, so a shorter chunk is a
+ranking window of its own. For the same reason a copy stays when the
+conversation pair its original joins does not show the copy's words whole in
+the pair's own first 1,500 characters: the pair's text puts the input first, so
+after a long input the reranker reads none of the reply, and after a long
+message only part of it. The copy is then the window the reranker reads those
+words in, as it was before copies went with their originals; what the reranker
+is sent does not change. A copy that stays carries every correction of the
+original with its words, as any corrected candidate does (corrections first),
+so it never brings back words the owner corrected without the correction. When
+the pair clears the cutoff too, it takes the place of the copies kept for its
+window whenever it fits whole in the packet, so each message comes once, the
+reply beside the message it answers. A copy also stays when it can
+carry a correction the candidate with its words cannot: a correction recorded
+against the copy itself, or a source only the copy's message names (corrections
+reach a message through the sources it depends on).
+
+Default native per-turn `/v1/host/context/assemble` uses this same selection
+and budget over the canonical source ledger alone; the retired contact-knowledge
+estimates no longer enter it. See [memory quality](MEMORY-QUALITY.md) for where
+those archived facts are and how to inspect them.
+
+Explicit `POST /v1/host/memory/search` uses the same canonical collector and
+selector as automatic context. Supply a query, the participant (`person_id`,
+required and non-blank: a missing or blank one is refused with 422, never read
+as the owner's search) and, optionally, the session (`session_id`; it admits
+that session's session-scoped evidence and excludes nothing when absent) and a
+result limit from 1 upward (values above 20 are clamped to 20). The response
+contains bounded `content`, `count`, exact `source_refs`, an erasure `watermark`,
+retrieval status and correction-set checks. It returns excerpts rather than a
+claim that a complete source was opened. Existing source-read tools can open
+those exact references. Empty results are successful reads; an unavailable
+canonical store or selector returns HTTP 503. Semantic failure keeps current
+lexical evidence and reports the semantic degradation.
+
+`POST /v1/host/memory/recent` reads a conversation by occurrence time without
+semantic ranking or a model call. It requires `memory:read`; supply `identity`,
+`person_id`, `session_id`, a lowercase `platform` such as `whatsapp`, and optional
+`limit` (default 8, maximum 20). The authenticated participant and existing source
+scope still govern every result. It selects the latest recorded sources, then
+returns `entries` in chronological order with user/assistant role labels,
+`occurred_at`, `recorded_at`, `conversation_id`, exact source revisions and
+`read_revision`. Aggregate `content` within entries is bounded to 12,000
+characters. `complete` describes each entry; `coverage` separately reports result
+limits, missing channel/occurrence metadata and unavailable corrections.
+
+Future canonical sources retain an indexed channel locator in the same ledger
+transaction, independently of their message hashes. Older reviewed history
+provenance and exact source-linked communication records can locate existing
+sources. Unlinked communication summaries are never returned. Canonical
+occurrence time determines recency; delayed ingestion does not make an older
+conversation new, and unknown occurrence times remain a coverage gap. Live
+platform/contact channel keys do not establish an actual provider chat ID.
+
+Recent reads return the same `source_refs`, erasure `watermark` and
+`annotation_checks` used by search. Attributed correction bundles remain intact;
+an oversized corrected entry is omitted with partial coverage rather than
+displaying its original without the correction. Consumers must carry these
+receipts into the existing request/playback freshness checks. A historical user
+question remains a user statement, never evidence that its premise is true.
+
+Search and automatic context use canonical evidence without a graph dependency.
+Source claims, attributed
+corrections, media descriptions and scoped contact estimates retain their
+existing ranking, temporal interpretation and shared context budget.
+
+`POST /v1/host/memory/read` opens an exact source ID/version for the authenticated
+participant and session. It returns a `source` object with the requested evidence
+view and pagination metadata. Graph IDs, audience selectors and listing limits
+are not part of this request. `/health` checks canonical SQLite readability;
+missing or failed optional semantic projection does not remove source memory.
+
+The existing source-freshness POST accepts the search response's
+`annotation_checks` alongside its exact source references. It returns aligned
+`annotation_checks_current` booleans separately from source byte and ownership
+validity. A newly appended correction invalidates the older selected excerpt
+even when the source bytes did not change. Independent checks let a fresh search
+recover in the same turn. No new service, store or model call is needed.
+Sidecar reasoning binds this tool to the authenticated request's participant and
+session, requires `memory:search`, and rejects model-provided scope selectors.
+Unbound internal invocations report unavailable instead of searching globally.
+
+Canonical turn ingestion records what participants said and what tools actually
+observed. Owner corrections use the attributed source-annotation API; erasure
+uses source-forget. The search and source-read APIs project that evidence.
+Periodic availability checks only read these surfaces and create no memories.
+
+The normal source transaction queues projection in the existing turn ledger.
+The existing source worker embeds at most 16 chunks per pass, persists its
+cursor and retries failures with backoff. It leaves the model endpoint to a
+live recall: no batch starts while a turn recalls, for up to 8 s, and after
+that it embeds 4 chunks instead of 16 (docs/RECALL-HYBRID.md, Recall latency).
+Its batches are not cached. A restart resumes those jobs. Caption
+completion requeues the linked sources. No new process, database or autonomous
+action is added. Disabling claim extraction does not disable configured semantic
+projection. Without embeddings the lexical path continues to work.
+
+Lexical recall recovers message ownership by regenerating the existing exact
+2,000-character chunks with a 1,800-character stride from current canonical
+messages. A containing substring does not establish ownership. Stale index rows
+and duplicate projections are filtered before the result limit; identical chunks
+actually produced by distinct messages retain those distinct owners. Recovery
+runs only for scoped full-text matches with a bounded per-query source cache.
+The written full-text table keeps its schema and writer format across rollback
+and upgrade. The stemmed keyword table beside it names each chunk by its place,
+is built from the canonical sources on the first start after an upgrade, and
+follows each source through erasure and rewrites by trigger
+([hybrid recall, Keyword lanes](RECALL-HYBRID.md#keyword-lanes)).
+
+Source chunks use the existing Lance `conversations` collection and the selected
+embedding generation. Each projection links an exact source turn and original
+message hash, plus its text span or asset and description hash. Original image
+bytes remain separate. The caption is fallible model output, not an image
+embedding or a replacement for future visual inspection.
+
+Contact and session eligibility is a scalar filter before nearest-neighbor
+selection. Private checkpoint text remains in its original session; ordinary
+attributed messages can cross that participant's sessions. Candidates are then
+hydrated from current canonical source state. Cached vector text is never
+injected as authority. Erased messages and changed descriptions cannot validate
+old projections. A partially redacted checkpoint retains unrelated message
+chunks, while the old whole-turn graph summary remains fenced.
+
+Curated source forgetting retains all generations and projections. The shared recall fence suppresses the
+forgotten source's exact message copies and recorded dependencies after canonical hydration and again before
+host allowance repacking. No forget request deletes vectors, compacts a table or drops old versions. The durable
+tombstone and receipt live in the existing turn ledger's curated event journal. Identical pixels belonging to
+a different retained source remain available to that source's owner.
+
+A compatible generation is required for semantic search. Unknown legacy vectors
+remain on disk and lexical recall continues until an explicit reindex. Following
+generation promotion, canonical projection jobs are due again, including rows
+not previously indexed. The source worker writes only replaceable projections;
+it does not replay conversation actions, affect, grants or commitments.
+
+Inspect the existing scoped endpoint:
+
+```text
+GET /v1/host/memory/sources/claims/status?contact_id=<authorized-contact>
+```
+
+Its `semantic` field reports index compatibility, active generation, projected
+turns, pending turns and retrying failures. A compatible index can have pending
+sources. Lexical recall remains available while those jobs catch up. Relevance
+abstention uses the existing optional calibration, not a universal similarity
+threshold. An absent or failed reranker retains the existing fallback behavior;
+semantic proximity alone is not proof of relevance.
+
+Atomic claim bundles are ranked by their original grounded quotations. Their
+full structured record, including every conflicting member, validity and source
+handle, remains the output. This prevents administrative JSON from obscuring
+the evidence's topic in the reranker. The candidate input format is part of the
+calibration stamp, so changing this representation invalidates an older stamp;
+the public code does not lower or choose a global relevance threshold.
+
+For an attributed source-annotation packet, ranking text presents every exact
+correction first, labelled as not independently verified, followed by the exact
+original evidence. The output still preserves the complete original, attribution,
+all corrections and their current source references. This ordering neither
+selects a winning correction nor rewrites the source. The versioned format must
+be qualified with useful evidence and no-memory queries before selecting its
+matching calibration stamp; see [calibrated recall](RECALL-HYBRID.md).
+
+`test_source_vectors.py` exercises ordinary HTTP ingestion, the actual worker,
+cross-session context, one rerank pass, scoped prefiltering with more than 200
+foreign chunks, current-source hydration, partial and late erasure, equal-width
+incompatible embedding spaces, resumable jobs, caption ownership, and existing
+conflict/correction grouping. Those tests use controlled embeddings and model
+responses to verify contracts. The separate fixed neutral model evaluation
+measures retrieval quality; these tests alone do not establish it.
+
+This increment does not provide audio/video embeddings, unrestricted media URL
+fetching, automatic embedding-provider replacement or migration of unlinked
+historical graph memories into canonical sources. Historical graph records are
+not read by automatic context or the canonical source API. Query latency and retrieval coverage on
+a large deployed corpus still require measurements with that corpus.

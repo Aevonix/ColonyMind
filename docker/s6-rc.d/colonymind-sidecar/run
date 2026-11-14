@@ -1,0 +1,8 @@
+#!/command/with-contenv sh
+# shellcheck shell=sh
+# The sidecar, supervised by s6: started once colonymind-init succeeded, restarted if it exits. It listens on
+# loopback only; Hermes reaches it inside the container. `colonymind` is the shim, which runs it as the hermes user.
+set -e
+export HOME=/opt/data
+cd "${COLONYMIND_HOME:?COLONYMIND_HOME names the instance directory}"
+exec colonymind start

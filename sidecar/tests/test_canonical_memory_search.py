@@ -1,0 +1,290 @@
+"""Explicit search shares automatic recall's evidence, scope and model projections."""
+import asyncio
+import threading
+
+from httpx import ASGITransport, AsyncClient
+import pytest
+
+from colonymind.api.routers import host
+from colonymind.api.middleware import ApiKeyMiddleware
+from colonymind.turns import TurnIdempotencyLedger
+from onekey import KEY, _principal, _write_keyring
+from test_turn_source_evidence import source_app, recalled  # noqa: F401 (fixture)
+from test_source_vectors import setup, drain, Pipeline
+
+
+@pytest.fixture
+def memory_app(source_app, tmp_path, monkeypatch):
+    from colonymind import vector
+    monkeypatch.setattr(vector, 'get_store', lambda: None)
+    monkeypatch.setattr(vector, 'get_pipeline', lambda: None)
+    monkeypatch.setenv('COLONYMIND_RECALL_RERANK', 'off')
+    path = tmp_path/'keys.json'
+    scopes = ['memory:search', 'memory:read', 'memory:write', 'context:read', 'api:access', 'turns:write']
+    principals = [_principal(principal=person, secret=person, viewer=person, scopes=scopes)
+                  for person in ('person', 'other')]
+    _write_keyring(path, principals)
+    source_app.add_middleware(ApiKeyMiddleware, api_key=KEY)
+    ledger = TurnIdempotencyLedger(tmp_path/'turn-idempotency.db')
+    ledger.record_source('report', contact_id='person', session_id='work', messages=[
+        {'role': 'assistant', 'content': 'The hydrofoil departure is Friday at nine.'}])
+    ledger.record_source('private-other', contact_id='other', session_id='work', messages=[
+        {'role': 'user', 'content': 'The hydrofoil cabinet has the private amber label.'}])
+    ledger.record_source('scoped', contact_id='person', session_id='original', scope='session', messages=[
+        {'role': 'user', 'content': 'The hydrofoil session secret is cobalt.'}])
+    return source_app, ledger
+
+
+def body(**changes):
+    return {'identity': {'host_id': 'fixture'}, 'person_id': 'person', 'session_id': 'later',
+            'query': 'hydrofoil', **changes}
+
+
+async def search(client, **changes):
+    response = await client.post('/v1/host/memory/search', json=body(**changes))
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(('method', 'route'), [
+    ('GET', 'distill-preview'), ('GET', 'conflicts'), ('GET', 'stats'),
+    ('POST', 'verify'), ('POST', 'vector-vacuum'),
+])
+async def test_retired_graph_management_routes_are_not_exposed(memory_app, method, route):
+    app, _ = memory_app
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test',
+                           headers={'Authorization': 'Bearer ' + KEY}) as client:
+        response = await client.request(method, '/v1/host/memory/' + route)
+        assert response.status_code == 404
+
+
+def annotate(ledger, annotation_id, correction):
+    ref = ledger.source_references(['report'], contact_id='person', session_id='later')[0]
+    return ledger.append_source_annotation(contact_id='person', session_id='later',
+        annotation_id=annotation_id, **ref, excerpt='Friday at nine.', correction=correction,
+        author_principal='person')
+
+
+@pytest.mark.asyncio
+async def test_search_matches_automatic_scope_and_correction_budget(memory_app, monkeypatch):
+    app, ledger = memory_app
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test',
+                           headers={'Authorization':'Bearer ' + KEY}) as client:
+        first = await search(client)
+        assert 'Friday at nine' in first['content']
+        assert 'amber' not in first['content'] and 'cobalt' not in first['content']
+        assert first['content'] == await recalled(client, contact='person', session='later')
+        annotation = annotate(ledger, 'audit', 'Friday is confirmed; nine is unsupported.')
+        corrected = await search(client)
+        assert 'nine is unsupported' in corrected['content']
+        assert {ref['source_id'] for ref in corrected['source_refs']} == {'report', annotation['source_id']}
+        assert corrected['content'] == await recalled(client, contact='person', session='later')
+        monkeypatch.setenv('COLONYMIND_RECALL_CONTEXT_MAX_CHARS', '100')
+        empty = await search(client)
+        assert empty['content'] == '' and empty['count'] == 0 and empty['source_refs'] == []
+
+
+@pytest.mark.asyncio
+async def test_search_uses_real_semantic_index_and_keeps_lexical_on_model_swap(memory_app, tmp_path, monkeypatch):
+    from colonymind import vector
+    app, _ = memory_app
+    ledger, store, pipeline, projection = await setup(tmp_path)
+    await drain(projection)
+    monkeypatch.setattr(vector, 'get_store', lambda: store)
+    monkeypatch.setattr(vector, 'get_pipeline', lambda: pipeline)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test',
+                           headers={'Authorization':'Bearer ' + KEY}) as client:
+        semantic = await search(client, query='vessel departure identifier')
+        assert 'Friday at nine' in semantic['content'] and semantic['retrieval']['semantic'] == 'ready'
+        assert 'amber' not in semantic['content'] and 'cobalt' not in semantic['content']
+        monkeypatch.setattr(vector, 'get_pipeline', lambda: Pipeline(name='different-model'))
+        lexical = await search(client)
+        assert 'Friday at nine' in lexical['content'] and lexical['retrieval']['semantic'] == 'failed'
+        class Failing(Pipeline):
+            async def embed_query(self, query): raise RuntimeError('embedding unavailable')
+        monkeypatch.setattr(vector, 'get_pipeline', lambda: Failing())
+        assert (await search(client))['retrieval']['semantic'] == 'failed'
+
+
+@pytest.mark.asyncio
+async def test_unprojected_lance_table_is_not_healthy_empty_search(memory_app, tmp_path, monkeypatch):
+    from colonymind import vector
+    from colonymind.vector import Collection
+    app, _ = memory_app
+    _, store, pipeline, projection = await setup(tmp_path)
+    monkeypatch.setattr(vector, 'get_store', lambda: store)
+    monkeypatch.setattr(vector, 'get_pipeline', lambda: pipeline)
+    queries = []
+    original_embed = pipeline.embed_query
+
+    async def embed(query):
+        queries.append(query)
+        return await original_embed(query)
+
+    monkeypatch.setattr(pipeline, 'embed_query', embed)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test',
+                           headers={'Authorization': 'Bearer ' + KEY}) as client:
+        empty = await search(client, query='unmatched vermilion planet')
+        assert empty['count'] == 0 and empty['retrieval']['semantic'] == 'ready'
+        assert queries == ['unmatched vermilion planet']
+
+        # Keep the real active generation and remove only its required source
+        # projection column. An incompatible table must not look like no hits.
+        table = await store._table(Collection.CONVERSATIONS)
+        await table.drop_columns(['scope_key'])
+        lexical = await search(client)
+        assert 'Friday at nine' in lexical['content']
+        assert 'amber' not in lexical['content'] and 'cobalt' not in lexical['content']
+        assert lexical['retrieval']['semantic'] == 'failed'
+        assert queries == ['unmatched vermilion planet']  # No unnecessary inference.
+
+        # The existing projection worker supplies the missing column and
+        # records. A later semantic query recovers without another readiness API.
+        await drain(projection)
+        restored = await search(client, query='vessel departure identifier')
+        assert 'Friday at nine' in restored['content']
+        assert restored['retrieval']['semantic'] == 'ready'
+        assert queries == ['unmatched vermilion planet', 'vessel departure identifier']
+
+
+@pytest.mark.asyncio
+async def test_a_search_names_its_person_and_a_limit_above_the_maximum_is_clamped(memory_app, monkeypatch):
+    """security-6: the body names the person. A missing or blank person_id is refused (422), never
+    read as the owner's search, so a caller whose guest resolution failed gets no one's memory. A
+    limit above the maximum is clamped, not refused; an explicit guest still scopes to that guest."""
+    monkeypatch.setenv('COLONYMIND_OWNER_CONTACT_ID', 'person')
+    app, _ = memory_app
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test',
+                           headers={'Authorization': 'Bearer ' + KEY}) as client:
+        for unnamed in ({'identity': {'host_id': 'fixture'}, 'query': 'hydrofoil'},
+                        body(person_id=''), body(person_id='   '), body(person_id=None)):
+            refused = await client.post('/v1/host/memory/search', json=unnamed)
+            assert refused.status_code == 422, refused.text
+            assert 'Friday at nine' not in refused.text
+        clamped = await search(client, limit=30)
+        assert 'Friday at nine' in clamped['content'] and 'amber' not in clamped['content']
+        assert 1 <= clamped['count'] <= 20
+        guest = await search(client, person_id='other')
+        assert 'amber' in guest['content'] and 'Friday at nine' not in guest['content']
+        for limit in (0, '30'):
+            refused = await client.post('/v1/host/memory/search', json=body(limit=limit))
+            assert refused.status_code == 422, refused.text
+
+
+@pytest.mark.asyncio
+async def test_a_session_admits_its_own_scoped_evidence_and_its_absence_excludes_nothing(memory_app):
+    app, _ = memory_app
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test',
+                           headers={'Authorization': 'Bearer ' + KEY}) as client:
+        inside = await search(client, session_id='original')
+        assert 'cobalt' in inside['content'] and 'Friday at nine' in inside['content']
+        without = await client.post('/v1/host/memory/search', json={'identity': {'host_id': 'fixture'},
+                                                                    'person_id': 'person', 'query': 'hydrofoil'})
+        assert without.status_code == 200, without.text
+        assert 'Friday at nine' in without.json()['content'] and 'cobalt' not in without.json()['content']
+
+
+@pytest.mark.asyncio
+async def test_a_caller_without_the_key_never_searches_the_owner(memory_app, monkeypatch):
+    """Development mode (no key): a body naming nobody is refused by the schema and the owner
+    named is refused by authority, so a keyless caller never reads the owner's memory."""
+    from fastapi import FastAPI
+    from colonymind.api.errors import install_exception_handlers
+    monkeypatch.setenv('COLONYMIND_OWNER_CONTACT_ID', 'person')
+    dev = FastAPI()
+    install_exception_handlers(dev)
+    dev.add_middleware(ApiKeyMiddleware, api_key=None)
+    dev.include_router(host.router)
+    async with AsyncClient(transport=ASGITransport(app=dev), base_url='http://localhost') as client:
+        unnamed = await client.post('/v1/host/memory/search', json={'identity': {'host_id': 'fixture'}, 'query': 'hydrofoil'})
+        assert unnamed.status_code == 422, unnamed.text
+        named = await client.post('/v1/host/memory/search', json=body())
+        assert named.status_code == 403 and named.json()['detail']['code'] == 'reserved_authority_required'
+
+from colonymind.memory import curated
+@pytest.mark.asyncio
+async def test_search_annotation_freshness_is_per_receipt_and_can_recover(memory_app):
+    app, ledger = memory_app
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test',
+                           headers={'Authorization':'Bearer ' + KEY}) as client:
+        async def check(*packets):
+            refs = {r['source_id']: r for p in packets for r in p['source_refs']}
+            r = await client.post('/v1/host/memory/sources/erasures', json={
+                'contact_id':'person', 'session_id':'later', 'after':0,
+                'source_refs':list(refs.values()),
+                'annotation_checks':[c for p in packets for c in p['annotation_checks']]})
+            assert r.status_code == 200, r.text
+            return r.json()
+        old = await search(client)
+        assert (await check(old))['annotation_checks_current'] == [True]
+        annotate(ledger, 'audit1', 'The time is unsupported.')
+        stale = await check(old)
+        assert stale['sources_current'] is True
+        assert stale['annotation_checks_current'] == [False]
+        fresh = await search(client)
+        assert (await check(old, fresh))['annotation_checks_current'] == [False, True]
+        annotate(ledger, 'audit2', 'A second source confirms the day but not the hour.')
+        assert (await check(fresh))['annotation_checks_current'] == [False]
+        newest = await search(client)
+        assert (await check(newest))['annotation_checks_current'] == [True]
+        curated.forget_sources(ledger, 'person', source_ids=['report'])
+        erased = await check(newest)
+        assert erased['sources_current'] is False and erased['annotation_checks_current'] == [False]
+        assert (await search(client))['count'] == 0
+
+
+@pytest.mark.asyncio
+async def test_lexical_search_keeps_http_responsive_and_rechecks_erasure(memory_app, monkeypatch):
+    app, ledger = memory_app
+    loop = asyncio.get_running_loop()
+    entered = asyncio.Event()
+    release = threading.Event()
+    finished = threading.Event()
+    original = TurnIdempotencyLedger.search_sources
+
+    def blocked_search(self, *args, **kwargs):
+        hits = original(self, *args, **kwargs)
+        loop.call_soon_threadsafe(entered.set)
+        try:
+            release.wait(timeout=5)
+            return hits
+        finally:
+            finished.set()
+
+    monkeypatch.setattr(TurnIdempotencyLedger, 'search_sources', blocked_search)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test',
+                           headers={'Authorization': 'Bearer ' + KEY}) as client:
+        pending = asyncio.create_task(search(client))
+        try:
+            await asyncio.wait_for(entered.wait(), timeout=2)
+            response = await asyncio.wait_for(client.post('/v1/host/memory/sources/erasures', json={
+                'contact_id': 'person', 'session_id': 'later', 'after': 0,
+                'source_refs': ledger.source_references(['report'], contact_id='person', session_id='later'),
+            }), timeout=2)
+            assert response.status_code == 200, response.text
+            assert response.json()['sources_current'] is True
+            assert not finished.is_set(), 'lexical search blocked another HTTP request'
+            curated.forget_sources(ledger, 'person', source_ids=['report'])
+        finally:
+            release.set()
+            result = await asyncio.wait_for(pending, timeout=2)
+        assert result['content'] == '' and result['source_refs'] == []
+
+
+@pytest.mark.asyncio
+async def test_erasure_during_semantic_await_never_returns_stale_excerpt(memory_app, tmp_path, monkeypatch):
+    from colonymind import vector
+    app, _ = memory_app
+    ledger, store, pipeline, projection = await setup(tmp_path)
+    await drain(projection)
+    async def erase_then_embed(query):
+        curated.forget_sources(ledger, 'person', source_ids=['report'])
+        return pipeline.vector(query)
+    monkeypatch.setattr(pipeline, 'embed_query', erase_then_embed)
+    monkeypatch.setattr(vector, 'get_store', lambda: store)
+    monkeypatch.setattr(vector, 'get_pipeline', lambda: pipeline)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test',
+                           headers={'Authorization':'Bearer ' + KEY}) as client:
+        result = await search(client)
+        assert result['content'] == '' and result['source_refs'] == []

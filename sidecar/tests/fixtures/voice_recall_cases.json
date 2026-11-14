@@ -1,0 +1,1140 @@
+{
+  "source": "benchmarks/source_recall/fixtures.json",
+  "description": "All queries with expected hits, unchanged; canonical text-source import, frozen reference time.",
+  "queries": [
+    {
+      "id": "correction_0_q0",
+      "query": "Which tea does Morgan prefer for afternoon meetings?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "correction_0_1"
+      ],
+      "tags": [
+        "correction"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "correction_0_q1",
+      "query": "What is Morgan's corrected meeting tea preference?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "correction_0_1"
+      ],
+      "tags": [
+        "correction"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "correction_0_q2",
+      "query": "Choose the current tea for Morgan's afternoon meeting.",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "correction_0_1"
+      ],
+      "tags": [
+        "correction"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "correction_0_q3",
+      "query": "I am arranging refreshments for Morgan later today; what tea should I bring?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "correction_0_1"
+      ],
+      "tags": [
+        "correction"
+      ],
+      "split": "holdout"
+    },
+    {
+      "id": "correction_1_q0",
+      "query": "Which tea does Ari prefer for afternoon meetings?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "correction_1_1"
+      ],
+      "tags": [
+        "correction"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "correction_1_q1",
+      "query": "What is Ari's corrected meeting tea preference?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "correction_1_1"
+      ],
+      "tags": [
+        "correction"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "correction_1_q2",
+      "query": "Choose the current tea for Ari's afternoon meeting.",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "correction_1_1"
+      ],
+      "tags": [
+        "correction"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "correction_1_q3",
+      "query": "I am arranging refreshments for Ari later today; what tea should I bring?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "correction_1_1"
+      ],
+      "tags": [
+        "correction"
+      ],
+      "split": "holdout"
+    },
+    {
+      "id": "correction_2_q0",
+      "query": "Which tea does Taylor prefer for afternoon meetings?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "correction_2_1"
+      ],
+      "tags": [
+        "correction"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "correction_2_q1",
+      "query": "What is Taylor's corrected meeting tea preference?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "correction_2_1"
+      ],
+      "tags": [
+        "correction"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "correction_2_q2",
+      "query": "Choose the current tea for Taylor's afternoon meeting.",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "correction_2_1"
+      ],
+      "tags": [
+        "correction"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "correction_2_q3",
+      "query": "I am arranging refreshments for Taylor later today; what tea should I bring?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "correction_2_1"
+      ],
+      "tags": [
+        "correction"
+      ],
+      "split": "holdout"
+    },
+    {
+      "id": "contradiction_0_q0",
+      "query": "Which room is the Cedar planning meeting in?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "contradiction_0_0",
+        "contradiction_0_1"
+      ],
+      "tags": [
+        "contradiction"
+      ],
+      "split": "development",
+      "conflict": "contradiction_0.room"
+    },
+    {
+      "id": "contradiction_0_q1",
+      "query": "What evidence do we have about the room for Cedar's planning meeting?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "contradiction_0_0",
+        "contradiction_0_1"
+      ],
+      "tags": [
+        "contradiction"
+      ],
+      "split": "development",
+      "conflict": "contradiction_0.room"
+    },
+    {
+      "id": "contradiction_0_q2",
+      "query": "Where should I go for the Cedar planning meeting?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "contradiction_0_0",
+        "contradiction_0_1"
+      ],
+      "tags": [
+        "contradiction"
+      ],
+      "split": "development",
+      "conflict": "contradiction_0.room"
+    },
+    {
+      "id": "contradiction_0_q3",
+      "query": "Have we agreed on the location of the Cedar planning session?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "contradiction_0_0",
+        "contradiction_0_1"
+      ],
+      "tags": [
+        "contradiction"
+      ],
+      "split": "holdout",
+      "conflict": "contradiction_0.room"
+    },
+    {
+      "id": "contradiction_1_q0",
+      "query": "Which room is the Harbor planning meeting in?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "contradiction_1_0",
+        "contradiction_1_1"
+      ],
+      "tags": [
+        "contradiction"
+      ],
+      "split": "development",
+      "conflict": "contradiction_1.room"
+    },
+    {
+      "id": "contradiction_1_q1",
+      "query": "What evidence do we have about the room for Harbor's planning meeting?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "contradiction_1_0",
+        "contradiction_1_1"
+      ],
+      "tags": [
+        "contradiction"
+      ],
+      "split": "development",
+      "conflict": "contradiction_1.room"
+    },
+    {
+      "id": "contradiction_1_q2",
+      "query": "Where should I go for the Harbor planning meeting?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "contradiction_1_0",
+        "contradiction_1_1"
+      ],
+      "tags": [
+        "contradiction"
+      ],
+      "split": "development",
+      "conflict": "contradiction_1.room"
+    },
+    {
+      "id": "contradiction_1_q3",
+      "query": "Have we agreed on the location of the Harbor planning session?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "contradiction_1_0",
+        "contradiction_1_1"
+      ],
+      "tags": [
+        "contradiction"
+      ],
+      "split": "holdout",
+      "conflict": "contradiction_1.room"
+    },
+    {
+      "id": "contradiction_2_q0",
+      "query": "Which room is the Iris planning meeting in?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "contradiction_2_0",
+        "contradiction_2_1"
+      ],
+      "tags": [
+        "contradiction"
+      ],
+      "split": "development",
+      "conflict": "contradiction_2.room"
+    },
+    {
+      "id": "contradiction_2_q1",
+      "query": "What evidence do we have about the room for Iris's planning meeting?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "contradiction_2_0",
+        "contradiction_2_1"
+      ],
+      "tags": [
+        "contradiction"
+      ],
+      "split": "development",
+      "conflict": "contradiction_2.room"
+    },
+    {
+      "id": "contradiction_2_q2",
+      "query": "Where should I go for the Iris planning meeting?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "contradiction_2_0",
+        "contradiction_2_1"
+      ],
+      "tags": [
+        "contradiction"
+      ],
+      "split": "development",
+      "conflict": "contradiction_2.room"
+    },
+    {
+      "id": "contradiction_2_q3",
+      "query": "Have we agreed on the location of the Iris planning session?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "contradiction_2_0",
+        "contradiction_2_1"
+      ],
+      "tags": [
+        "contradiction"
+      ],
+      "split": "holdout",
+      "conflict": "contradiction_2.room"
+    },
+    {
+      "id": "scope_0_q0",
+      "query": "What is the Orchard cabinet access phrase?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "scope_0_0"
+      ],
+      "tags": [
+        "scope"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "scope_0_q1",
+      "query": "Remind me of the phrase to unlock the Orchard workshop cabinet.",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "scope_0_0"
+      ],
+      "tags": [
+        "scope"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "scope_1_q0",
+      "query": "What is the Willow cabinet access phrase?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "scope_1_0"
+      ],
+      "tags": [
+        "scope"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "scope_1_q1",
+      "query": "Remind me of the phrase to unlock the Willow workshop cabinet.",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "scope_1_0"
+      ],
+      "tags": [
+        "scope"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "scope_2_q0",
+      "query": "What is the Meadow cabinet access phrase?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "scope_2_0"
+      ],
+      "tags": [
+        "scope"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "scope_2_q1",
+      "query": "Remind me of the phrase to unlock the Meadow workshop cabinet.",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "scope_2_0"
+      ],
+      "tags": [
+        "scope"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "recency_0_q0",
+      "query": "What parcel event occurred at the Juniper entrance today?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "recency_0_1"
+      ],
+      "tags": [
+        "recency"
+      ],
+      "split": "development",
+      "since": "2026-09-04",
+      "forbidden": [
+        "recency_0_0"
+      ]
+    },
+    {
+      "id": "recency_0_q1",
+      "query": "Show today's Juniper entrance observation involving the parcel.",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "recency_0_1"
+      ],
+      "tags": [
+        "recency"
+      ],
+      "split": "development",
+      "since": "2026-09-04",
+      "forbidden": [
+        "recency_0_0"
+      ]
+    },
+    {
+      "id": "recency_0_q2",
+      "query": "What did the Juniper entrance camera see with a parcel on Friday?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "recency_0_1"
+      ],
+      "tags": [
+        "recency"
+      ],
+      "split": "development",
+      "since": "2026-09-04",
+      "forbidden": [
+        "recency_0_0"
+      ]
+    },
+    {
+      "id": "recency_0_q3",
+      "query": "Was a parcel spotted by the Juniper doorway in today's footage?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "recency_0_1"
+      ],
+      "tags": [
+        "recency"
+      ],
+      "split": "holdout",
+      "since": "2026-09-04",
+      "forbidden": [
+        "recency_0_0"
+      ]
+    },
+    {
+      "id": "recency_1_q0",
+      "query": "What bicycle event occurred at the Birch entrance today?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "recency_1_1"
+      ],
+      "tags": [
+        "recency"
+      ],
+      "split": "development",
+      "since": "2026-09-04",
+      "forbidden": [
+        "recency_1_0"
+      ]
+    },
+    {
+      "id": "recency_1_q1",
+      "query": "Show today's Birch entrance observation involving the bicycle.",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "recency_1_1"
+      ],
+      "tags": [
+        "recency"
+      ],
+      "split": "development",
+      "since": "2026-09-04",
+      "forbidden": [
+        "recency_1_0"
+      ]
+    },
+    {
+      "id": "recency_1_q2",
+      "query": "What did the Birch entrance camera see with a bicycle on Friday?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "recency_1_1"
+      ],
+      "tags": [
+        "recency"
+      ],
+      "split": "development",
+      "since": "2026-09-04",
+      "forbidden": [
+        "recency_1_0"
+      ]
+    },
+    {
+      "id": "recency_1_q3",
+      "query": "Was a bicycle spotted by the Birch doorway in today's footage?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "recency_1_1"
+      ],
+      "tags": [
+        "recency"
+      ],
+      "split": "holdout",
+      "since": "2026-09-04",
+      "forbidden": [
+        "recency_1_0"
+      ]
+    },
+    {
+      "id": "recency_2_q0",
+      "query": "What toolbox event occurred at the Elm entrance today?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "recency_2_1"
+      ],
+      "tags": [
+        "recency"
+      ],
+      "split": "development",
+      "since": "2026-09-04",
+      "forbidden": [
+        "recency_2_0"
+      ]
+    },
+    {
+      "id": "recency_2_q1",
+      "query": "Show today's Elm entrance observation involving the toolbox.",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "recency_2_1"
+      ],
+      "tags": [
+        "recency"
+      ],
+      "split": "development",
+      "since": "2026-09-04",
+      "forbidden": [
+        "recency_2_0"
+      ]
+    },
+    {
+      "id": "recency_2_q2",
+      "query": "What did the Elm entrance camera see with a toolbox on Friday?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "recency_2_1"
+      ],
+      "tags": [
+        "recency"
+      ],
+      "split": "development",
+      "since": "2026-09-04",
+      "forbidden": [
+        "recency_2_0"
+      ]
+    },
+    {
+      "id": "recency_2_q3",
+      "query": "Was a toolbox spotted by the Elm doorway in today's footage?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "recency_2_1"
+      ],
+      "tags": [
+        "recency"
+      ],
+      "split": "holdout",
+      "since": "2026-09-04",
+      "forbidden": [
+        "recency_2_0"
+      ]
+    },
+    {
+      "id": "index_lag_0_q0",
+      "query": "What error did the Falcon calibration test just measure?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "index_lag_0_1"
+      ],
+      "tags": [
+        "index_lag"
+      ],
+      "split": "development",
+      "since": "2026-09-04",
+      "forbidden": [
+        "index_lag_0_0"
+      ]
+    },
+    {
+      "id": "index_lag_0_q1",
+      "query": "Give the completed Falcon test result from today.",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "index_lag_0_1"
+      ],
+      "tags": [
+        "index_lag"
+      ],
+      "split": "development",
+      "since": "2026-09-04",
+      "forbidden": [
+        "index_lag_0_0"
+      ]
+    },
+    {
+      "id": "index_lag_0_q2",
+      "query": "How accurately did Falcon perform in the latest completed calibration?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "index_lag_0_1"
+      ],
+      "tags": [
+        "index_lag"
+      ],
+      "split": "development",
+      "since": "2026-09-04",
+      "forbidden": [
+        "index_lag_0_0"
+      ]
+    },
+    {
+      "id": "index_lag_0_q3",
+      "query": "The Falcon run finished; what measurement did it produce?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "index_lag_0_1"
+      ],
+      "tags": [
+        "index_lag"
+      ],
+      "split": "holdout",
+      "since": "2026-09-04",
+      "forbidden": [
+        "index_lag_0_0"
+      ]
+    },
+    {
+      "id": "index_lag_1_q0",
+      "query": "What error did the Otter calibration test just measure?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "index_lag_1_1"
+      ],
+      "tags": [
+        "index_lag"
+      ],
+      "split": "development",
+      "since": "2026-09-04",
+      "forbidden": [
+        "index_lag_1_0"
+      ]
+    },
+    {
+      "id": "index_lag_1_q1",
+      "query": "Give the completed Otter test result from today.",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "index_lag_1_1"
+      ],
+      "tags": [
+        "index_lag"
+      ],
+      "split": "development",
+      "since": "2026-09-04",
+      "forbidden": [
+        "index_lag_1_0"
+      ]
+    },
+    {
+      "id": "index_lag_1_q2",
+      "query": "How accurately did Otter perform in the latest completed calibration?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "index_lag_1_1"
+      ],
+      "tags": [
+        "index_lag"
+      ],
+      "split": "development",
+      "since": "2026-09-04",
+      "forbidden": [
+        "index_lag_1_0"
+      ]
+    },
+    {
+      "id": "index_lag_1_q3",
+      "query": "The Otter run finished; what measurement did it produce?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "index_lag_1_1"
+      ],
+      "tags": [
+        "index_lag"
+      ],
+      "split": "holdout",
+      "since": "2026-09-04",
+      "forbidden": [
+        "index_lag_1_0"
+      ]
+    },
+    {
+      "id": "index_lag_2_q0",
+      "query": "What error did the Heron calibration test just measure?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "index_lag_2_1"
+      ],
+      "tags": [
+        "index_lag"
+      ],
+      "split": "development",
+      "since": "2026-09-04",
+      "forbidden": [
+        "index_lag_2_0"
+      ]
+    },
+    {
+      "id": "index_lag_2_q1",
+      "query": "Give the completed Heron test result from today.",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "index_lag_2_1"
+      ],
+      "tags": [
+        "index_lag"
+      ],
+      "split": "development",
+      "since": "2026-09-04",
+      "forbidden": [
+        "index_lag_2_0"
+      ]
+    },
+    {
+      "id": "index_lag_2_q2",
+      "query": "How accurately did Heron perform in the latest completed calibration?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "index_lag_2_1"
+      ],
+      "tags": [
+        "index_lag"
+      ],
+      "split": "development",
+      "since": "2026-09-04",
+      "forbidden": [
+        "index_lag_2_0"
+      ]
+    },
+    {
+      "id": "index_lag_2_q3",
+      "query": "The Heron run finished; what measurement did it produce?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "index_lag_2_1"
+      ],
+      "tags": [
+        "index_lag"
+      ],
+      "split": "holdout",
+      "since": "2026-09-04",
+      "forbidden": [
+        "index_lag_2_0"
+      ]
+    },
+    {
+      "id": "identifier_0_q0",
+      "query": "Which resource has work order ZXQ-417?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "identifier_0_0"
+      ],
+      "tags": [
+        "identifier"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "identifier_0_q1",
+      "query": "Look up the resource assigned to ZXQ-417.",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "identifier_0_0"
+      ],
+      "tags": [
+        "identifier"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "identifier_0_q2",
+      "query": "Where is the task identified by ZXQ-417 assigned?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "identifier_0_0"
+      ],
+      "tags": [
+        "identifier"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "identifier_0_q3",
+      "query": "I found ticket ZXQ-417; which piece of equipment does it refer to?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "identifier_0_0"
+      ],
+      "tags": [
+        "identifier"
+      ],
+      "split": "holdout"
+    },
+    {
+      "id": "identifier_1_q0",
+      "query": "Which resource has work order RMT-208?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "identifier_1_0"
+      ],
+      "tags": [
+        "identifier"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "identifier_1_q1",
+      "query": "Look up the resource assigned to RMT-208.",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "identifier_1_0"
+      ],
+      "tags": [
+        "identifier"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "identifier_1_q2",
+      "query": "Where is the task identified by RMT-208 assigned?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "identifier_1_0"
+      ],
+      "tags": [
+        "identifier"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "identifier_1_q3",
+      "query": "I found ticket RMT-208; which piece of equipment does it refer to?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "identifier_1_0"
+      ],
+      "tags": [
+        "identifier"
+      ],
+      "split": "holdout"
+    },
+    {
+      "id": "identifier_2_q0",
+      "query": "Which resource has work order VLP-639?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "identifier_2_0"
+      ],
+      "tags": [
+        "identifier"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "identifier_2_q1",
+      "query": "Look up the resource assigned to VLP-639.",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "identifier_2_0"
+      ],
+      "tags": [
+        "identifier"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "identifier_2_q2",
+      "query": "Where is the task identified by VLP-639 assigned?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "identifier_2_0"
+      ],
+      "tags": [
+        "identifier"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "identifier_2_q3",
+      "query": "I found ticket VLP-639; which piece of equipment does it refer to?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "identifier_2_0"
+      ],
+      "tags": [
+        "identifier"
+      ],
+      "split": "holdout"
+    },
+    {
+      "id": "media_source_0_q0",
+      "query": "Where was the blue crate observed at Aspen?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "media_source_0_0"
+      ],
+      "tags": [
+        "media_source"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "media_source_0_q1",
+      "query": "Find the camera event showing the blue crate at Aspen.",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "media_source_0_0"
+      ],
+      "tags": [
+        "media_source"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "media_source_0_q2",
+      "query": "Which observation places the blue crate at the Aspen loading dock?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "media_source_0_0"
+      ],
+      "tags": [
+        "media_source"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "media_source_0_q3",
+      "query": "Do we have footage supporting where the blue crate was dropped off at Aspen?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "media_source_0_0"
+      ],
+      "tags": [
+        "media_source"
+      ],
+      "split": "holdout"
+    },
+    {
+      "id": "media_source_1_q0",
+      "query": "Where was the red trolley observed at Rowan?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "media_source_1_0"
+      ],
+      "tags": [
+        "media_source"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "media_source_1_q1",
+      "query": "Find the camera event showing the red trolley at Rowan.",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "media_source_1_0"
+      ],
+      "tags": [
+        "media_source"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "media_source_1_q2",
+      "query": "Which observation places the red trolley at the Rowan side gate?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "media_source_1_0"
+      ],
+      "tags": [
+        "media_source"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "media_source_1_q3",
+      "query": "Do we have footage supporting where the red trolley was dropped off at Rowan?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "media_source_1_0"
+      ],
+      "tags": [
+        "media_source"
+      ],
+      "split": "holdout"
+    },
+    {
+      "id": "media_source_2_q0",
+      "query": "Where was the yellow case observed at Laurel?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "media_source_2_0"
+      ],
+      "tags": [
+        "media_source"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "media_source_2_q1",
+      "query": "Find the camera event showing the yellow case at Laurel.",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "media_source_2_0"
+      ],
+      "tags": [
+        "media_source"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "media_source_2_q2",
+      "query": "Which observation places the yellow case at the Laurel front lobby?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "media_source_2_0"
+      ],
+      "tags": [
+        "media_source"
+      ],
+      "split": "development"
+    },
+    {
+      "id": "media_source_2_q3",
+      "query": "Do we have footage supporting where the yellow case was dropped off at Laurel?",
+      "principal": "owner",
+      "as_of": "2026-09-05",
+      "expected": [
+        "media_source_2_0"
+      ],
+      "tags": [
+        "media_source"
+      ],
+      "split": "holdout"
+    }
+  ]
+}

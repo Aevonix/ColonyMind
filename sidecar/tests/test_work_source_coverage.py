@@ -1,0 +1,103 @@
+"""Busy or unavailable work readers must not conceal independent work."""
+import json
+
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
+import pytest
+
+from onekey import RequestAuthority
+from colonymind.api.routers import executions
+from colonymind.turns.executions import has_work_records, request_work_context
+
+
+def records(source, count=1):
+    return {'available': True, 'items': [
+        {'id': source + str(i), 'status': 'running', 'liveness': 'unknown'} for i in range(count)],
+        'recent': [], 'total': count}
+
+
+def projected(result):
+    return [json.loads(line) for line in result['text'].splitlines()
+            if line.startswith('{') and '"source": "native_kanban_coverage"' not in line]
+
+
+def test_busy_board_source_cannot_starve_cron_and_workers():
+    view = dict({source: records(source, 12 if source == 'native_kanban' else 1)
+                 for source in ('native_kanban', 'reported_worker', 'native_cron')})
+    result = request_work_context(view)
+    rows = projected(result)
+    assert len(rows) == 8
+    assert {row['source'] for row in rows} == {
+        'native_kanban', 'reported_worker', 'native_cron'}
+    assert result['work_sources']['native_kanban']['total'] == 12
+    assert result['work_sources']['native_kanban']['shown'] == 6
+    assert result['truncated'] and not result['complete']
+    assert 'overlapping records, not a unique task count' in result['text']
+    assert len(result['text']) <= 4000
+
+
+def test_large_report_does_not_hide_a_shorter_independent_observation():
+    large = {'task_id': 'reported', 'state': 'running', 'result_refs': [
+        {'kind': 'artifact', 'reference': 'r' * 512, 'verification': 'v' * 160} for _ in range(4)]}
+    view = {'native_cron': {'items': [{'execution_id': 'actual-cron', 'liveness': 'unknown'}]},
+            'reported_worker': {'available': True, 'items': [large]}}
+    result = request_work_context(view, max_chars=1800)
+    assert [row['execution_id'] for row in projected(result)] == ['actual-cron']
+    assert result['work_sources']['reported_worker']['shown'] == 0
+    assert result['truncated'] and len(result['text']) <= 1800
+
+
+def test_join_identities_survive_projection_without_claim_tokens_or_task_text():
+    view = {'native_kanban': {'available': True, 'items': [{'native_task_id': 'task',
+                'native_run_id': 'run', 'native_board': 'default', 'claim_lock': 'SECRET_LOCK'}],
+                'source_home_id': 'a' * 64}}
+    result = request_work_context(view)
+    rows = {row['source']: row for row in projected(result)}
+    assert rows['native_kanban']['source_home_id'] == 'a' * 64
+    assert 'SECRET' not in result['text']
+
+
+@pytest.mark.asyncio
+async def test_reader_failure_is_isolated(tmp_path, monkeypatch):
+    from colonymind.turns import hermes_work, board_observations, reported_workers
+    monkeypatch.setattr(hermes_work, 'cron_view', lambda **_: records('cron'))
+    def broken(**_):
+        raise RuntimeError('PRIVATE_DRIVER_ERROR')
+    monkeypatch.setattr(board_observations, 'kanban_view', broken)
+    monkeypatch.setattr(reported_workers, 'reported_worker_view', lambda **_: None)
+    monkeypatch.setenv('COLONYMIND_OWNER_CONTACT_ID', 'owner')
+    app = FastAPI()
+    @app.middleware('http')
+    async def identity(request, call_next):
+        person = request.headers.get('fixture-person', 'owner')
+        request.state.colonymind_authority = RequestAuthority(principal_id='host', credential_id='fixture',
+            scopes=frozenset({'context:read'}), viewer_person_id=person,
+            person_ids=frozenset({person}), audiences=frozenset({'viewer'}), authenticated=True)
+        return await call_next(request)
+    app.include_router(executions.router)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://fixture') as client:
+        response = await client.get('/v1/host/executions', params={'contact_id': 'owner'})
+        assert response.status_code == 200
+        full = response.json()
+        assert full['work_sources']['native_kanban']['status'] == 'unavailable'
+        assert full['work_sources']['reported_worker']['status'] == 'not_observed'
+        assert 'PRIVATE_DRIVER_ERROR' not in response.text and not full['complete']
+        assert full['native_cron']['items'][0]['id'] == 'cron0'
+        first = (await client.get('/v1/host/executions', params={
+            'contact_id': 'owner', 'session_id': 'text-session', 'projection': 'request'})).json()
+        assert 'cron0' in first['text'] and 'local_work' not in first['work_sources']
+        assert 'execution' not in first['work_sources']
+        guest = await client.get('/v1/host/executions', params={'contact_id': 'guest'},
+                                 headers={'fixture-person': 'guest'})
+        assert guest.status_code == 200 and 'work_sources' not in guest.json()
+        assert 'cron0' not in guest.text and 'draft0' not in guest.text
+
+
+def test_idle_or_unavailable_readers_are_not_work_records():
+    """An all-idle or all-unavailable view earns no turn-context section; one record from any reader does."""
+    idle = {'items': [], 'recent': [], 'native_kanban': {'available': False, 'reason': 'native_board_absent'},
+            'native_cron': {'available': False}, 'reported_worker': {'items': [], 'recent': []}}
+    assert has_work_records(idle) is False
+    assert has_work_records({**idle, 'reported_worker': {'items': [{'task_id': 't-1', 'state': 'running'}]}}) is True
+    assert has_work_records({**idle, 'native_kanban': {'recent': [{'native_task_id': 'x-1'}]}}) is True
+    assert has_work_records({**idle, 'native_cron': {'available': True, 'items': [{'native_job_id': 'j'}]}}) is True

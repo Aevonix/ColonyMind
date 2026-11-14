@@ -1,0 +1,161 @@
+"""Constrained output describes formation; source and revision validation still owns admission."""
+import json
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+from jsonschema import Draft202012Validator, ValidationError
+import pytest
+
+from colonymind.beliefs import source_claims
+from colonymind.self_model import appraisals
+from test_memory_formation import PROCEDURE, procedure
+
+
+def validator(module):
+    schema = module.RESPONSE_SCHEMA['schema']
+    Draft202012Validator.check_schema(schema)
+    return Draft202012Validator(schema)
+
+
+def _optional_properties(node, path=''):
+    """Every object level (with its path) whose properties are not all listed in ``required``."""
+    found = []
+    if isinstance(node, dict):
+        if isinstance(node.get('properties'), dict):
+            missing = sorted(set(node['properties']) - set(node.get('required') or []))
+            if missing:
+                found.append((path or '/', missing))
+        for key, value in node.items():
+            found += _optional_properties(value, f'{path}/{key}')
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            found += _optional_properties(value, f'{path}[{index}]')
+    return found
+
+
+def test_every_memory_response_schema_requires_every_property_at_every_level():
+    """The router sends every response schema with ``strict: true``, and a strict endpoint rejects
+    an object whose properties are not all required: an optional block fails every call there
+    (integration map X3). Optional content is a nullable type instead."""
+    from colonymind.commitments import extract
+    from colonymind.mind import consolidate, opinions
+    schemas = {'claims': source_claims.RESPONSE_SCHEMA, 'claims (per source)':
+               source_claims.claim_response_schema('The kettle is on the second shelf.'),
+               'commitments': extract.RESPONSE_SCHEMA, 'appraisals': appraisals.RESPONSE_SCHEMA,
+               'opinions': opinions.RESPONSE_SCHEMA, 'narrative': consolidate.NARRATIVE_SCHEMA, 'digest': consolidate.DIGEST_SCHEMA,
+               'episode': consolidate.EPISODE_SCHEMA}
+    for name, schema in schemas.items():
+        Draft202012Validator.check_schema(schema['schema'])
+        assert _optional_properties(schema['schema']) == [], name
+
+
+def test_claim_schema_preserves_procedure_and_empty_output_but_not_unquoted_content():
+    check = validator(source_claims)
+    check.validate({'claims': []})
+    wire = {k: v for k, v in procedure().items() if k != 'value'} | {'representation': 'procedure'}
+    check.validate({'claims': [wire]})
+    fabricated = {**wire, 'subject': 'invented device'}
+    check.validate({'claims': [fabricated]})  # Schema validity cannot establish source grounding.
+    assert source_claims.validated_claims(json.dumps([fabricated]), message=PROCEDURE,
+                                        prior=[], observed_at=None) == []
+    for bad in [[{**procedure(), 'memory_kind': 'personal_context'}], [procedure()],
+                [wire] * 7, [{**wire, 'extra': True}],
+                [{k: v for k, v in wire.items() if k != 'prior_claim_id'}]]:
+        with pytest.raises(ValidationError):
+            check.validate({'claims': bad})
+
+
+def test_short_source_schema_retains_trailing_time_and_reporter_context():
+    message = 'According to the keeper, the green timer is on the lower rack today.'
+    schema = source_claims.claim_response_schema(message)['schema']
+    item = {'representation': 'assertion', 'subject': 'green timer', 'predicate': 'location', 'value': 'lower rack',
+            'evidence': message, 'operation': 'assert', 'prior_claim_id': None,
+            'valid_from_text': 'today', 'valid_to_text': None, 'event_at_text': None,
+            'memory_kind': 'personal_context', 'recall_reason': 'Find the reported timer location when needed.'}
+    check = Draft202012Validator(schema)
+    check.validate({'claims': [item]})
+    # This was parseable JSON but discarded the useful fact after losing the
+    # quoted date. The constrained wire must retain the entire short source.
+    with pytest.raises(ValidationError):
+        check.validate({'claims': [{**item, 'evidence': message.removesuffix(' today.')}]})
+    accepted = source_claims.validated_claims(json.dumps([item]), message=message,
+        prior=[], observed_at='2026-09-09T12:00:00+00:00')
+    assert len(accepted) == 1 and accepted[0]['value'] == 'lower rack'
+    assert accepted[0]['evidence'].startswith('According to the keeper,')
+    assert accepted[0]['valid_from'] == '2026-09-09T00:00:00+00:00'
+
+
+@pytest.mark.asyncio
+async def test_source_specific_schemas_are_not_shared_between_concurrent_requests():
+    router = SimpleNamespace(supports_function_routing=True,
+        complete=AsyncMock(return_value=SimpleNamespace(content='[]', model_id='local')))
+    messages = ['My stencil is blue.', 'My stencil is green.']
+    await asyncio.gather(*(source_claims.extract_claims(router, {'occurred_at': None},
+        {'role': 'user', 'content': text}, []) for text in messages))
+    for call, text in zip(router.complete.call_args_list, messages):
+        schema = call.kwargs['context']['response_schema']['schema']
+        assert all(branch['properties']['evidence']['const'] == text
+                   for branch in schema['properties']['claims']['items']['anyOf']
+                   if 'evidence' in branch['properties'])
+    assert all('const' not in branch['properties']['evidence']
+               for branch in source_claims.RESPONSE_SCHEMA['schema']['properties']['claims']['items']['anyOf'])
+
+
+def test_long_sources_still_select_bounded_spans():
+    for size in (500, 501):
+        text = 'x' * size
+        schema = source_claims.claim_response_schema(text)['schema']
+        for branch in schema['properties']['claims']['items']['anyOf']:
+            if 'evidence' not in branch['properties']:
+                assert size == 500 and branch['properties']['evidence_ref']['enum'] == ['current_message']
+                continue
+            evidence = branch['properties']['evidence']
+            assert evidence['maxLength'] == 500
+            assert ('const' in evidence) is (size == 500)
+
+
+def test_appraisal_schema_retains_all_kinds_and_limits_without_semantic_claims():
+    check = validator(appraisals)
+    empty = {'observations': [], 'incident_decisions': [], 'outcomes': [],
+             'contact': {'their_valence': None, 'opt_out': False}}
+    check.validate(empty)
+    item = {'kind': 'preference', 'dimension': 'communication', 'topic': 'review order',
+            'text': 'The contact requests risk, edit, then links in reviews.',
+            'reason': 'This is a reported preference for later reviews.',
+            'support': [{'handle': 'current-handle', 'quote': 'risk, edit, then links'}],
+            'contrary': [], 'intensity': 'moderate', 'hint': 'none'}
+    for kind, dimensions in appraisals.DIMENSIONS.items():
+        for dimension in dimensions:
+            check.validate({**empty, 'observations': [{**item, 'kind': kind, 'dimension': dimension}]})
+    item = {**item, 'kind': 'appraisal', 'dimension': 'satisfaction'}
+    repair = {'record_id': 'previous-incident', 'outcome': 'resolved',
+              **{k: item[k] for k in ('reason', 'support', 'contrary')}}
+    check.validate({**empty, 'incident_decisions': [repair]})
+    for outcome in ('unchanged', 'uncertain'):
+        check.validate({**empty, 'incident_decisions': [{'record_id': 'previous-incident', 'outcome': outcome}]})
+    reported = {'event': 'failed', 'topic': 'quarterly figures', 'approach': '',
+                'support': [{'handle': 'current-handle', 'quote': 'the export was stale again'}]}
+    for event in appraisals.OUTCOME_EVENTS:
+        check.validate({**empty, 'outcomes': [{**reported, 'event': event}] * 4})
+    for bad in [{'observations': []},
+                {'observations': [], 'incident_decisions': []},
+                {k: v for k, v in empty.items() if k != 'contact'},       # the contact block is required
+                {k: v for k, v in empty.items() if k != 'outcomes'},      # and so are the outcomes
+                {**empty, 'contact': {'their_valence': None}},
+                {**empty, 'outcomes': [reported] * 5},
+                {**empty, 'outcomes': [{**reported, 'event': 'annoyed'}]},
+                {**empty, 'outcomes': [{**reported, 'support': []}]},
+                {**empty, 'outcomes': [{**reported, 'support': reported['support'] * 3}]},
+                {**empty, 'outcomes': [{**reported, 'topic': ''}]},
+                {**empty, 'outcomes': [{**reported, 'reason': 'extra'}]},
+                {**empty, 'observations': [item] * 5},
+                {**empty, 'observations': [{**item, 'dimension': 'format'}]},
+                {**empty, 'observations': [{**item, 'intensity': 'strong'}]},
+                {**empty, 'observations': [{**item, 'support': []}]},
+                {**empty, 'observations': [{**item, 'repairs': None}]},
+                {**empty, 'incident_decisions': [{**repair, 'support': []}]},
+                {**empty, 'incident_decisions': [{**repair, 'outcome': 'uncertain'}]},
+                {**empty, 'incident_decisions': [repair] * 9}]:
+        with pytest.raises(ValidationError):
+            check.validate(bad)

@@ -1,0 +1,320 @@
+"""Declared function bindings and immutable per-call routing snapshots.
+
+No machine discovery or model-name capability inference. Hosts update the same
+configuration when endpoints move; measurements remain labelled declarations.
+"""
+from __future__ import annotations
+
+from copy import deepcopy
+from dataclasses import dataclass, replace
+import hashlib
+import ipaddress
+import json
+import math
+import re
+from urllib.parse import urlsplit
+
+from .tiers import ModelTier, TierConfig, _has_litellm_prefix
+
+FUNCTIONS = {'chat', 'reasoning', 'planning', 'extraction', 'judging', 'vision', 'coding'}
+DEFAULT_ROLES = {
+    'chat': ['small'], 'reasoning': ['large', 'medium', 'small'],
+    'planning': ['large', 'medium', 'small'], 'extraction': ['small', 'medium'],
+    'judging': ['large', 'medium'], 'vision': ['vision'], 'coding': ['large', 'medium'],
+}
+# A binding whose request turns its model's thinking on spends output tokens reasoning before the
+# answer. A caller's ``max_output_tokens`` is the answer's budget, so such a binding is sent this
+# many more unless its spec declares ``reasoningTokens`` (0 sends exactly the answer's budget).
+DEFAULT_REASONING_TOKENS = 4096
+MAX_REASONING_TOKENS = 1048576
+# The prompt estimate (``tokens.estimate_tokens``) is rough and leaves out the chat template, tool
+# schemas' formatting and images. The reasoning allowance keeps this much room for what it misses.
+PROMPT_MARGIN = 1.25
+DEFAULT_NETWORKS = ('127.0.0.0/8', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '::1/128', 'fc00::/7')
+TASK_ROLES = {
+    'mind_work_titles': 'extraction',
+    'consult': 'reasoning',
+    'source_claim_extraction': 'extraction', 'source_claim_review': 'judging',
+    'source_image_description': 'vision',
+    'source_appraisal': 'extraction', 'source_appraisal_revision': 'reasoning',
+    'self_judgment': 'reasoning', 'commitment_extract': 'extraction',
+    'project_planning': 'planning', 'thought_job': 'reasoning',
+    'tom_affect_extraction': 'extraction', 'tom_belief_extraction': 'extraction',
+    'tom_intention_extraction': 'extraction',
+    'tom_fact_extraction': 'extraction', 'tom_engagement_extraction': 'extraction',
+    'workspace_thinking': 'reasoning', 'internal_thinking': 'reasoning',
+}
+
+
+@dataclass(frozen=True)
+class Binding:
+    name: str
+    config: TierConfig
+    context_tokens: int = 0
+    supports_tools: bool | None = None
+    latency_ms: int = 0
+    tokens_per_second: float = 0
+    concurrency: int = 0
+    weight_revision: str = 'unknown'
+    legacy: bool = False
+    supports_json_schema: bool = False
+    reasoning_tokens: int = 0
+
+
+@dataclass(frozen=True)
+class FunctionRole:
+    candidates: tuple[str, ...]
+    timeout_seconds: float = 20
+    deadline_seconds: float = 40
+    min_context_tokens: int = 0
+    max_latency_ms: int = 0
+    min_tokens_per_second: float = 0
+    min_concurrency: int = 0
+
+
+@dataclass(frozen=True)
+class RoutingSnapshot:
+    revision: str
+    tiers: dict
+    bindings: dict[str, Binding]
+    roles: dict[str, FunctionRole]
+    networks: tuple
+    declared_hosts: frozenset[str]
+    task_roles: dict[str, str]
+    provider: str = ''
+    base_url: str = ''
+
+    def status(self):
+        return {'config_revision': self.revision, 'capability_basis': 'deployment declarations, not measured by this router',
+                'roles': {key: list(value.candidates) for key, value in self.roles.items()},
+                'task_roles': dict(self.task_roles),
+                'models': {name: {'model_id': b.config.model_id, 'weight_revision': b.weight_revision,
+                    'context_tokens': b.context_tokens, 'supports_vision': b.config.supports_vision,
+                    'supports_tools': b.supports_tools, 'latency_ms': b.latency_ms,
+                    'supports_json_schema': b.supports_json_schema,
+                    'reasoning_tokens': b.reasoning_tokens,
+                    'tokens_per_second': b.tokens_per_second, 'concurrency': b.concurrency,
+                    'legacy_unknown_tools_allowed': b.legacy and b.supports_tools is None}
+                    for name, b in self.bindings.items()}}
+
+
+def number(value, *, minimum=0, maximum=10**9):
+    if (isinstance(value, bool) or not isinstance(value, (int, float))
+            or not minimum <= value or (maximum is not None and not value <= maximum)):
+        raise ValueError('Invalid routing capability or limit')
+    # Unbounded role times must still be finite, representable seconds.
+    try:
+        finite = math.isfinite(value)
+    except OverflowError:
+        finite = False
+    if not finite:
+        raise ValueError('Invalid routing capability or limit')
+    return value
+
+
+def thinking_enabled(extra_body):
+    """True when a binding's own request body turns its model's thinking on. Exactly two switches are
+    read, both in ``extraBody.chat_template_kwargs`` and both only when literally ``true``:
+    ``enable_thinking`` (vLLM and SGLang chat templates) and ``thinking`` (templates that name it so).
+    Nothing else is detected: not a model name, a server default, a system-prompt switch or any other
+    field. A model that thinks without one of these declares ``reasoningTokens`` instead."""
+    kwargs = extra_body.get('chat_template_kwargs') if isinstance(extra_body, dict) else None
+    return isinstance(kwargs, dict) and (kwargs.get('enable_thinking') is True or kwargs.get('thinking') is True)
+
+
+def _reasoning_tokens(config, spec):
+    if 'reasoningTokens' not in spec:
+        return DEFAULT_REASONING_TOKENS if thinking_enabled(config.extra_body) else 0
+    # As lenient as the binding's other numbers (``number``): an invalid persisted value drops all
+    # routing at the next start, so 4096.0 is 4096 here as it would be for ``maxTokens``.
+    try:
+        return int(number(spec['reasoningTokens'], maximum=MAX_REASONING_TOKENS))
+    except ValueError:
+        raise ValueError(f'reasoningTokens must be a number of tokens from 0 to {MAX_REASONING_TOKENS}') from None
+
+
+def _binding(name, config, spec, *, legacy=False):
+    tools = spec.get('supportsTools')
+    if tools is not None and type(tools) is not bool:
+        raise ValueError('supportsTools must be an explicit boolean')
+    structured = spec.get('supportsJsonSchema', False)
+    if type(structured) is not bool:
+        raise ValueError('supportsJsonSchema must be an explicit boolean')
+    return Binding(name, config,
+        int(number(spec.get('contextTokens', config.useful_context_tokens))), tools,
+        int(number(spec.get('latencyMs', 0))), float(number(spec.get('tokensPerSecond', 0))),
+        int(number(spec.get('concurrency', 0))), str(spec.get('weightRevision') or 'unknown')[:160], legacy, structured,
+        _reasoning_tokens(config, spec))
+
+
+def _transport(config, host, spec):
+    protocol = spec.get('protocol', host.get('protocol'))
+    if protocol not in {None, 'openai-chat'}:
+        raise ValueError('Function routing requires the openai-chat protocol')
+    if config.model_id.startswith('ollama/') and protocol == 'openai-chat':
+        if not config.base_url.rstrip('/').endswith('/v1'):
+            raise ValueError('Declared Ollama OpenAI compatibility requires an explicit /v1 base URL')
+        config = replace(config, model_id='openai/' + config.model_id.removeprefix('ollama/'))
+    if not config.model_id.startswith('openai/'):
+        raise ValueError('Function routing requires an explicit OpenAI-compatible endpoint; declare protocol openai-chat for compatible Ollama /v1 endpoints')
+    return config
+
+
+def build_snapshot(host: dict, tiers: dict) -> RoutingSnapshot:
+    """Build privately, then replace one router reference after validation."""
+    bindings, materialized = {}, {}
+    for tier, original in tiers.items():
+        # Pin inherited endpoint/key into this snapshot. Later provider env
+        # changes cannot redirect a request that already selected this config.
+        spec = host.get('models', {}).get(tier.value, {})
+        spec = spec if isinstance(spec, dict) else {}
+        cfg = replace(deepcopy(original),
+            base_url=original.base_url or host.get('baseUrl', ''),
+            api_key=original.api_key or host.get('apiKey', ''))
+        cfg = _transport(cfg, host, spec)
+        materialized[tier] = cfg
+        bindings[tier.value] = _binding(tier.value, cfg, spec, legacy=True)
+    pool = host.get('modelPool', {})
+    if not isinstance(pool, dict) or len(pool) > 64:
+        raise ValueError('modelPool must contain at most 64 explicit bindings')
+    for name, spec in pool.items():
+        if not isinstance(name, str) or not re.fullmatch(r'[a-zA-Z0-9_.-]{1,80}', name) or name in bindings:
+            raise ValueError('Invalid or duplicate modelPool binding')
+        if not isinstance(spec, dict) or not isinstance(spec.get('model'), str) or not spec['model']:
+            raise ValueError('Every modelPool binding requires a model')
+        model = spec['model']
+        provider = str(spec.get('provider', host.get('provider', 'vllm')))
+        if not _has_litellm_prefix(model):
+            if provider == 'ollama': model = 'ollama/' + model
+            elif provider in {'local', 'custom', 'lmstudio', 'vllm', 'openai'}: model = 'openai/' + model
+        cfg = TierConfig(tier=ModelTier(spec.get('tier', 'medium')), model_id=model,
+            max_tokens=int(number(spec.get('maxTokens', 8192), minimum=1)),
+            cost_per_1k_input=0, cost_per_1k_output=0, latency_p50_ms=0,
+            base_url=spec.get('baseUrl', host.get('baseUrl', '')),
+            api_key=spec.get('apiKey', host.get('apiKey', '')),
+            extra_body=deepcopy(spec.get('extraBody')),
+            useful_context_tokens=int(number(spec.get('contextTokens', 0))),
+            supports_vision=spec.get('supportsVision') is True)
+        if not isinstance(cfg.base_url, str) or not isinstance(cfg.api_key, str):
+            raise ValueError('Invalid model endpoint configuration')
+        cfg = _transport(cfg, host, spec)
+        bindings[name] = _binding(name, cfg, spec)
+    if not bindings:
+        raise ValueError('At least one deployed model must be declared explicitly')
+    role_config = host.get('functionRoles', {})
+    if not isinstance(role_config, dict) or set(role_config) - FUNCTIONS:
+        raise ValueError('Unknown function role; speech/embedding/rerank use their own transports')
+    task_roles = host.get('taskRoles', {})
+    if (not isinstance(task_roles, dict) or set(task_roles) - TASK_ROLES.keys()
+            or any(not isinstance(role, str) or role not in FUNCTIONS for role in task_roles.values())):
+        raise ValueError('taskRoles must map supported task names to existing function roles')
+    roles = {}
+    for name, defaults in DEFAULT_ROLES.items():
+        raw = role_config.get(name, [key for key in defaults if key in bindings])
+        raw = {'candidates': raw} if isinstance(raw, list) else raw
+        if not isinstance(raw, dict): raise ValueError('Invalid function role')
+        if set(raw) - {'candidates', 'timeoutSeconds', 'deadlineSeconds', 'minContextTokens', 'maxLatencyMs', 'minTokensPerSecond', 'minConcurrency'}:
+            raise ValueError('Unknown function role constraint')
+        candidates = raw.get('candidates', [])
+        if not isinstance(candidates, list) or len(candidates) > 8 or any(not isinstance(key, str) or key not in bindings for key in candidates):
+            raise ValueError('Role candidates must name at most eight configured bindings')
+        slow = name in {'reasoning', 'planning', 'judging', 'coding'}
+        roles[name] = FunctionRole(tuple(dict.fromkeys(candidates)),
+            float(number(raw.get('timeoutSeconds', 120 if slow else 20), minimum=.05, maximum=None)),
+            float(number(raw.get('deadlineSeconds', 180 if slow else 40), minimum=.05, maximum=None)),
+            int(number(raw.get('minContextTokens', 0))), int(number(raw.get('maxLatencyMs', 0))),
+            float(number(raw.get('minTokensPerSecond', 0))), int(number(raw.get('minConcurrency', 0))))
+    raw_networks = host.get('localNetworks', DEFAULT_NETWORKS)
+    if not isinstance(raw_networks, (list, tuple)) or len(raw_networks) > 64:
+        raise ValueError('localNetworks must be a bounded list of CIDRs')
+    networks = tuple(ipaddress.ip_network(value, strict=False) for value in raw_networks)
+    if any(n.prefixlen == 0 for n in networks): raise ValueError('A default route cannot declare the whole internet local')
+    hosts = host.get('localHosts', ['localhost'])
+    if not isinstance(hosts, list) or any(not isinstance(h, str) or len(h) > 253 for h in hosts):
+        raise ValueError('localHosts must list deployment hostnames')
+    revision = hashlib.sha256(json.dumps(host, sort_keys=True, separators=(',', ':')).encode()).hexdigest()[:20]
+    return RoutingSnapshot(revision, materialized, bindings, roles, networks, frozenset(h.casefold() for h in hosts),
+                           task_roles=dict(task_roles),
+                           provider=str(host.get('provider') or ''), base_url=str(host.get('baseUrl') or ''))
+
+
+def select_role(snapshot, context):
+    """The same selection governs capability hints, deadlines and dispatch."""
+    task = context.get('task')
+    return (context.get('function_role')
+            or (snapshot.task_roles.get(task) if snapshot else None)
+            or TASK_ROLES.get(task, 'reasoning'))
+
+
+def endpoint_host(binding, snapshot):
+    """Return literal eligible IP or declared hostname needing DNS verification.
+
+    No suffix such as .local is trusted. Every resolved address must be inside
+    deployment networks; endpoints with URL credentials or query strings fail.
+    """
+    parsed = urlsplit(binding.config.base_url)
+    if parsed.scheme not in {'http', 'https'} or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        return None
+    host = (parsed.hostname or '').casefold()
+    try:
+        address = ipaddress.ip_address(host)
+        return host if any(address in net for net in snapshot.networks) else None
+    except ValueError:
+        return host if host in snapshot.declared_hosts else None
+
+
+def candidates(snapshot, role_name, context, *, has_images, has_tools):
+    role = snapshot.roles[role_name]
+    minimum = max(role.min_context_tokens, int(context.get('required_context_tokens', 0)))
+    output = []
+    for name in role.candidates:
+        b = snapshot.bindings[name]
+        if (has_images or role_name == 'vision') and not b.config.supports_vision: continue
+        if has_tools and b.supports_tools is not True and not (b.legacy and b.supports_tools is None): continue
+        if minimum and b.context_tokens < minimum: continue
+        # Reuse the existing text estimator to avoid an obviously undersized
+        # fallback. Image token accounting is model-specific and remains unknown.
+        # Eligibility needs room for the answer; a reasoning allowance is clamped to what is left.
+        requested_output = context.get('max_output_tokens', context.get('max_tokens', b.config.max_tokens))
+        if b.context_tokens and input_tokens(b, context) + min(b.config.max_tokens, int(requested_output)) > b.context_tokens: continue
+        if role.max_latency_ms and (not b.latency_ms or b.latency_ms > role.max_latency_ms): continue
+        if b.tokens_per_second < role.min_tokens_per_second or b.concurrency < role.min_concurrency: continue
+        if endpoint_host(b, snapshot) is None: continue
+        output.append(b)
+    return output
+
+
+def input_tokens(binding, context):
+    """The estimated prompt this binding receives: the messages, plus the schema only where it is sent."""
+    tokens = context.get('estimated_input_tokens', 0)
+    if binding.supports_json_schema:
+        tokens += context.get('response_schema_tokens', 0)
+    return tokens
+
+
+def prompt_room(binding, context):
+    """The room a reasoning allowance leaves for the prompt: the estimate of what this binding receives
+    (messages, the schema where it is sent, tool schemas) with ``PROMPT_MARGIN`` for what it misses."""
+    return math.ceil(PROMPT_MARGIN * (input_tokens(binding, context) + context.get('tool_schema_tokens', 0)))
+
+
+def request_output_tokens(binding, answer_tokens, context=None, *, reasoning=True):
+    """The completion cap a function request sends to ``binding``.
+
+    ``answer_tokens`` is the caller's budget for the answer (None: the binding's own ``maxTokens``,
+    unchanged). A binding that reasons first (``reasoning_tokens``) is sent that many more, never
+    beyond its ``maxTokens`` nor its declared context after the prompt's room (``prompt_room``); when
+    those limits leave less, the reasoning allowance shrinks and the answer's budget stays whole.
+    ``reasoning=False`` is the answer's budget alone, what a retry sends after the endpoint refused
+    the larger request as too long for its context.
+    """
+    limit = binding.config.max_tokens
+    if answer_tokens is None:
+        return limit
+    answer = min(limit, max(1, int(answer_tokens)))
+    if not reasoning or not binding.reasoning_tokens:
+        return answer
+    total = min(limit, answer + binding.reasoning_tokens)
+    if binding.context_tokens:
+        total = min(total, binding.context_tokens - prompt_room(binding, context or {}))
+    return max(answer, total)

@@ -1,0 +1,2440 @@
+{
+  "sources": 5122,
+  "messages": 10122,
+  "latency": {
+    "voice": {
+      "samples": 78,
+      "p50_ms": 17.1010095,
+      "p90_ms": 19.857202,
+      "max_ms": 24.099957
+    },
+    "search": {
+      "samples": 78,
+      "p50_ms": 17.1855025,
+      "p90_ms": 19.548595,
+      "max_ms": 22.467668
+    }
+  },
+  "quality": [
+    {
+      "k": 3,
+      "max_tokens": 300,
+      "queries": 78,
+      "voice_recall": 0.9230769230769231,
+      "search_recall": 0.9230769230769231,
+      "voice_hits": 72,
+      "search_hits": 72,
+      "per_query": [
+        {
+          "id": "correction_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "scope_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "scope_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "scope_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "scope_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "scope_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "scope_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "recency_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "recency_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_0_q3",
+          "voice": 0.0,
+          "search": 0.0
+        },
+        {
+          "id": "recency_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "recency_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_1_q3",
+          "voice": 0.0,
+          "search": 0.0
+        },
+        {
+          "id": "recency_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "recency_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_2_q3",
+          "voice": 0.0,
+          "search": 0.0
+        },
+        {
+          "id": "index_lag_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_0_q3",
+          "voice": 0.0,
+          "search": 0.0
+        },
+        {
+          "id": "index_lag_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_1_q3",
+          "voice": 0.0,
+          "search": 0.0
+        },
+        {
+          "id": "index_lag_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_2_q3",
+          "voice": 0.0,
+          "search": 0.0
+        },
+        {
+          "id": "identifier_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        }
+      ]
+    },
+    {
+      "k": 3,
+      "max_tokens": 600,
+      "queries": 78,
+      "voice_recall": 0.9230769230769231,
+      "search_recall": 0.9230769230769231,
+      "voice_hits": 72,
+      "search_hits": 72,
+      "per_query": [
+        {
+          "id": "correction_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "scope_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "scope_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "scope_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "scope_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "scope_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "scope_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "recency_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "recency_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_0_q3",
+          "voice": 0.0,
+          "search": 0.0
+        },
+        {
+          "id": "recency_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "recency_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_1_q3",
+          "voice": 0.0,
+          "search": 0.0
+        },
+        {
+          "id": "recency_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "recency_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_2_q3",
+          "voice": 0.0,
+          "search": 0.0
+        },
+        {
+          "id": "index_lag_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_0_q3",
+          "voice": 0.0,
+          "search": 0.0
+        },
+        {
+          "id": "index_lag_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_1_q3",
+          "voice": 0.0,
+          "search": 0.0
+        },
+        {
+          "id": "index_lag_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_2_q3",
+          "voice": 0.0,
+          "search": 0.0
+        },
+        {
+          "id": "identifier_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        }
+      ]
+    },
+    {
+      "k": 4,
+      "max_tokens": 300,
+      "queries": 78,
+      "voice_recall": 0.9615384615384616,
+      "search_recall": 0.9615384615384616,
+      "voice_hits": 75,
+      "search_hits": 75,
+      "per_query": [
+        {
+          "id": "correction_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "scope_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "scope_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "scope_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "scope_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "scope_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "scope_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "recency_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "recency_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_0_q3",
+          "voice": 0.0,
+          "search": 0.0
+        },
+        {
+          "id": "recency_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "recency_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_1_q3",
+          "voice": 0.0,
+          "search": 0.0
+        },
+        {
+          "id": "recency_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "recency_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_2_q3",
+          "voice": 0.0,
+          "search": 0.0
+        },
+        {
+          "id": "index_lag_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        }
+      ]
+    },
+    {
+      "k": 4,
+      "max_tokens": 600,
+      "queries": 78,
+      "voice_recall": 0.9615384615384616,
+      "search_recall": 0.9615384615384616,
+      "voice_hits": 75,
+      "search_hits": 75,
+      "per_query": [
+        {
+          "id": "correction_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "scope_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "scope_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "scope_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "scope_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "scope_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "scope_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "recency_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "recency_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_0_q3",
+          "voice": 0.0,
+          "search": 0.0
+        },
+        {
+          "id": "recency_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "recency_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_1_q3",
+          "voice": 0.0,
+          "search": 0.0
+        },
+        {
+          "id": "recency_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "recency_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_2_q3",
+          "voice": 0.0,
+          "search": 0.0
+        },
+        {
+          "id": "index_lag_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        }
+      ]
+    },
+    {
+      "k": 5,
+      "max_tokens": 300,
+      "queries": 78,
+      "voice_recall": 0.9615384615384616,
+      "search_recall": 0.9615384615384616,
+      "voice_hits": 75,
+      "search_hits": 75,
+      "per_query": [
+        {
+          "id": "correction_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "scope_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "scope_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "scope_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "scope_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "scope_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "scope_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "recency_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "recency_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_0_q3",
+          "voice": 0.0,
+          "search": 0.0
+        },
+        {
+          "id": "recency_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "recency_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_1_q3",
+          "voice": 0.0,
+          "search": 0.0
+        },
+        {
+          "id": "recency_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "recency_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_2_q3",
+          "voice": 0.0,
+          "search": 0.0
+        },
+        {
+          "id": "index_lag_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        }
+      ]
+    },
+    {
+      "k": 5,
+      "max_tokens": 600,
+      "queries": 78,
+      "voice_recall": 0.9615384615384616,
+      "search_recall": 0.9615384615384616,
+      "voice_hits": 75,
+      "search_hits": 75,
+      "per_query": [
+        {
+          "id": "correction_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "correction_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "correction_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "contradiction_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "contradiction_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "scope_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "scope_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "scope_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "scope_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "scope_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "scope_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "recency_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "recency_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_0_q3",
+          "voice": 0.0,
+          "search": 0.0
+        },
+        {
+          "id": "recency_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "recency_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_1_q3",
+          "voice": 0.0,
+          "search": 0.0
+        },
+        {
+          "id": "recency_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "recency_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "recency_2_q3",
+          "voice": 0.0,
+          "search": 0.0
+        },
+        {
+          "id": "index_lag_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "index_lag_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "index_lag_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "identifier_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "identifier_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_0_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_0_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_0_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_0_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_1_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_1_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_1_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_1_q3",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_2_q0",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_2_q1",
+          "voice": 1.0,
+          "search": 1.0
+        },
+        {
+          "id": "media_source_2_q2",
+          "search": 1.0,
+          "voice": 1.0
+        },
+        {
+          "id": "media_source_2_q3",
+          "voice": 1.0,
+          "search": 1.0
+        }
+      ]
+    }
+  ],
+  "method": "In-process authenticated ASGI POST, warm serial alternating routes, k=5/max_tokens=600 latency; canonical text import of all frozen fixture records plus 5000 same-person work conversations; macro expected-source recall from packet source_refs; no semantic index or inference; all 78 original expected-hit queries, UTC reference 2026-09-05.",
+  "environment": {
+    "python": "3.12",
+    "transport": "in-process ASGI; no network socket",
+    "asyncio_poll_loop_ms": 1,
+    "tmpdir": "$WORKDIR/voice-recall"
+  },
+  "validation": {
+    "existing_recall_search_tests_passed": 418,
+    "new_tests_passed": 271,
+    "combined_run_passed": 687,
+    "post_review_voice_run_passed": 270,
+    "post_review_gate_and_retention_run_passed": 2
+  }
+}

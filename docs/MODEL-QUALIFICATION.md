@@ -1,0 +1,135 @@
+# Model qualification
+
+The opt-in `colonymind models` command records bounded observations through existing consumers. It does not select or publish a deployment, start services, change model roles on a running agent, or create an evaluation database.
+
+For frozen batches covering native memory, shared work, authority, planning and other implemented boundaries, see [portable behavioral packs](QUALIFICATION-PACKS.md). These commands reuse the evaluator below and preserve supporting-model attribution.
+
+```sh
+colonymind models inspect interactive --config /private/model-config.json
+colonymind models evaluate interactive --config /private/model-config.json --roles chat,extraction --output /private/results/candidate-01
+colonymind models compare /private/results/incumbent-01 /private/results/candidate-01
+```
+
+`--config` is an existing ColonyMind host model configuration, including its existing `modelPool`, role and network declarations. Credentials are consumed through that private configuration and are not copied into recipes or result records. Inspect reads declarations without querying endpoints. Evaluate makes model requests through an isolated router configured from a private copy; it never edits the supplied configuration. The selected case role is pinned to the requested binding. Supporting roles, such as semantic memory admission review, retain their configured bindings and appear in call observations. This is a recipe and consumer comparison, not an intrinsic score for isolated model weights.
+
+A case can declare `target_tasks` when its real consumer normally chooses a function through a task mapping. Only those named tasks are redirected to the case's qualification role in the isolated router. For example, memory cases bind `source_claim_extraction` to their extraction candidate even when production routes that task through reasoning. The original routing snapshot, frozen case declarations and per-attempt `qualification_routing` record show that isolation explicitly. Source admission review follows its own `source_claim_review` task mapping, defaulting to `judging`; its actual task, role and binding are recorded, including when it shares the extraction role. Unrelated task mappings remain configured as supplied. A role deadline also remains the qualification role's configured deadline; this is not a replay of a different production role's timing policy.
+
+Use new result directories for predeclared repeated trials. Each selected case has exactly one attempt in a run. There is no automatic resampling, prompt search, model selection or promotion. Existing consumers may themselves make multiple calls, and observations retain their separately resolved roles and fallback history. A useful answer from a fallback cannot make the requested primary pass.
+
+## Coverage and evidence
+
+Every case declares its consumer boundary. `role_completion` cases test direct response semantics through the existing completion router. They do not qualify foreground Hermes conversation, tools, automatic memory injection, streaming latency or shared task behavior. `cognition_consumer` cases must exercise the actual cognition consumer and grade its retained effects. `native_hermes` requires the installed native path and its own evidence. Retrieval, speech and media consumers remain separately labelled. Reports never convert a few passing direct calls into full role qualification.
+
+The initial direct cases check a grounded answer with an unknown value, and structured extraction that retains time and conditional constraints. The cognition cases run actual source formation and semantic admission review, reopen the isolated ledger, then prepare and pack recollection in a later session. They separately grade useful formation, junk/fiction promotion, source grounding, correction, and canonical lineage. Raw source recall cannot hide a failure to form useful memory. These exercise lexical recollection, not embeddings, native injection or a generated native answer.
+
+Four additional direct cases cover specific text decisions:
+
+| Case | What its independent oracle checks | What it does not establish |
+| --- | --- | --- |
+| `reasoning.task-evidence` | Exact task/generation evidence; acceptance, execution, stopping and terminal outcomes; unknown delivery and process cleanup | Real task execution, stopping or process cleanup |
+| `planning.dependencies-and-consent` | Earliest dependency/resource schedule, critical path, withheld publication and a separately conditional consent outcome | A general scheduler, long-horizon planning or production deployment |
+| `judging.consequential-claims` | Supported, contradicted and unsupported claims, including untrusted claimed authority | General factual accuracy or the quality of the production memory admission judge |
+| `coding.integer-boundary` | A Python boolean/integer validation defect, selection among fixed repairs, and type/range examples | Generated code execution, repository editing, tool use or an entire coding harness |
+
+Select them explicitly; the default remains `chat,extraction`:
+
+```sh
+colonymind models evaluate interactive --config /private/model-config.json --roles reasoning,planning,judging,coding --output /private/results/structured-01
+```
+
+Each case makes one existing-router completion call with no fallback. Standard direct-role cases now freeze the selected binding's configured output allowance into a derived `configured-output-v1` case and recipe before dispatch, preserving the original messages and oracle. The outer case allowance is at least the configured role deadline plus five seconds; role request/deadline limits and the 16 KiB result bound remain separate. An envelope exceeding the existing 600-second case bound is rejected before dispatch. Original 60-second/1,024-token case versions and their results remain unchanged. Domain and native consumers retain their own budgets.
+
+Freeze both bindings' cases, resolved allowances and source identities before observing results. Compare configured recipes; do not raise caps repeatedly until a case passes. A timeout or token-truncated response is an incomplete recipe outcome, not evidence that another model reasons better. `requested_max_output_tokens` and `client_max_tokens` describe caller and resolved client allowances, not independent wire or server-cap attestation; returned finish reasons and available completion/reasoning usage provide separate evidence.
+
+These are narrow checks, not a broad intelligence benchmark. Independent expected fields are frozen separately from model input. Cases and supporting consumers can add artifact, ledger, input-exposure and answer checks without supplying those oracles to the model. An evaluation model judge is not required; the existing memory admission judge remains part of the consumer being tested.
+
+Three direct vision cases send packaged PNG pixels through the same completion router:
+
+| Case | Visible evidence and independent checks |
+| --- | --- |
+| `vision.spatial-arrangement` | Colored shapes, their image quadrants and an arrow's direction |
+| `vision.legible-labels` | Three large four-character labels, read in their actual top-to-bottom order |
+| `vision.covered-and-unknown` | A visible label, plus unknown covered text, owner and capture time |
+
+```sh
+colonymind models evaluate visual --config /private/model-config.json --roles vision --output /private/results/vision-01
+```
+
+`visual` is an example existing binding name. Each case requires its `supportsVision` declaration, makes one completion call with no fallback, and permits 768 output tokens within a 60-second case deadline and 16 KiB result bound. A text-only candidate is recorded as unsupported before a request; another image-capable binding cannot earn it a pass. An image capability declaration or HTTP success alone does not pass the visual field checks. Exact image-bearing inputs, case/oracle hashes, returned text, actual selected binding, reported model identity and available usage remain in the existing result records.
+
+A non-JSON answer fails the declared output format. That parser failure alone is not a separately observed visual hallucination; inspect the retained answer before attributing its cause. Semantic field failures remain distinct from missing or malformed output.
+
+The fixtures are neutral generated diagrams with large fixed-font labels. They do not test dense photographs, tiny text, arbitrary OCR, video, native image tools, canonical media retention, automatic recollection or physical camera delivery. Their public, fixed cases are useful for a small role comparison, not an unseen general-vision benchmark or proof against an endpoint that falsely claims image support. Keep the default text/memory cases and native chat suite separate. The fixture generator is `sidecar/tests/fixtures/generate_qualification_vision.py`; expected fields are specified separately from it.
+
+Memory checks report unexercised behavior as unknown: absent promoted claims do not demonstrate their grounding, and junk sources skipped after an earlier processing failure do not demonstrate useful abstention. An observed junk promotion fails even if another source was skipped. A case without junk inputs omits that inapplicable check.
+
+Memory case version 4 matches finite, independently specified complete representations across subject, subject identity, relation, value, source and category. A value may omit a noun already represented by its relation when the oracle explicitly permits that equivalent form. A wrong subject or negated relation cannot pass merely because its value contains the expected phrase. Selected correction cards must also match their retained claims. These are declared case contracts, not a universal semantic-equivalence classifier; inspect the bounded completion evidence when an unlisted representation fails. Previous cases and reports retain their original grades. Changed evaluator identities prevent treating a measurement correction as a model gain.
+
+Configured model identity, provider-reported response label and declared weight revision are separate. A returned model label is not proof of loaded weights. Unobserved weights, quantization, engine, hardware, tokenizer, first-token timing and missing provider usage stay unknown. Existing-router call duration includes transport/processing; it is not decode throughput, queue time or GPU occupancy. The observer measures consumer `complete` calls, not every hidden physical SDK retry. Native adapters need their own supported request-boundary observations.
+
+`--evidence-mode controlled` labels a controlled fixture run. The default `actual_inference` labels an operator-directed endpoint evaluation, not independent proof that the endpoint served particular weights. Public CI uses deterministic fixtures and local controlled HTTP servers; it does not access private inference servers. No normal operation depends on completing this suite.
+
+## Results and interruption
+
+The result directory contains a frozen `run.json`, per-case `attempts/<id>/started.json` and `result.json`, and numbered JSON/Markdown reports. Case, input, oracle, recipe and implementation hashes identify what ran. Files are published atomically without replacing earlier results. Results retain every declared case, including unavailable capabilities, setup errors, empty outputs, timeouts and interruptions. Private outputs remain in the operator-selected private result directory; do not commit these directories to the public repository.
+
+`outcome` and `checks` record the case evaluation. `primary_outcome` attributes that outcome to the requested binding only when observations identify that binding, show no prior attempts and confirm a returned response. For an evaluated output, observed fallback gives `fail`; missing attribution or unconfirmed cleanup leaves `unverified`. This attribution is separate from source reads and answer checks, which may pass even when `primary_outcome` is `unverified`. Neither field verifies the served weights or establishes full role qualification. Newly generated results include this distinction in `primary_outcome_definition`; archived results remain unchanged.
+
+Markdown reports show each case's named pass, fail and unknown checks alongside its role, consumer boundary and primary attribution. A useful artifact can pass its check while the answer's grounding fails. Missing check records remain unrecorded, including cases that never ran. Comparisons show both sets of checks without changing their original grades or treating changed cases as model gains.
+
+Explicit qualification runs also retain the final text returned to each consumer, so rejected memory candidates can be diagnosed without changing production memory logging. The aggregate serialized text budget per case is the smaller of its declared output limit and 64 KiB; the run manifest records the sum. Each captured response includes its original `records.encode` hash and size, retained size, and evidence-truncation status. A router-rejected completion may retain bounded partial answer text and finish/usage metadata under `rejected_completion`; it stays incomplete, is never graded as a final answer, and does not identify the final attempted binding after failover. Raw SDK envelopes, reasoning scratch text and arbitrary exception messages are not retained. Normal caller error text remains unchanged. Missing metadata stays unknown. The candidate label is distinct from the actual selected binding and the observed target or supporting role.
+
+To continue an interrupted run, repeat the same evaluate command with `--resume`. The same recipe, suite and implementation are required. Completed attempts stay byte-identical. A recorded start without a result becomes `interrupted`; it is never resubmitted. Only untouched cases execute. A process lock prevents concurrent execution of one run directory. The maximum declared run is 128 cases and one hour; each case has its own timeout and output bound. Consumers must propagate cancellation and clean up their owned resources. The runner supplies a separate temporary state directory per attempt and removes it on ordinary completion, error or cancellation. Abrupt process death may leave that isolated temporary state; its cleanup remains explicitly unconfirmed rather than claiming a clean shutdown.
+
+### Native elapsed budgets
+
+On the qualified stock Hermes release, `run_budget_seconds` supplies a wrap-up notice and influences implicit stale-response limits. It does not enforce an absolute elapsed deadline. An implicitly configured local non-streaming request can have no stale cutoff, and explicit provider timeout settings take precedence over the run-budget adjustment.
+
+Use Hermes' existing named-provider `request_timeout_seconds` and `stale_timeout_seconds` settings for transport behavior. The request timeout bounds socket operations; a stream making progress can outlive it. Stale detection concerns response progress and may scale with context. `agent.gateway_timeout` is an inactivity limit. None of these settings alone proves that a native task stops at a fixed elapsed time.
+
+A native qualification consumer must keep the blocking native run off the async event loop and retain ownership of its worker. On case cancellation, use the existing `agent.hard_interrupt()` interface and observe that worker's termination before removing its state. Cancelling only an await on a thread does not stop the thread. If cleanup cannot be confirmed, retain that limitation in the result. Do not award completion for a request accepted before the deadline or for tools that continue afterward.
+
+The opt-in native suite runs the installed Hermes `AIAgent` conversation loop in one owned subprocess per case. Hermes captures its home at import time, so each process starts with a fresh home and only the selected provider's connection, request and reasoning settings. It imports no deployed memory, skills, channels, auth store or identity files. Provider credentials must be in the supplied config or an explicitly referenced environment variable; the suite does not load a deployed `.env` file.
+
+```sh
+colonymind models inspect local-primary --suite native --config /private/hermes-config.yaml
+colonymind models evaluate local-primary --suite native --config /private/hermes-config.yaml --roles chat --deadline-seconds 60 --cleanup-seconds 5 --output /private/results/native-chat-01
+```
+
+Here the binding is an enabled named Hermes provider with an explicit endpoint and default model. The default native chat case has tools, persistent memory and background review disabled. It records the selected configuration and worker source hashes, declared transport timeouts, observed stage and owned process/worker cleanup. Returned provider identity remains unknown unless independently observed; a correct answer does not establish the primary model's identity. Native CLI-loop results do not qualify gateway admission, streaming delivery to a channel or automatic recollection.
+
+`--roles reasoning` adds a separate native case that requires reading two files in its temporary workspace. One contains assessment records and a decision rule; the other corrects that rule. The answer must apply the correction, compare the records correctly, preserve unknown verification and avoid claiming actions were performed. An independently specified structured answer and actual native tool results are graded together. A correct answer without both complete reads fails. Mutation-tool requests or changes to the source files also fail. JSON field types are checked recursively, so `false` cannot pass as an integer zero.
+
+```sh
+colonymind models evaluate local-reasoning --suite native --config /private/hermes-config.yaml --roles reasoning --deadline-seconds 480 --cleanup-seconds 5 --output /private/results/native-reasoning-01
+```
+
+The case enables Hermes' file toolset and allows up to six iterations, starting with a 1024-token output limit. Native truncation recovery can increase that limit; the suite still enforces the declared elapsed deadline. It does not enable shell, browser, memory, deployed plugins or channels. Records reach the processor through actual file-tool reads rather than being placed in its initial prompt. This is a small public fixture for comparing a configured recipe's tool use and grounded reasoning. It is not a general reasoning benchmark or a test of ColonyMind's production source ledger. Run the chat and reasoning roles separately when they require different elapsed budgets.
+
+`--roles coding` selects `native.coding.source-attribution` through the same
+file-tool consumer. Four small files describe a launcher, a measurement-child
+selector, current configuration and a stale setup note. The independent oracle
+checks the two interpreter paths, exact source citations, precedence over the
+old note and unknown runtime results. Complete source reads and final claim
+correctness are separate checks: reading every file cannot pass a wrong answer,
+and a correct answer without the reads also fails. Extra unsupported output
+fields fail the complete-answer check. This tests static source attribution,
+not code execution, free-form engineering reports or deployed memory/context.
+Use the existing native command with `--roles coding` and a declared deadline;
+no model-specific prompt or automatic routing restriction is installed.
+
+Named providers retain the shared `providers.custom` timeout defaults and native per-model precedence. Runtime inspection hashes the actual source and data bytes of the selected Hermes distribution's declared modules, including editable installations; a provider-resolution change therefore changes the recipe used for resume. This requires an inspectable Hermes distribution inventory and excludes bytecode caches and third-party dependency identity. A confirmed process-creation failure removes its unused temporary state. Unconfirmed cleanup after a process starts still retains that state and prevents further attempts in the run.
+
+The suite uses `hermes_python` from the `instance.json` selected by the supplied config's ColonyMind plugin. Use `--hermes-python /path/to/hermes/.venv/bin/python` when evaluating another installed runtime or a config without that instance binding. Runtime source identity is inspected with that interpreter, and a missing runtime becomes a recorded setup error. ColonyMind and Hermes can keep separate Python environments; the owned worker needs only the selected Hermes installation.
+
+The elapsed case deadline includes native startup and the conversation. Its cancellation sends a signal only to the owned process; that process calls its agent's `hard_interrupt()` and closes the agent after its run thread stops. The separately declared cleanup allowance is not extra answer time. If cooperative cleanup is unconfirmed, the suite terminates its remaining owned process, retains the isolated state and stops before later cases. Resume preserves that first result and does not bypass the incomplete cleanup; inspect the retained evidence and use a new run after resolving it. Existing ordinary async cases keep their cancellation behavior.
+
+Declare separate foreground and durable-work cases before testing, including representative context, tool rounds, time to useful visible output, final-answer deadline and cancellation evidence. A binding that misses the foreground budget is ineligible for that tested foreground recipe; it can be assessed separately for longer durable work. A longer allowed runtime requires its own declared case and useful final outcome. It cannot turn the original timeout into a pass. Existing router capability limits are deployment declarations, not automatic adoption of benchmark measurements.
+
+Comparisons retain failures in denominators and separate roles and boundaries. Identical cases retain their existing comparison path. For `configured-output-v1`, identical tasks and oracles can also be compared with different declared allowances or time envelopes: reports label these `same_task_different_budget_recipes` and show both budgets. Only those two materialized fields may differ; changed questions, case versions, oracles, evaluator identities, evidence modes, runtime versions or consumer/runner implementations reject this comparison. Evaluator module/name/source identity is explicit; a changed rubric cannot masquerade as model improvement. Other implementation changes remain flagged as system changes. Durations are grouped by outcome so immediate setup failures cannot reduce a completion median. Latency differences are shown only for comparable successful outcomes; raw failure durations remain visible. Small samples have descriptive medians and counts, without tail-latency or confidence claims. Changed budgets, hardware or serving settings make this a recipe comparison, not proof of a gain attributable to weights alone.
+
+## Extending cases
+
+`qualification.records.CaseSpec` is the versioned case record. A consumer is an async function `(inputs, context)` returning `{'output': ..., 'effects': ...}`. It receives an isolated `context.state_dir`, the existing router through `context.router`, and `context.observe(dict)` for additional labelled evidence. It never receives the oracle. An evaluator receives the returned observations and its frozen oracle and returns named `True`, `False` or `None` checks. Unknown checks do not pass. Register these in the existing small case registries; no new service or transport is needed.
+
+Keep fixtures neutral and independent of specific machines or models. Private channel/device adapters and owner examples belong in deployment code. Record any supporting role, actual input, source state or hardware effect required by the case; a successful advertised tool or a model's claimed completion is not a substitute for observing its effect.

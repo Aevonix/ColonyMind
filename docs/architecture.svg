@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="480" viewBox="0 0 1000 480" role="img" aria-labelledby="title description">
+  <title id="title">ColonyMind and Hermes architecture</title>
+  <desc id="description">Conversations and devices communicate with Hermes. Hermes and ColonyMind exchange information through plugins, a memory provider and request hooks. Both use models selected by role. ColonyMind maintains private memory, identity and shared work.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+      <path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="#b6c5db" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+  <rect width="1000" height="480" rx="18" fill="#111827"/>
+  <g fill="none" stroke="#b6c5db" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)">
+    <path d="M 268 192 H 338" marker-start="url(#arrow)"/>
+    <path d="M 465 128 V 70 H 815 V 128" marker-start="url(#arrow)"/>
+    <path d="M 435 246 V 348"/>
+    <path d="M 730 246 V 296 H 530 V 348"/>
+    <path d="M 835 246 V 348" marker-start="url(#arrow)"/>
+  </g>
+  <g font-family="Arial, Helvetica, sans-serif" text-anchor="middle">
+    <text x="640" y="42" font-size="18" fill="#bac7db">Plugins · memory provider · request hooks</text>
+    <g fill="#1e293b" stroke="#52627b" stroke-width="1.5">
+      <rect x="36" y="130" width="230" height="114" rx="12"/>
+      <rect x="340" y="130" width="250" height="114" rx="12"/>
+      <rect x="300" y="350" width="310" height="94" rx="12"/>
+      <rect x="670" y="350" width="290" height="94" rx="12"/>
+    </g>
+    <rect x="670" y="130" width="290" height="114" rx="12" fill="#193966" stroke="#75aaff" stroke-width="1.5"/>
+    <g fill="#f1f5f9" font-size="23" font-weight="600">
+      <text x="151" y="180">Conversations</text>
+      <text x="151" y="211">and devices</text>
+      <text x="465" y="195">Hermes runtime</text>
+      <text x="815" y="195">ColonyMind</text>
+      <text x="455" y="390">Models</text>
+      <text x="815" y="390">Private state</text>
+    </g>
+    <g fill="#bac7db" font-size="18">
+      <text x="455" y="419">Selected by role</text>
+      <text x="815" y="419">Memory, identity and shared work</text>
+    </g>
+  </g>
+</svg>

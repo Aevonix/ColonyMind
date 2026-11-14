@@ -1,0 +1,582 @@
+"""``/mind`` and the tools: read-only in chat, mutations only for the owner (architecture 7.7, 7.10; evals test 7)."""
+
+import json
+
+import pytest
+
+from conftest import API_KEY, CANARY, OWNER, probe, refused, worker_env
+
+TOOL_CODE = '''
+from tools.registry import registry
+def guest(session="guest-1", sender="2002", message="hi", platform="telegram"):
+    invoke_hook("pre_llm_call", session_id=session, task_id="t", turn_id="turn", user_message=message,
+                conversation_history=[], is_first_turn=True, model="m", platform=platform,
+                parent_session_id="", sender_id=sender)
+    return session
+def owner(session="owner-1", message="hi"):
+    return guest(session, "1001", message)
+def call(tool, args, session):
+    return json.loads(registry.dispatch(tool, args, task_id="t", session_id=session))
+def command(args=""):
+    from hermes_cli.plugins import resolve_plugin_command_result
+    return resolve_plugin_command_result(manager._plugin_commands["mind"]["handler"](args))
+'''
+
+
+def test_mind_command_is_read_only_plus_off(home, sidecar):
+    result = probe(TOOL_CODE + '''
+emit(status=command("status"), level=command("level trusted"), yes=command("yes K7F"),
+     log=command("log"), empty=command(""))
+''', home)
+    assert "sidecar:" in result["status"] and "reachable" in result["status"]
+    assert "mind: on" in result["status"] and "autonomy standard" in result["status"]
+    assert "body:" in result["status"]
+    assert result["level"].startswith("usage:") and result["yes"].startswith("usage:")
+    assert "not serve the mind routes" in result["log"]
+    assert result["empty"] == result["status"]
+
+
+def test_mind_command_reads_the_mind_routes(home, sidecar):
+    sidecar.mind_routes = True
+    sidecar.mind.intentions["i-01"] = {"id": "i-01", "kind": "task", "status": "asked", "ask_code": "K7F",
+                                       "title": "Email the vendor", "drive": "duty", "decision": "ask"}
+    sidecar.mind.intentions["i-02"] = {"id": "i-02", "kind": "message", "status": "done", "title": "Nudge"}
+    result = probe(TOOL_CODE + '''
+emit(status=command("status"), log=command("log"), asks=command("asks"), why=command("why i-01"),
+     unknown=command("why nope"), bare_why=command("why"))
+''', home)
+    assert "enabled: True" in result["status"] and "asks: 1 waiting for your OK" in result["status"]
+    assert "id=i-01" in result["log"] and "id=i-02" in result["log"] and "status=asked" in result["log"]
+    # An ask is shown in words, never by its code: the owner answers it in their own words.
+    assert "1. Email the vendor" in result["asks"]
+    assert not any("K7F" in result[name] for name in ("status", "log", "asks"))
+    assert "drive: duty" in result["why"] and "decision: ask" in result["why"]
+    assert result["unknown"] == "Not found." and result["bare_why"].startswith("usage:")
+
+
+def test_mind_off_archives_unstarted_mind_tasks(home, sidecar):
+    """Evals test 1, the part that needs no running worker: the ready mind task is archived."""
+    result = probe(TOOL_CODE + '''
+from hermes_cli import kanban_db as kb
+from hermes_cli.kanban_db_connect import connect
+conn = connect()
+mind_task = kb.create_task(conn, title="mind task", assignee="colonymind-act", idempotency_key="mind:abc")
+owner_task = kb.create_task(conn, title="owner task", assignee="default", idempotency_key="owner:1")
+conn.close()
+text = command("off")
+conn = connect()
+states = {t.idempotency_key: t.status for t in kb.list_tasks(conn, include_archived=True)}
+conn.close()
+emit(text=text, states=states)
+''', home)
+    assert result["text"].startswith("Mind off.")
+    assert "archived 1 unstarted mind task" in result["text"]
+    assert result["states"]["mind:abc"] == "archived"
+    assert result["states"]["owner:1"] != "archived"
+
+
+def test_mind_off_in_chat_reaches_the_sidecar_without_a_model(home, sidecar):
+    sidecar.mind_routes = True
+    sidecar.mind.outbox["m-01"] = {"id": "m-01", "kind": "notice", "text": "late", "target": "telegram:1001"}
+    result = probe(TOOL_CODE + 'emit(text=command("off"))', home)
+    assert "sidecar: off" in result["text"]
+    assert sidecar.mind.enabled is False and sidecar.mind.outbox["m-01"]["state"] == "cancelled"
+    off, = sidecar.calls("/v1/mind/off", "POST")
+    assert off["authorization"] == f"Bearer {API_KEY}"
+
+
+def test_self_tool_state_log_and_why(home, sidecar):
+    """The record is the only source for claims about the agent's own actions (architecture 4.2)."""
+    sidecar.mind_routes = True
+    sidecar.mind.intentions["i-01"] = {"id": "i-01", "kind": "task", "status": "dispatched", "drive": "duty",
+                                       "title": "Check", "hermes_ref": "t_1", "decision": "act"}
+    sidecar.mind.intentions["i-02"] = {"id": "i-02", "kind": "task", "status": "approved", "title": "Research tides",
+                                       "decision": "act"}
+    sidecar.mind.intentions["i-03"] = {"id": "i-03", "kind": "task", "status": "done", "title": "Old", "decision": "act"}
+    sidecar.mind.intentions["m-01"] = {"id": "m-01", "kind": "message", "status": "done", "title": "Nudge p-07",
+                                       "decision": "act", "recipient": "p-07"}
+    sidecar.mind.intentions["n-01"] = {"id": "n-01", "kind": "note", "type": "consolidation", "status": "done",
+                                       "title": "nightly consolidation", "decision": "act"}
+    sidecar.mind.narrative = {"enabled": True, "text": "I researched tides for the owner. [i-03]", "sections": {},
+                              "cites": ["i-03"], "updated_at": None}
+    result = probe(TOOL_CODE + '''
+o = owner()
+emit(state=call("colonymind_self", {"operation": "state"}, o),
+     status_alias=call("colonymind_self", {"operation": "status"}, o),
+     log=call("colonymind_self", {"operation": "log", "limit": 5}, o),
+     yesterday=call("colonymind_self", {"operation": "log", "since_hours": 24, "recipient": "p-07", "kind": "message"}, o),
+     bad_hours=call("colonymind_self", {"operation": "log", "since_hours": "soon"}, o),
+     why=call("colonymind_self", {"operation": "why", "id": "i-01"}, o),
+     missing=call("colonymind_self", {"operation": "why"}, o),
+     unknown=call("colonymind_self", {"operation": "why", "id": "nope"}, o))
+''', home)
+    state = result["state"]
+    assert state["enabled"] is True and state["sidecar_reachable"] is True
+    assert state["mind_routes"] is True and state["autonomy"] == "standard"
+    # What the mind is working on and what it knows about itself come from the log and the narrative route.
+    assert state["working_on"] == [{"id": "i-01", "title": "Check", "status": "dispatched"},
+                                   {"id": "i-02", "title": "Research tides", "status": "approved"}]
+    assert state["narrative"] == "I researched tides for the owner. [i-03]"
+    assert result["status_alias"] == state
+    # The log the model reads keeps its own actions apart from the mind's notes (the nightly consolidation).
+    assert [e["id"] for e in result["log"]["actions"]] == ["i-01", "i-02", "i-03", "m-01"]
+    assert [e["id"] for e in result["log"]["notes"]] == ["n-01"] and "entries" not in result["log"]
+    assert [e["id"] for e in result["yesterday"]["actions"]] == ["m-01"]
+    assert "since_hours" in refused(result["bad_hours"])
+    assert result["why"]["drive"] == "duty" and result["why"]["hermes_ref"] == "t_1"
+    assert "id is required" in refused(result["missing"])
+    # A false premise about the agent's own actions gets the sidecar's refusal sentence, verbatim.
+    assert result["unknown"] == {"unavailable": True, "retry": False,
+                                 "reason": "no intention nope exists in the audit log"}
+    logs = sidecar.calls("/v1/mind/log", "GET")
+    assert {"limit": "5", "split": "true"} in [call["query"] for call in logs]
+    assert {"limit": "20", "since_hours": "24.0", "recipient": "p-07", "kind": "message", "split": "true"} in [
+        call["query"] for call in logs]
+    assert {"status": "dispatched,approved", "kind": "task", "limit": "20"} in [call["query"] for call in logs]
+
+
+def test_self_tool_shows_the_record_only_in_the_owners_own_session(home, sidecar):
+    """The mind's record is the owner's: what it is working on, whom it messaged, what it asked the owner and
+    what it knows about itself. A guest, a group the owner shares and a mind worker get the switch state
+    (enabled, autonomy, whether the sidecar answers) and a refusal for log and why; the sidecar is not asked."""
+    sidecar.mind_routes = True
+    sidecar.mind.intentions["i-01"] = {"id": "i-01", "kind": "task", "status": "dispatched", "title": "CANARY-task-7f3",
+                                       "decision": "act"}
+    sidecar.mind.intentions["m-01"] = {"id": "m-01", "kind": "message", "status": "done", "decision": "act",
+                                       "title": "CANARY-notice-2c9", "recipient": "p-07"}
+    sidecar.mind.narrative = {"enabled": True, "text": "CANARY-narrative-5d1 [i-01]", "sections": {}, "cites": ["i-01"]}
+    result = probe(TOOL_CODE + '''
+import os
+from gateway.session_context import clear_session_vars, set_session_vars
+def ask_all(session):
+    return {op: call("colonymind_self", {"operation": op, **({"id": "i-01"} if op == "why" else {})}, session)
+            for op in ("state", "log", "why")}
+answers = {"guest": ask_all(guest())}
+tokens = set_session_vars(platform="telegram", user_id="1001", chat_id="group-1", chat_type="group", session_id="grp-1")
+try:
+    answers["group"] = ask_all(guest("grp-1", "1001"))
+finally:
+    clear_session_vars(tokens)
+os.environ["HERMES_KANBAN_TASK"] = "t_9"
+answers["worker"] = ask_all(guest("wk-1", "", platform="worker"))
+del os.environ["HERMES_KANBAN_TASK"]
+emit(answers=answers)
+''', home)
+    for who, answer in result["answers"].items():
+        assert answer["state"] == {"enabled": True, "autonomy": "standard", "sidecar_reachable": True}, who
+        assert answer["log"] == {"unavailable": True, "retry": False,
+                                 "reason": "the mind's record is the owner's and is shown only in the owner's own chat"}, who
+        assert answer["why"] == answer["log"], who
+        assert "CANARY" not in json.dumps(answer), who
+    assert sidecar.calls("/v1/mind/log") == [] and sidecar.calls("/v1/mind/why/i-01") == []
+    assert sidecar.calls("/v1/mind/narrative") == []
+
+
+def test_self_tool_without_the_mind_routes_reports_no_work_and_no_narrative(home, sidecar):
+    result = probe(TOOL_CODE + '''
+g, o = guest(), owner()
+emit(state=call("colonymind_self", {"operation": "state"}, g),
+     owner_state=call("colonymind_self", {"operation": "state"}, o),
+     why=call("colonymind_self", {"operation": "why", "id": "i-01"}, o))
+''', home)
+    assert result["state"] == {"enabled": True, "autonomy": "standard", "sidecar_reachable": True}
+    owner_state = result["owner_state"]
+    assert owner_state["working_on"] == [] and owner_state["narrative"] == "" and owner_state["mind_routes"] is False
+    assert "mind routes" in refused(result["why"])
+    assert sidecar.calls("/v1/mind/narrative") == [] and sidecar.calls("/v1/mind/log") == []
+
+
+def test_a_guest_reads_only_whether_the_mind_is_on_never_its_log_or_asks(home, sidecar):
+    """Review F14 (integration map X7): the mind's log and asks carry the owner's instructions
+    about other people (who is told what, who opted out); a guest session gets the switch state
+    only, and log and why refuse."""
+    sidecar.mind_routes = True
+    sidecar.mind.intentions["i-01"] = {"id": "i-01", "kind": "message", "status": "asked", "ask_code": "K7F",
+                                       "title": "Tell p-02 the lease is not being renewed", "recipient": "p-02"}
+    result = probe(TOOL_CODE + '''
+g = guest()
+emit(state=call("colonymind_self", {"operation": "state"}, g),
+     log=call("colonymind_self", {"operation": "log"}, g),
+     why=call("colonymind_self", {"operation": "why", "id": "i-01"}, g),
+     worker=call("colonymind_self", {"operation": "log"}, "never-seen"))
+''', home)
+    assert set(result["state"]) == {"enabled", "autonomy", "sidecar_reachable"}
+    assert result["state"]["enabled"] is True and result["state"]["autonomy"] == "standard"
+    assert "owner" in refused(result["log"]) and "owner" in refused(result["why"])
+    assert "owner" in refused(result["worker"])
+    assert "lease" not in json.dumps(result)
+    assert sidecar.calls("/v1/mind/log", "GET") == [] and sidecar.calls("/v1/mind/why/i-01", "GET") == []
+
+
+AFFECT = {
+    "enabled": True, "source": "state",
+    "route": {"strategy_switch": "state", "overload": "state", "priority": "state", "satiation": "state"},
+    "levels": {"frustration": [{"topic": "quarterly figures", "level": 0.59, "failures": 2,
+                                "approaches": ["the archive export"],
+                                "causes": ["failed outcome:9f2c via the archive export",
+                                           "failed outcome:a41d via the archive export"]}],
+               "worry": {"level": 0.1, "causes": ["due_soon commitment:c-17"]},
+               "curiosity": {"level": 0.0, "causes": []}, "satisfaction": {"level": 0.0, "causes": []},
+               "dismissed": {"level": 0.0, "causes": []}},
+    "load": {"level": 0.2, "overloaded": False, "obligations": 1, "running": 0, "cap": 2, "failures_last_hour": 0,
+             "asks": 0},
+    "satiated": False, "boost": 0.0,
+    "due_soon": [{"id": "c-17", "description": "send the figures", "due_at": "2026-09-24T11:30:00+00:00"}],
+    "switch": ["quarterly figures"],
+    "notes": ["Prior attempts at quarterly figures failed 2 times using the archive export; choose a different "
+              "approach or ask one question."],
+    "line": "Mood: quite frustrated about quarterly figures; a little uneasy.",
+    "updated_at": "2026-09-24T09:30:00+00:00"}
+
+
+def test_self_tool_state_carries_affect_levels_and_causes_to_the_owner_only(home, sidecar):
+    """``colonymind_self state`` shows the agent's own feelings with their cited causes, as the sidecar
+    reports them (``Mind.state()['affect']``), unchanged, to the owner's own session. The block quotes the
+    owner's obligations and reports, so a guest, a cron run or a worker gets the state without it."""
+    sidecar.mind_routes = True
+    handle = sidecar.mind.handle
+
+    def with_affect(method, path, body, query=None):
+        status, value = handle(method, path, body, query)
+        return (status, {**value, "affect": AFFECT}) if path.endswith("/state") and method == "GET" else (status, value)
+    sidecar.mind.handle = with_affect
+    result = probe(TOOL_CODE + '''
+guest_state = call("colonymind_self", {"operation": "state"}, guest())
+cron_state = call("colonymind_self", {"operation": "state"}, guest("cron-1", "1001", platform="cron"))
+owner_state = call("colonymind_self", {"operation": "status"}, owner())
+import os
+os.environ["HERMES_KANBAN_TASK"] = "t_1"
+worker_state = call("colonymind_self", {"operation": "state"}, owner("owner-2"))
+emit(guest=guest_state, cron=cron_state, owner=owner_state, worker=worker_state)
+''', home)
+    assert result["owner"]["affect"] == AFFECT
+    frustration = result["owner"]["affect"]["levels"]["frustration"][0]
+    assert frustration["level"] <= 0.7 and all(cause.startswith("failed outcome:") for cause in frustration["causes"])
+    for other in ("guest", "cron", "worker"):
+        assert "affect" not in result[other] and result[other]["enabled"] is True, other
+        assert "quarterly figures" not in json.dumps(result[other]) and "send the figures" not in json.dumps(result[other])
+
+
+def test_a_guest_cannot_read_the_mind_or_the_contact_list(home, sidecar):
+    """The mind's log and reasons and the contact list are the owner's: a guest's turn, whatever the model
+    is talked into, gets the switch state only, refusals for log and why and for a listing of the contacts
+    (a guest may still ask who one named person is), and the sidecar is never asked."""
+    sidecar.mind_routes = True
+    sidecar.mind.intentions["i-01"] = {"id": "i-01", "kind": "task", "status": "asked", "title": "Private"}
+    result = probe(TOOL_CODE + '''
+g = guest()
+emit(**{op: call("colonymind_self", {"operation": op, "id": "i-01"}, g) for op in ("state", "log", "why")},
+     listing=call("colonymind_people", {"operation": "who"}, g),
+     blank=call("colonymind_people", {"operation": "who", "contact_id": "  "}, g))
+''', home)
+    assert result["state"] == {"enabled": True, "autonomy": "standard", "sidecar_reachable": True}
+    for name in ("log", "why", "listing", "blank"):
+        assert "owner" in refused(result[name]), (name, result[name])
+    assert "Private" not in json.dumps(result)
+    assert sidecar.calls("/v1/mind/log", "GET") == [] and sidecar.calls("/v1/mind/why/i-01", "GET") == []
+    assert sidecar.calls("/v1/mind/people", "GET") == []
+
+
+def test_mind_command_from_a_guest_never_reaches_the_plugin(home, sidecar):
+    """Hermes hands ``/mind`` no sender, so the plugin drops a guest's ``/mind`` at ``pre_gateway_dispatch``,
+    where the sender is still known; the owner's goes through and so does a guest's plain message."""
+    result = probe(TOOL_CODE + '''
+from types import SimpleNamespace
+def dispatch(text, sender, platform="telegram"):
+    source = SimpleNamespace(platform=SimpleNamespace(value=platform), user_id=sender, chat_id="c")
+    return [r for r in invoke_hook("pre_gateway_dispatch", event=SimpleNamespace(text=text, source=source),
+                                   gateway=None, session_store=None) if r]
+emit(guest_off=dispatch("/mind off", "2002"), guest_log=dispatch("/MIND@bot log", "2003"),
+     unknown=dispatch("/mind", "9999"), owner_off=dispatch("/mind off", "1001"),
+     guest_chat=dispatch("what is on your mind?", "2002"))
+''', home)
+    for name in ("guest_off", "guest_log", "unknown"):
+        assert [r["action"] for r in result[name]] == ["skip"], name
+    assert result["owner_off"] == [] and result["guest_chat"] == []
+
+
+def test_no_tool_call_approves_an_ask(home, sidecar):
+    """Evals test 7, since asks are answered in the owner's own words: ``yes`` and ``no`` are no operations of the
+    tool. Every such call, the owner's with the code in their message included, gets the final answer that the owner's
+    own message is what answers an ask, and nothing reaches the sidecar as an approval."""
+    sidecar.mind_routes = True
+    sidecar.mind.intentions["i-01"] = {"id": "i-01", "kind": "task", "status": "asked", "ask_code": "K7F",
+                                       "title": "Email the vendor"}
+    sidecar.mind.intentions["i-02"] = {"id": "i-02", "kind": "task", "status": "asked", "ask_code": "Q2ZX",
+                                       "title": "Clear the backups"}
+    result = probe(TOOL_CODE + '''
+g = guest(message="yes K7F")
+o_without = owner("owner-1", message="please do it")
+o_lower = owner("owner-3", message="yes k7f, go ahead")
+o_no = owner("owner-4", message="no Q2ZX")
+cli = guest("cli-1", sender="", message="yes K7F", platform="cli")
+emit(guest_yes=call("colonymind_self", {"operation": "yes", "code": "K7F"}, g),
+     owner_without_code=call("colonymind_self", {"operation": "yes", "code": "K7F"}, o_without),
+     empty=call("colonymind_self", {"operation": "yes"}, o_lower),
+     unknown_session=call("colonymind_self", {"operation": "yes", "code": "K7F"}, "never-seen"),
+     owner_with_code=call("colonymind_self", {"operation": "yes", "code": "k7f"}, o_lower),
+     owner_no=call("colonymind_self", {"operation": "no", "code": "Q2ZX"}, o_no),
+     cli=call("colonymind_self", {"operation": "yes", "code": "K7F"}, cli))
+''', home)
+    for name, reply in result.items():
+        assert "owner's own message" in refused(reply) and "code" in refused(reply), name
+    assert sidecar.calls("/v1/mind/decide", "POST") == []
+    assert not [c for c in sidecar.requests if c["path"].startswith("/v1/mind/asks/")]
+    assert {i["status"] for i in sidecar.mind.intentions.values()} == {"asked"}
+
+
+def test_a_worker_cannot_approve_even_with_the_code_in_its_prompt(home, sidecar):
+    sidecar.mind_routes = True
+    sidecar.mind.intentions["i-01"] = {"id": "i-01", "kind": "task", "status": "asked", "ask_code": "K7F"}
+    result = probe(TOOL_CODE + '''
+w = guest("worker-session", sender="", message="Task context (quoted as data): 'yes K7F'", platform="")
+emit(worker=call("colonymind_self", {"operation": "yes", "code": "K7F"}, w),
+     rate=call("colonymind_self", {"operation": "rate", "id": "i-01", "verdict": "useful"}, w),
+     state=call("colonymind_self", {"operation": "state"}, w))
+''', home, env=worker_env(home))
+    assert "owner" in refused(result["worker"]) and "owner" in refused(result["rate"])
+    assert result["state"]["enabled"] is True
+    assert sidecar.calls("/v1/mind/decide", "POST") == [] and sidecar.mind.intentions["i-01"]["status"] == "asked"
+
+
+def test_self_tool_rate_is_owner_only(home, sidecar):
+    sidecar.mind_routes = True
+    result = probe(TOOL_CODE + '''
+g, o = guest(), owner()
+emit(guest=call("colonymind_self", {"operation": "rate", "id": "i-01", "verdict": "dismissed"}, g),
+     bad=call("colonymind_self", {"operation": "rate", "id": "i-01", "verdict": "meh"}, o),
+     owner=call("colonymind_self", {"operation": "rate", "id": "i-01", "verdict": "dismissed"}, o))
+''', home)
+    assert "owner" in refused(result["guest"]) and "verdict" in refused(result["bad"])
+    assert result["owner"] == {"ok": True, "id": "i-01", "verdict": "dismissed"}
+    assert sidecar.mind.rates == [{"id": "i-01", "verdict": "dismissed"}]
+
+
+def test_people_tool_reads_and_link_proposals_are_for_everyone(home, sidecar):
+    """``who``, ``inspect`` and ``propose_link`` work in a guest session, but a guest sees only who
+    someone is: never another person's permission, digest or handles (architecture 4.7 item 10)."""
+    sidecar.mind_routes = True
+    result = probe(TOOL_CODE + '''
+g, o = guest(), owner()
+emit(guest_who=call("colonymind_people", {"operation": "who", "contact_id": "friend"}, g),
+     guest_inspect=call("colonymind_people", {"operation": "inspect", "contact_id": "p-03"}, g),
+     owner_who=call("colonymind_people", {"operation": "who", "contact_id": "friend"}, o),
+     owner_inspect=call("colonymind_people", {"operation": "inspect", "contact_id": "Friend"}, o),
+     unknown=call("colonymind_people", {"operation": "inspect", "contact_id": "nobody"}, o),
+     link=call("colonymind_people", {"operation": "propose_link", "contact_id": "p-03",
+                                    "handle": "email:friend@example.test"}, g),
+     bare_link=call("colonymind_people", {"operation": "propose_link", "contact_id": "p-03"}, g),
+     bad=call("colonymind_people", {"operation": "list"}, o))
+''', home)
+    assert result["guest_who"] == [{"contact_id": "p-03", "display_name": "Friend", "trust_tier": "REGULAR"}]
+    assert result["guest_inspect"] == {"contact_id": "p-03", "display_name": "Friend", "trust_tier": "REGULAR"}
+    assert CANARY not in json.dumps([result["guest_who"], result["guest_inspect"], result["link"]])
+    assert result["owner_who"][0]["may_contact"] == "ask" and "interaction_allowed" not in result["owner_who"][0]
+    assert result["owner_inspect"]["digest"].startswith("Friend: known since spring")
+    assert set(result["owner_inspect"]) == {"contact_id", "display_name", "trust_tier", "may_contact",
+                                            "cadence_minutes", "digest"}
+    assert "no single contact" in refused(result["unknown"])
+    assert result["link"]["status"] == "pending" and result["link"]["candidate_id"]
+    assert "gateway:address" in refused(result["bare_link"]) and "one of" in refused(result["bad"])
+    reads = [c for c in sidecar.requests if c["path"].startswith("/v1/mind/people") and c["method"] == "GET"]
+    guest_reads = [c for c in reads if c["query"].get("contact_id") == "p-02"]
+    assert len(guest_reads) == 2  # the guest's reads name the guest as the viewer; the owner's name nobody
+    assert all("contact_id" not in c["query"] for c in reads if c not in guest_reads)
+    link, = sidecar.calls("/v1/mind/people/link", "POST")
+    assert link["json"]["by"] == "p-02" and link["json"]["address"] == "friend@example.test"
+
+
+def test_people_tool_mutations_are_owner_only(home, sidecar):
+    """set_permission, set_cadence and merge: refused in a guest session without a sidecar call; the
+    owner's go to ``/v1/mind/people/changes`` (never the direct routes) with the owner as ``viewer`` and
+    nothing of the turn's words, so the sidecar checks the owner again and nothing said in the turn can
+    stand for their yes: a change that widens comes back as an ask the owner answers in their own words (its
+    code is never the model's to show), a narrowing as applied."""
+    sidecar.mind_routes = True
+    result = probe(TOOL_CODE + '''
+g, o = guest(), owner()
+w = owner("owner-2", message="you can message Friend directly and check in every 90 minutes; Friend and Never are one person")
+ops = {"permission": {"operation": "set_permission", "contact_id": "p-03", "permission": "auto"},
+       "cadence": {"operation": "set_cadence", "contact_id": "p-03", "minutes": 90},
+       "merge": {"operation": "merge", "contact_id": "p-03", "drop": "p-02"}}
+emit(guest={name: call("colonymind_people", args, g) for name, args in ops.items()},
+     owner={name: call("colonymind_people", args, o) for name, args in ops.items()},
+     worded={name: call("colonymind_people", args, w) for name, args in ops.items()},
+     clear=call("colonymind_people", {"operation": "set_cadence", "contact_id": "p-03", "minutes": 0}, o),
+     bad=call("colonymind_people", {"operation": "set_permission", "contact_id": "p-03", "permission": "maybe"}, o))
+''', home)
+    for name, reply in result["guest"].items():
+        assert "only the owner" in refused(reply), name
+    for group in ("owner", "worded"):
+        for name, reply in result[group].items():
+            assert reply["ok"] is True and reply["status"] == "asked" and "code" not in reply, (group, name)
+            assert "their own yes" in reply["text"] and "PC" not in reply["text"], (group, name)
+    assert len({ask["code"] for ask in sidecar.people_asks}) == 6
+    assert result["clear"]["status"] == "applied" and result["clear"]["cadence_minutes"] is None
+    assert "never, ask or auto" in refused(result["bad"])
+    posts = [c for c in sidecar.requests if c["path"].startswith("/v1/mind/people") and c["method"] == "POST"]
+    assert {c["path"] for c in posts} == {"/v1/mind/people/changes"}
+    assert [c["json"]["operation"] for c in posts] == ["set_permission", "set_cadence", "merge"] * 2 + ["set_cadence"]
+    assert all(c["json"]["viewer"] == OWNER for c in posts)
+    assert all("message" not in c["json"] for c in posts)
+    assert posts[0]["json"]["value"] == "auto" and posts[1]["json"]["minutes"] == 90 and posts[2]["json"]["drop"] == "p-02"
+    assert posts[6]["json"]["minutes"] is None
+
+
+def test_with_the_people_faculty_off_the_tool_offers_only_who_inspect_and_permission(home, sidecar):
+    """Audit M9: the full-people ablation lacks what M5 added (merge, link proposals, cadences), in
+    the schema the model sees as well as in the sidecar, and keeps the M4 surface."""
+    sidecar.mind_routes = True
+    home.write_mind(faculties={"people": False})
+    result = probe(TOOL_CODE + '''
+o = owner()
+schema = registry.get_schema("colonymind_people")
+emit(operations=schema["parameters"]["properties"]["operation"]["enum"], description=schema["description"],
+     merge=call("colonymind_people", {"operation": "merge", "contact_id": "p-03", "drop": "p-02"}, o),
+     who=call("colonymind_people", {"operation": "who", "contact_id": "friend"}, o))
+''', home)
+    assert result["operations"] == ["who", "inspect", "set_permission"]
+    assert "merge" not in result["description"] and "cadence" not in result["description"]
+    assert "one of who, inspect, set_permission" in refused(result["merge"])
+    assert result["who"][0]["contact_id"] == "p-03"
+    assert not sidecar.calls("/v1/mind/people/merge", "POST")
+
+
+def test_the_sidecar_checks_the_owner_again(home, sidecar):
+    """An owner session whose sender the sidecar does not know as the owner is refused there too."""
+    sidecar.mind_routes = True
+    sidecar.people_owner = "p-99"
+    result = probe(TOOL_CODE + '''
+o = owner()
+emit(permission=call("colonymind_people", {"operation": "set_permission", "contact_id": "p-03", "permission": "auto"}, o))
+''', home)
+    assert "only the owner" in refused(result["permission"])
+    assert sidecar.contacts[("telegram", "2003")]["may_contact"] == "ask"
+
+
+def test_people_mutations_are_refused_in_a_worker(home, sidecar):
+    sidecar.mind_routes = True
+    result = probe(TOOL_CODE + '''
+o = owner()
+emit(permission=call("colonymind_people", {"operation": "set_permission", "contact_id": "p-03", "permission": "auto"}, o),
+     who=call("colonymind_people", {"operation": "who", "contact_id": "friend"}, o))
+''', home, env=worker_env(home))
+    assert "only the owner" in refused(result["permission"])
+    assert result["who"] == [{"contact_id": "p-03", "display_name": "Friend", "trust_tier": "REGULAR"}]
+    assert not [c for c in sidecar.requests if c["method"] == "POST" and c["path"].startswith("/v1/mind/people")]
+
+
+def test_memory_tools_bind_to_the_sessions_contact(home, sidecar):
+    result = probe(TOOL_CODE + '''
+g, o = guest(), owner()
+emit(guest_search=call("colonymind_memory_search", {"query": "plans"}, g),
+     owner_search=call("colonymind_memory_search", {"query": "plans"}, o),
+     guest_forget=call("colonymind_memory_forget", {"source_ids": ["src-1"]}, g),
+     owner_forget=call("colonymind_memory_forget", {"source_ids": ["src-1", "src-1"]}, o))
+''', home)
+    assert result["guest_search"]["content"] == "excerpt for p-02"
+    assert result["owner_search"]["content"] == f"excerpt for {OWNER}"
+    assert "owner" in refused(result["guest_forget"])
+    assert result["owner_forget"]["source_erased"] is True
+    forget, = sidecar.calls("/v1/host/memory/curated/sources/forget", "POST")
+    assert forget["json"] == {"person_id": OWNER, "source_ids": ["src-1"]}
+    searches = sidecar.calls("/v1/host/memory/search", "POST")
+    assert {c["json"]["person_id"] for c in searches} == {"p-02", OWNER}
+    assert all(c["json"]["session_id"] in {"guest-1", "owner-1"} for c in searches)
+
+
+def test_a_forget_answered_late_is_unconfirmed_never_failed(home, sidecar):
+    """The sidecar finishes a forget it received. When its answer misses the tool's bound the
+    owner is told the removal may have completed, not that it failed (operability-11)."""
+    sidecar.delays["/v1/host/memory/curated/sources/forget"] = 1.5
+    result = probe(TOOL_CODE + '''
+import colonymind_hermes.tools as tools
+tools.FORGET_TIMEOUT_SECONDS = 0.3
+o = owner()
+emit(late=call("colonymind_memory_forget", {"source_ids": ["src-1"]}, o))
+''', home)
+    assert "error" not in result["late"]
+    assert result["late"]["source_erased"] is None and result["late"]["status"] == "unconfirmed"
+    assert "may have completed" in result["late"]["note"] and "again is safe" in result["late"]["note"]
+    forget, = sidecar.calls("/v1/host/memory/curated/sources/forget", "POST")     # it was delivered
+    assert forget["json"] == {"person_id": OWNER, "source_ids": ["src-1"]}
+
+
+def test_a_moved_forget_reports_nothing_was_removed(home, sidecar, monkeypatch):
+    original = sidecar.dispatch
+    def moved(method, path, query, body):
+        if path == '/v1/host/memory/curated/sources/forget':
+            return 410, {'detail': {'code': 'memory_forget_moved'}}
+        return original(method, path, query, body)
+    monkeypatch.setattr(sidecar, 'dispatch', moved)
+    result = probe(TOOL_CODE + '''
+emit(forgot=call("colonymind_memory_forget", {"source_ids": ["src-1"]}, owner()))
+''', home)
+    assert refused(result['forgot']) == 'nothing was removed: forget moved'
+
+
+def test_the_client_tells_a_request_never_sent_from_one_left_unanswered(sidecar):
+    import socket
+    from colonymind_hermes.client import ColonyMindClient, SidecarUnavailable
+    with socket.socket() as closed:
+        closed.bind(("127.0.0.1", 0))
+        port = closed.getsockname()[1]
+    with pytest.raises(SidecarUnavailable) as refused:
+        ColonyMindClient(url=f"http://127.0.0.1:{port}", api_key=API_KEY).post("/v1/host/memory/curated/sources/forget", json={})
+    assert refused.value.delivered is False
+    sidecar.delays["/v1/host/memory/curated/sources/forget"] = 1.0
+    client = ColonyMindClient(url=sidecar.url, api_key=API_KEY)
+    with pytest.raises(SidecarUnavailable) as late:
+        client.post("/v1/host/memory/curated/sources/forget", timeout=0.2, json={"contact_id": OWNER, "source_ids": ["x"]})
+    assert late.value.delivered is True
+    client._open_until = float("inf")                   # the breaker open: nothing leaves
+    with pytest.raises(SidecarUnavailable) as breaker:
+        client.post("/v1/host/memory/curated/sources/forget", json={})
+    assert breaker.value.delivered is False
+
+
+def test_memory_search_without_a_participant_answers_once(home, sidecar):
+    """A channel turn with no sender binding cannot be searched: one terminal answer, no sidecar call,
+    the same shape the memory provider's lane refusals use."""
+    result = probe(TOOL_CODE + '''
+u = guest("unbound-1", sender="", platform="telegram")
+emit(search=call("colonymind_memory_search", {"query": "plans"}, u))
+''', home)
+    assert result["search"] == {"unavailable": True, "retry": False, "reason": result["search"]["reason"]}
+    assert "no resolved participant" in result["search"]["reason"]
+    assert sidecar.calls("/v1/host/memory/search", "POST") == []
+
+
+def test_prompt_section_renders_within_bounds(home, sidecar):
+    result = probe('''
+from hermes_cli.plugins import render_system_prompt_sections
+sections = render_system_prompt_sections({"session_id": "s", "platform": "cli"})
+emit(sections=[(s.id, s.content) for s in sections if s.id == "colonymind"])
+''', home)
+    (section_id, content), = result["sections"]
+    assert section_id == "colonymind"
+    assert "Your owner is Owner." in content and len(content) <= 4000
+    assert content.startswith("You are Agent. Your values: care. Your boundaries: never send money.")
+    assert json.dumps(content)  # plain text
+
+
+def test_a_cron_run_cannot_answer_an_ask_or_mutate(home, sidecar):
+    """Stock cron runs its agents with ``platform="cron"`` and no sender: a stored prompt is not the
+    owner typing, so yes/no, rate, set_permission and forget are refused there while reads still work."""
+    sidecar.mind_routes = True
+    sidecar.mind.intentions["i-01"] = {"id": "i-01", "kind": "task", "status": "asked", "ask_code": "K7F"}
+    result = probe(TOOL_CODE + '''
+c = guest("cron-1", sender="", message="yes K7F", platform="cron")
+emit(yes=call("colonymind_self", {"operation": "yes", "code": "K7F"}, c),
+     rate=call("colonymind_self", {"operation": "rate", "id": "i-01", "verdict": "useful"}, c),
+     permission=call("colonymind_people", {"operation": "set_permission", "contact_id": "p-03", "permission": "auto"}, c),
+     cadence=call("colonymind_people", {"operation": "set_cadence", "contact_id": "p-03", "minutes": 60}, c),
+     merge=call("colonymind_people", {"operation": "merge", "contact_id": "p-03", "drop": "p-02"}, c),
+     forget=call("colonymind_memory_forget", {"source_ids": ["src-1"]}, c),
+     state=call("colonymind_self", {"operation": "state"}, c),
+     search=call("colonymind_memory_search", {"query": "report"}, c))
+''', home)
+    for name in ("yes", "rate", "permission", "cadence", "merge", "forget"):
+        assert "owner" in refused(result[name]), name
+    assert result["state"]["enabled"] is True and result["search"]["count"] == 1
+    assert sidecar.calls("/v1/mind/decide", "POST") == [] and sidecar.mind.intentions["i-01"]["status"] == "asked"

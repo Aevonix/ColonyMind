@@ -1,0 +1,10 @@
+[Unit]
+Description=Check jobs every five minutes, independently of the sidecar
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+Unit=colonymind-watch.service
+
+[Install]
+WantedBy=timers.target

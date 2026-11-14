@@ -1,0 +1,560 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "work-envelope.json",
+  "$defs": {
+    "Child": {
+      "additionalProperties": false,
+      "properties": {
+        "turn_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Turn Id",
+          "type": "string"
+        },
+        "parent_turn_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Parent Turn Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "turn_id",
+        "parent_turn_id"
+      ],
+      "title": "Child",
+      "type": "object"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "default": "none",
+          "enum": [
+            "none",
+            "file_hash",
+            "message_receipt",
+            "saved_job",
+            "hand_outcome",
+            "read"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "method": {
+          "anyOf": [
+            {
+              "enum": [
+                "native_post_write_sha256",
+                "sealed_sha256",
+                "native_saved_job_fields"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Method"
+        },
+        "checked_operation_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Checked Operation Id"
+        },
+        "intended_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Intended Sha256"
+        },
+        "actual_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Actual Sha256"
+        },
+        "receipt_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Receipt Id"
+        },
+        "provider_message_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Message Id"
+        },
+        "requested_fields": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "maxProperties": 64,
+              "properties": {
+                "attach_to_session": {
+                  "type": "boolean"
+                },
+                "deliver": {
+                  "type": "boolean"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "failure_deliver": {
+                  "type": "boolean"
+                },
+                "monitor": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "boolean"
+                },
+                "no_agent": {
+                  "type": "boolean"
+                },
+                "paused": {
+                  "type": "boolean"
+                },
+                "prompt": {
+                  "type": "boolean"
+                },
+                "repeat": {
+                  "type": "boolean"
+                },
+                "schedule": {
+                  "type": "boolean"
+                },
+                "script": {
+                  "type": "boolean"
+                },
+                "skill": {
+                  "type": "boolean"
+                },
+                "workdir": {
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Requested Fields"
+        },
+        "saved_fields": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "maxProperties": 64,
+              "properties": {
+                "attach_to_session": {
+                  "type": "boolean"
+                },
+                "deliver": {
+                  "type": "boolean"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "failure_deliver": {
+                  "type": "boolean"
+                },
+                "monitor": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "boolean"
+                },
+                "no_agent": {
+                  "type": "boolean"
+                },
+                "paused": {
+                  "type": "boolean"
+                },
+                "prompt": {
+                  "type": "boolean"
+                },
+                "repeat": {
+                  "type": "boolean"
+                },
+                "schedule": {
+                  "type": "boolean"
+                },
+                "script": {
+                  "type": "boolean"
+                },
+                "skill": {
+                  "type": "boolean"
+                },
+                "workdir": {
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Saved Fields"
+        },
+        "verified": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Verified"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "enum": [
+                "done",
+                "completed",
+                "failed",
+                "cancelled",
+                "interrupted",
+                "unknown",
+                "pending"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Outcome"
+        },
+        "task_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task Id"
+        }
+      },
+      "title": "Evidence",
+      "type": "object"
+    },
+    "Operation": {
+      "additionalProperties": false,
+      "properties": {
+        "operation_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Operation Id",
+          "type": "string"
+        },
+        "tool_call_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Tool Call Id",
+          "type": "string"
+        },
+        "tool": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Tool",
+          "type": "string"
+        },
+        "action": {
+          "maxLength": 32,
+          "pattern": "^[a-z_]{0,32}$",
+          "title": "Action",
+          "type": "string"
+        },
+        "effect": {
+          "enum": [
+            "read",
+            "execute",
+            "background",
+            "write",
+            "send",
+            "create",
+            "edit",
+            "remove",
+            "dispatch",
+            "effect_unknown"
+          ],
+          "title": "Effect",
+          "type": "string"
+        },
+        "resource_ref": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 10,
+              "pattern": "^resource:[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resource Ref"
+        },
+        "success": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Success"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "error_type": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error Type"
+        },
+        "failure_kind": {
+          "anyOf": [
+            {
+              "enum": [
+                "malformed_arguments",
+                "scope_block",
+                "guardrail_block",
+                "plugin_block",
+                "timeout",
+                "cancellation",
+                "parse_failure",
+                "refusal",
+                "tool_error"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failure Kind"
+        },
+        "duration_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Ms"
+        },
+        "evidence": {
+          "$ref": "#/$defs/Evidence"
+        },
+        "source_refs": {
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "maxItems": 64,
+          "title": "Source Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "operation_id",
+        "tool_call_id",
+        "tool",
+        "action",
+        "effect"
+      ],
+      "title": "Operation",
+      "type": "object"
+    },
+    "SourceRef": {
+      "additionalProperties": false,
+      "properties": {
+        "source_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Source Id",
+          "type": "string"
+        },
+        "source_version": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "source_version"
+      ],
+      "title": "SourceRef",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1,
+      "title": "Version",
+      "type": "integer"
+    },
+    "root_turn_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Root Turn Id",
+      "type": "string"
+    },
+    "parent_turn_id": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parent Turn Id"
+    },
+    "origin_ref": {
+      "anyOf": [
+        {
+          "maxLength": 1024,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Origin Ref"
+    },
+    "operations": {
+      "items": {
+        "$ref": "#/$defs/Operation"
+      },
+      "maxItems": 256,
+      "title": "Operations",
+      "type": "array"
+    },
+    "children": {
+      "items": {
+        "$ref": "#/$defs/Child"
+      },
+      "maxItems": 256,
+      "title": "Children",
+      "type": "array"
+    },
+    "truncated": {
+      "title": "Truncated",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "version",
+    "root_turn_id",
+    "operations",
+    "children",
+    "truncated"
+  ],
+  "title": "WorkEnvelope",
+  "type": "object"
+}

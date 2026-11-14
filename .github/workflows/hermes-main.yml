@@ -1,0 +1,101 @@
+name: Hermes main (warning only)
+
+# Early warning, beside the latest-release check (hermes-upstream.yml): the adapter tests against Hermes' development
+# branch. A failure here flags a change coming in a future Hermes release; it blocks no merge and no release, and it
+# does not widen the supported range.
+
+on:
+  schedule:
+    - cron: '47 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hermes-main-compatibility
+  cancel-in-progress: true
+
+jobs:
+  hermes-main:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    continue-on-error: true
+    env:
+      # The tests that read Hermes' source take it from this checkout. They require a reviewed revision, which the
+      # moving branch never is, so they fail here every time; the other failures are the ones that tell something.
+      HERMES_SOURCE_ROOT: ${{ github.workspace }}/.qualification/hermes
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+        with:
+          repository: NousResearch/hermes-agent
+          ref: main
+          path: .qualification/hermes
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            sidecar/pyproject.toml
+            .qualification/hermes/pyproject.toml
+      - name: Record the selected commit
+        run: |
+          revision="$(git -C .qualification/hermes rev-parse HEAD)"
+          {
+            echo "Hermes main at \`${revision}\`"
+            echo
+            echo "Stock upstream development branch, no patches. Warning only: a failure blocks nothing."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Install the adapter, the sidecar and Hermes main
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ripgrep
+          rg --version
+          # Hermes' dependency pins target Python 3.14; lift only that condition for this test interpreter. A pin
+          # carries it alone, or first or last among several conditions.
+          python - <<'PY'
+          import os, re, tomllib
+          from pathlib import Path
+          hermes = tomllib.loads(Path(".qualification/hermes/pyproject.toml").read_text())
+          only_314 = r"python_version\s*>=\s*'3\.14'"
+
+          def lift(pin):
+              pin = re.sub(r"\s*;\s*" + only_314 + r"\s*$", "", pin)
+              pin = re.sub(r";\s*" + only_314 + r"\s+and\s+", "; ", pin)
+              return re.sub(r"\s+and\s+" + only_314 + r"\s*$", "", pin)
+
+          lines = [lift(pin) for pin in hermes["project"]["dependencies"]]
+          assert lines and not any("python_version" in line for line in lines), lines
+          Path(os.environ["RUNNER_TEMP"], "hermes-dependencies.txt").write_text("\n".join(lines) + "\n")
+          # Hermes' own installer resolves with uv and the override list of its pyproject.toml ([tool.uv]
+          # override-dependencies); pip stops at the pins that list settles. A branch without the list gets none.
+          overrides = hermes.get("tool", {}).get("uv", {}).get("override-dependencies", [])
+          Path(os.environ["RUNNER_TEMP"], "hermes-overrides.txt").write_text("".join(line + "\n" for line in overrides))
+          PY
+          python -m pip install 'uv==0.11.31'
+          uv pip install --python "$(command -v python)" --overrides "${RUNNER_TEMP}/hermes-overrides.txt" \
+            -e ./.qualification/hermes -r "${RUNNER_TEMP}/hermes-dependencies.txt" -e '.[test]' ./sidecar
+          # pip check may name the one conflict Hermes ships with, the older Pillow browser-harness asks for,
+          # and nothing else.
+          python - <<'PY'
+          import subprocess, sys
+          lines = subprocess.run([sys.executable, "-m", "pip", "check"], capture_output=True, text=True).stdout.splitlines()
+          print("\n".join(lines))
+          others = [line for line in lines if not (line.startswith("browser-harness ") and "pillow" in line.lower())]
+          assert others in ([], ["No broken requirements found."]), others
+          PY
+      - name: Run the adapter tests against Hermes main
+        run: python -m pytest tests/hermes_adapter -q -ra --junitxml=hermes-main-adapter.xml
+      - name: Report a failure as a warning
+        if: failure()
+        run: echo "::warning title=Hermes main::The adapter tests fail against Hermes main (see this job's log). A future Hermes release may need an adapter change; nothing is blocked."
+      - name: Retain the test outcome
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hermes-main-qualification
+          path: hermes-main-adapter.xml
+          if-no-files-found: warn

@@ -1,0 +1,1304 @@
+"""SQLite-backed commitment store."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import sqlite3
+import threading
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Union
+from colonymind.util.temporal import now_utc
+
+logger = logging.getLogger(__name__)
+
+# Statuses that mean "still awaiting action". 'overdue' is a pending item
+# whose due date passed (the condition worker flips it so the overdue event
+# fires exactly once) — every open-work query must include BOTH, or a flipped
+# item silently vanishes from dedup lists, prompt sections, and workspace
+# ingest while still being owed.
+OPEN_STATUSES = ("pending", "overdue")
+
+# How a resolution outcome maps onto the terminal status. 'done' is the only
+# outcome that counts as kept; everything else is a cancellation whose reason
+# the system learns from (see resolution_stats / recent_rejections).
+OUTCOME_TO_STATUS = {
+    "done": "fulfilled",
+    "invalid": "cancelled",
+    "duplicate": "cancelled",
+    "wont_do": "cancelled",
+    "obsolete": "cancelled",
+}
+
+
+RESOLUTION_RECOVERY_CAPABILITY = "commitment_resolution_recovery_v1"
+_RESOLUTION_RECOVERY_SCHEMA = "ColonyMindCommitmentResolutionRecoveryV1"
+_RESOLUTION_OPERATION_TABLE = "commitment_resolution_operations"
+_RESOLUTION_OPERATION_UPDATE_TRIGGER = (
+    "commitment_resolution_operations_no_update"
+)
+_RESOLUTION_OPERATION_DELETE_TRIGGER = (
+    "commitment_resolution_operations_no_delete"
+)
+_RESOLUTION_BOUND_DELETE_TRIGGER = "commitment_resolution_bound_row_no_delete"
+
+_RESOLUTION_OPERATION_TABLE_SQL = """\
+CREATE TABLE commitment_resolution_operations (
+    operation_id TEXT PRIMARY KEY,
+    commitment_id TEXT NOT NULL UNIQUE,
+    outcome TEXT NOT NULL,
+    note TEXT NOT NULL,
+    note_digest TEXT NOT NULL,
+    resolved_by TEXT NOT NULL,
+    status TEXT NOT NULL,
+    resolved_at TEXT NOT NULL,
+    record_digest TEXT NOT NULL UNIQUE
+)"""
+
+_RESOLUTION_OPERATION_UPDATE_TRIGGER_SQL = """\
+CREATE TRIGGER commitment_resolution_operations_no_update
+BEFORE UPDATE ON commitment_resolution_operations
+BEGIN
+    SELECT RAISE(ABORT, 'commitment resolution operations are immutable');
+END"""
+
+_RESOLUTION_OPERATION_DELETE_TRIGGER_SQL = """\
+CREATE TRIGGER commitment_resolution_operations_no_delete
+BEFORE DELETE ON commitment_resolution_operations
+BEGIN
+    SELECT RAISE(ABORT, 'commitment resolution operations are immutable');
+END"""
+
+_RESOLUTION_BOUND_DELETE_TRIGGER_SQL = """\
+CREATE TRIGGER commitment_resolution_bound_row_no_delete
+BEFORE DELETE ON commitments
+WHEN EXISTS (
+    SELECT 1 FROM commitment_resolution_operations
+    WHERE commitment_id=OLD.id
+)
+BEGIN
+    SELECT RAISE(ABORT, 'operation-bound commitments cannot be deleted');
+END"""
+
+_RESOLUTION_RECOVERY_OBJECTS = {
+    _RESOLUTION_OPERATION_TABLE: (
+        "table", _RESOLUTION_OPERATION_TABLE,
+        _RESOLUTION_OPERATION_TABLE_SQL,
+    ),
+    _RESOLUTION_OPERATION_UPDATE_TRIGGER: (
+        "trigger", _RESOLUTION_OPERATION_TABLE,
+        _RESOLUTION_OPERATION_UPDATE_TRIGGER_SQL,
+    ),
+    _RESOLUTION_OPERATION_DELETE_TRIGGER: (
+        "trigger", _RESOLUTION_OPERATION_TABLE,
+        _RESOLUTION_OPERATION_DELETE_TRIGGER_SQL,
+    ),
+    _RESOLUTION_BOUND_DELETE_TRIGGER: (
+        "trigger", "commitments", _RESOLUTION_BOUND_DELETE_TRIGGER_SQL,
+    ),
+}
+
+_RESOLUTION_OPERATION_COLUMNS = (
+    (0, "operation_id", "TEXT", 0, None, 1),
+    (1, "commitment_id", "TEXT", 1, None, 0),
+    (2, "outcome", "TEXT", 1, None, 0),
+    (3, "note", "TEXT", 1, None, 0),
+    (4, "note_digest", "TEXT", 1, None, 0),
+    (5, "resolved_by", "TEXT", 1, None, 0),
+    (6, "status", "TEXT", 1, None, 0),
+    (7, "resolved_at", "TEXT", 1, None, 0),
+    (8, "record_digest", "TEXT", 1, None, 0),
+)
+
+_RESOLUTION_OPERATION_INDEXES = {
+    "sqlite_autoindex_commitment_resolution_operations_1": (
+        "pk", "operation_id",
+    ),
+    "sqlite_autoindex_commitment_resolution_operations_2": (
+        "u", "commitment_id",
+    ),
+    "sqlite_autoindex_commitment_resolution_operations_3": (
+        "u", "record_digest",
+    ),
+}
+
+
+class CommitmentResolutionSchemaError(RuntimeError):
+    """The durable resolution-recovery schema is absent or untrustworthy."""
+
+
+def _sql_signature(sql: Optional[str]) -> str:
+    """Stable exact-DDL comparison without depending on indentation."""
+
+    return " ".join((sql or "").strip().rstrip(";").split())
+
+
+class CommitmentResolutionConflict(ValueError):
+    """A terminal commitment does not match a bound cascade operation."""
+
+    settlement_error_code = "operation_conflict"
+
+
+def _metadata_still(stored: Optional[str], listed: Optional[Dict[str, Any]]) -> bool:
+    """True when every metadata key ``listed`` names still holds its listed value (absent reads as None)."""
+    if not listed:
+        return True
+    try:
+        metadata = json.loads(stored) if stored else {}
+    except (json.JSONDecodeError, TypeError):
+        metadata = {}
+    metadata = metadata if isinstance(metadata, dict) else {}
+    return all(metadata.get(key) == value for key, value in listed.items())
+
+
+class CommitmentConflict(ValueError):
+    """The row is no longer what the writer listed (``expect``); nothing was written."""
+
+
+def _canonical_json(value: Dict[str, Any]) -> str:
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    )
+
+
+def _operation_material(
+    *,
+    operation_id: str,
+    commitment_id: str,
+    outcome: str,
+    note: str,
+    note_digest: str,
+    resolved_by: str,
+    status: str,
+    resolved_at: str,
+) -> Dict[str, Any]:
+    if (
+        type(operation_id) is not str or not operation_id
+        or operation_id != operation_id.strip() or len(operation_id) > 192
+    ):
+        raise ValueError("commitment resolution operation_id is invalid")
+    if type(commitment_id) is not str or not commitment_id:
+        raise ValueError("commitment resolution operation commitment is invalid")
+    if outcome not in OUTCOME_TO_STATUS or OUTCOME_TO_STATUS[outcome] != status:
+        raise ValueError("commitment resolution operation outcome is invalid")
+    if type(note) is not str or len(note) > 300:
+        raise ValueError("commitment resolution operation note is invalid")
+    if (
+        type(note_digest) is not str or len(note_digest) != 64
+        or any(ch not in "0123456789abcdef" for ch in note_digest)
+    ):
+        raise ValueError("commitment resolution operation note digest is invalid")
+    if type(resolved_by) is not str or len(resolved_by) > 128:
+        raise ValueError("commitment resolution operation resolver is invalid")
+    if type(resolved_at) is not str or not resolved_at:
+        raise ValueError("commitment resolution operation time is invalid")
+    payload = {
+        "schema": "ColonyMindCommitmentResolutionOperationV1",
+        "version": 1,
+        "operation_id": operation_id,
+        "commitment_id": commitment_id,
+        "outcome": outcome,
+        "note": note,
+        "note_digest": note_digest,
+        "resolved_by": resolved_by,
+        "status": status,
+        "resolved_at": resolved_at,
+    }
+    return {
+        **payload,
+        "record_digest": hashlib.sha256(
+            _canonical_json(payload).encode("utf-8")
+        ).hexdigest(),
+    }
+
+
+def _parse_due_at(due_at: str) -> tuple[datetime, str]:
+    """A deadline as an aware UTC datetime and its canonical stored string.
+
+    ``get_overdue`` compares ``due_at`` as a STRING against a ``+00:00`` now,
+    so every writer must persist this exact form: a naive value means UTC,
+    an offset value is converted, and the caller's raw string is never
+    stored.
+    """
+    due_dt = datetime.fromisoformat(due_at)
+    if due_dt.tzinfo is None:
+        due_dt = due_dt.replace(tzinfo=timezone.utc)
+    due_dt = due_dt.astimezone(timezone.utc)
+    return due_dt, due_dt.isoformat()
+
+
+def _normalize_desc(text: str) -> str:
+    """Lowercased, punctuation-collapsed form used for duplicate detection."""
+    out = []
+    for ch in (text or "").lower():
+        out.append(ch if ch.isalnum() else " ")
+    return " ".join("".join(out).split())
+
+
+def _similar_desc(a: str, b: str) -> bool:
+    """True when two normalized descriptions describe the same item: exact,
+    containment, or high token overlap (Jaccard >= 0.6)."""
+    if not a or not b:
+        return False
+    if a == b or a in b or b in a:
+        return True
+    ta, tb = set(a.split()), set(b.split())
+    if not ta or not tb:
+        return False
+    return len(ta & tb) / len(ta | tb) >= 0.6
+
+
+class CommitmentStore:
+    """Persistent store for commitment tracking.
+
+    Thread-safe via a threading lock. All datetime values stored as
+    ISO 8601 UTC strings.
+    """
+
+    def __init__(self, db_path: Path) -> None:
+        self._db_path = db_path
+        self._lock = threading.Lock()
+        self._init_db()
+
+    def _read_lock(self):
+        from contextlib import nullcontext
+        from colonymind.memory import producers
+        return nullcontext() if producers.active() else self._lock
+
+    def _connect(self) -> sqlite3.Connection:
+        from colonymind.memory import producers
+        reader = producers.connection(self._db_path)
+        if reader is not None:
+            return reader
+        conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
+
+    def _init_db(self) -> None:
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.executescript("""
+                    CREATE TABLE IF NOT EXISTS commitments (
+                        id TEXT PRIMARY KEY,
+                        person_id TEXT NOT NULL,
+                        description TEXT NOT NULL,
+                        made_at TEXT NOT NULL,
+                        due_at TEXT,
+                        fulfilled_at TEXT,
+                        status TEXT NOT NULL DEFAULT 'pending',
+                        source_context TEXT,
+                        source_type TEXT NOT NULL DEFAULT 'manual',
+                        priority INTEGER NOT NULL DEFAULT 50,
+                        metadata TEXT
+                    );
+
+                    CREATE INDEX IF NOT EXISTS idx_commitments_person
+                        ON commitments(person_id);
+                    CREATE INDEX IF NOT EXISTS idx_commitments_status
+                        ON commitments(status);
+                    CREATE INDEX IF NOT EXISTS idx_commitments_due
+                        ON commitments(due_at) WHERE status = 'pending';
+                    CREATE INDEX IF NOT EXISTS idx_commitments_person_status
+                        ON commitments(person_id, status);
+                """)
+                conn.commit()
+                conn.execute("BEGIN IMMEDIATE")
+                existing = self._resolution_recovery_object_names(conn)
+                expected = set(_RESOLUTION_RECOVERY_OBJECTS)
+                if existing and existing != expected:
+                    raise CommitmentResolutionSchemaError(
+                        "commitment resolution recovery schema is partial"
+                    )
+                if not existing:
+                    for _kind, _table, ddl in (
+                        _RESOLUTION_RECOVERY_OBJECTS[name]
+                        for name in _RESOLUTION_RECOVERY_OBJECTS
+                    ):
+                        conn.execute(ddl)
+                self._validate_resolution_recovery_schema(conn)
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+
+    @staticmethod
+    def _resolution_recovery_object_names(
+        conn: sqlite3.Connection,
+    ) -> set[str]:
+        placeholders = ",".join("?" for _ in _RESOLUTION_RECOVERY_OBJECTS)
+        rows = conn.execute(
+            f"SELECT name FROM sqlite_master WHERE name IN ({placeholders})",
+            tuple(_RESOLUTION_RECOVERY_OBJECTS),
+        ).fetchall()
+        return {str(row["name"]) for row in rows}
+
+    @classmethod
+    def _validate_resolution_recovery_schema(
+        cls, conn: sqlite3.Connection,
+    ) -> None:
+        """Reject any same-name, partial, or weakened recovery schema."""
+
+        placeholders = ",".join("?" for _ in _RESOLUTION_RECOVERY_OBJECTS)
+        rows = conn.execute(
+            "SELECT type,name,tbl_name,sql FROM sqlite_master "
+            f"WHERE name IN ({placeholders})",
+            tuple(_RESOLUTION_RECOVERY_OBJECTS),
+        ).fetchall()
+        objects = {str(row["name"]): row for row in rows}
+        if set(objects) != set(_RESOLUTION_RECOVERY_OBJECTS):
+            raise CommitmentResolutionSchemaError(
+                "commitment resolution recovery schema is incomplete"
+            )
+        for name, (object_type, table_name, expected_sql) in (
+            _RESOLUTION_RECOVERY_OBJECTS.items()
+        ):
+            row = objects[name]
+            if (
+                row["type"] != object_type
+                or row["tbl_name"] != table_name
+                or _sql_signature(row["sql"]) != _sql_signature(expected_sql)
+            ):
+                raise CommitmentResolutionSchemaError(
+                    "commitment resolution recovery object is invalid"
+                )
+
+        protected_triggers = {
+            str(row["name"]): str(row["tbl_name"])
+            for row in conn.execute(
+                """SELECT name,tbl_name FROM sqlite_master
+                   WHERE type='trigger'
+                     AND tbl_name IN (
+                         'commitments',
+                         'commitment_resolution_operations'
+                     )"""
+            ).fetchall()
+        }
+        expected_triggers = {
+            name: table_name
+            for name, (object_type, table_name, _sql) in (
+                _RESOLUTION_RECOVERY_OBJECTS.items()
+            )
+            if object_type == "trigger"
+        }
+        if protected_triggers != expected_triggers:
+            raise CommitmentResolutionSchemaError(
+                "commitment resolution recovery trigger set is invalid"
+            )
+
+        columns = tuple(
+            tuple(row)
+            for row in conn.execute(
+                "PRAGMA table_info(commitment_resolution_operations)"
+            ).fetchall()
+        )
+        if columns != _RESOLUTION_OPERATION_COLUMNS:
+            raise CommitmentResolutionSchemaError(
+                "commitment resolution recovery columns are invalid"
+            )
+
+        indexes: Dict[str, tuple[str, str]] = {}
+        for row in conn.execute(
+            "PRAGMA index_list(commitment_resolution_operations)"
+        ).fetchall():
+            if int(row["unique"]) != 1 or int(row["partial"]) != 0:
+                raise CommitmentResolutionSchemaError(
+                    "commitment resolution recovery indexes are invalid"
+                )
+            index_name = str(row["name"])
+            quoted_index_name = index_name.replace('"', '""')
+            index_columns = conn.execute(
+                f'PRAGMA index_info("{quoted_index_name}")'
+            ).fetchall()
+            if len(index_columns) != 1:
+                raise CommitmentResolutionSchemaError(
+                    "commitment resolution recovery indexes are invalid"
+                )
+            indexes[index_name] = (
+                str(row["origin"]), str(index_columns[0]["name"]),
+            )
+        if indexes != _RESOLUTION_OPERATION_INDEXES:
+            raise CommitmentResolutionSchemaError(
+                "commitment resolution recovery indexes are invalid"
+            )
+        if conn.execute(
+            "PRAGMA foreign_key_list(commitment_resolution_operations)"
+        ).fetchall():
+            raise CommitmentResolutionSchemaError(
+                "commitment resolution recovery constraints are invalid"
+            )
+
+    def resolution_recovery_readiness(self) -> Dict[str, Any]:
+        """Revalidate and publish the generic durable-recovery contract."""
+
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.execute("BEGIN")
+                self._validate_resolution_recovery_schema(conn)
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+        return {
+            "ready": True,
+            "capability": RESOLUTION_RECOVERY_CAPABILITY,
+            "schema": _RESOLUTION_RECOVERY_SCHEMA,
+            "version": 1,
+        }
+
+    @staticmethod
+    def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+        d = dict(row)
+        if d.get("metadata"):
+            try:
+                d["metadata"] = json.loads(d["metadata"])
+            except (json.JSONDecodeError, TypeError):
+                d["metadata"] = None
+        else:
+            d["metadata"] = None
+        return d
+
+    @staticmethod
+    def _check_expectation(current: sqlite3.Row, expect: Optional[Dict[str, Any]]) -> None:
+        """A writer that acted on a listing must still be looking at that row.
+
+        ``expect`` carries the description and canonical ``due_at`` the writer
+        listed, and optionally ``metadata``: the listed value of each metadata
+        key it names (None for a key the row did not have), each of which
+        must still be the stored one. The row must also still be open.
+        Checked inside the write transaction, so an edit or a resolution that
+        landed in between (the owner correcting a deadline while an
+        extraction was still thinking, a reminder becoming a check-in) is
+        never overwritten by the older reading.
+        """
+        if expect is None:
+            return
+        if (current["status"] not in OPEN_STATUSES
+                or current["description"] != expect.get("description")
+                or current["due_at"] != expect.get("due_at")
+                or not _metadata_still(current["metadata"], expect.get("metadata"))):
+            raise CommitmentConflict("commitment changed since it was listed")
+
+    @staticmethod
+    def _operation_receipt(row: sqlite3.Row) -> Dict[str, Any]:
+        receipt = {
+            "schema": "ColonyMindCommitmentResolutionOperationV1",
+            "version": 1,
+            "operation_id": row["operation_id"],
+            "commitment_id": row["commitment_id"],
+            "outcome": row["outcome"],
+            "note": row["note"],
+            "note_digest": row["note_digest"],
+            "resolved_by": row["resolved_by"],
+            "status": row["status"],
+            "resolved_at": row["resolved_at"],
+            "record_digest": row["record_digest"],
+        }
+        expected = _operation_material(
+            operation_id=receipt["operation_id"],
+            commitment_id=receipt["commitment_id"],
+            outcome=receipt["outcome"],
+            note=receipt["note"],
+            note_digest=receipt["note_digest"],
+            resolved_by=receipt["resolved_by"],
+            status=receipt["status"],
+            resolved_at=receipt["resolved_at"],
+        )
+        if receipt != expected:
+            raise ValueError(
+                "commitment resolution operation integrity check failed"
+            )
+        return receipt
+
+    def get_resolution_operation(
+        self, commitment_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Return the immutable exact-operation proof for one commitment."""
+
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.execute("BEGIN")
+                self._validate_resolution_recovery_schema(conn)
+                row = conn.execute(
+                    """SELECT * FROM commitment_resolution_operations
+                       WHERE commitment_id=?""",
+                    (commitment_id,),
+                ).fetchone()
+                receipt = (
+                    self._operation_receipt(row) if row is not None else None
+                )
+                conn.commit()
+                return receipt
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+
+    # ------------------------------------------------------------------
+    # CRUD
+    # ------------------------------------------------------------------
+
+    def create(
+        self,
+        person_id: str,
+        description: str,
+        due_at: Optional[str] = None,
+        priority: int = 50,
+        source_type: str = "manual",
+        source_context: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        *, dedupe: Union[bool, Callable[[Dict[str, Any]], bool]] = False, allow_overdue: bool = False,
+    ) -> Dict[str, Any]:
+        """Create, optionally reusing the same open obligation under one write lock.
+
+        ``dedupe`` is True for the similar-description predicate, or a predicate
+        over the person's open rows deciding which one is the same obligation.
+
+        ``allow_overdue`` imports an obligation whose deadline has already
+        passed (a promise captured late, after an outage or a backlog): it
+        keeps its original ``due_at`` and starts ``overdue``.
+        """
+        commitment_id = str(uuid.uuid4())
+        now = now_utc().isoformat()
+        status = "pending"
+
+        # Validate due_at is in the future AND normalize it to canonical UTC ISO
+        # (see _parse_due_at: a raw string sorts wrong and a promise is forgotten).
+        if due_at:
+            due_dt, due_at = _parse_due_at(due_at)
+            if due_dt < now_utc():
+                if not allow_overdue:
+                    raise ValueError("due_at must be in the future")
+                status = "overdue"
+
+        meta_json = json.dumps(metadata) if metadata else None
+
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                if dedupe:
+                    existing = self._find_open_duplicate(conn, person_id, description,
+                                                         None if dedupe is True else dedupe)
+                    if existing is not None:
+                        conn.commit()
+                        return {**existing, "deduped": True}
+                conn.execute(
+                    """INSERT INTO commitments
+                       (id, person_id, description, made_at, due_at, status,
+                        source_type, source_context, priority, metadata)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (commitment_id, person_id, description, now, due_at,
+                     status, source_type, source_context, priority, meta_json),
+                )
+                conn.commit()
+                row = conn.execute(
+                    "SELECT * FROM commitments WHERE id = ?", (commitment_id,)
+                ).fetchone()
+                return self._row_to_dict(row)
+            finally:
+                conn.close()
+
+    def get(self, commitment_id: str) -> Optional[Dict[str, Any]]:
+        """Get a single commitment by ID. Returns None if not found."""
+        return self._fenced_read(lambda: self._read_get(commitment_id), empty=None)
+
+    def _read_get(self, commitment_id: str) -> Optional[Dict[str, Any]]:
+        with self._read_lock():
+            conn = self._connect()
+            try:
+                row = conn.execute(
+                    "SELECT * FROM commitments WHERE id = ?", (commitment_id,)
+                ).fetchone()
+                return self._row_to_dict(row) if row and self._visible(row) else None
+            finally:
+                conn.close()
+
+    def _source_path(self):
+        from colonymind import get_state_dir
+        path = self._db_path.parent / 'turn-idempotency.db'
+        if not path.is_file():
+            path = get_state_dir() / 'turn-idempotency.db'
+        return path
+
+    def _fenced_read(self, read, *, empty):
+        from colonymind.memory import curated
+        from types import SimpleNamespace
+        path = self._source_path()
+        return curated.fenced_read(SimpleNamespace(db_path=path) if path.is_file() else None,
+                                   read, empty=empty)
+
+    def _visible(self, row):
+        from colonymind.memory import curated
+        metadata = json.loads(row['metadata'] or '{}')
+        source = metadata.get('source_turn') or metadata.get('source_turn_id')
+        if not source:
+            return True
+        path = self._source_path()
+        if not path.is_file():
+            return True
+        from contextlib import closing
+        with closing(sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)) as conn:
+            conn.row_factory = sqlite3.Row
+            return not curated.is_forgotten(conn, source)
+
+    def list(self, person_id: Optional[str]=None, status: Optional[List[str]]=None, overdue_only: bool=False, limit: int=50, offset: int=0) -> Dict[str, Any]:
+        """List commitments with optional filters.
+
+        Returns dict with commitments, total, limit, offset.
+        """
+        return self._fenced_read(lambda: self._read_list(person_id, status, overdue_only, limit, offset), empty={'commitments': [], 'total': 0, 'limit': limit, 'offset': offset})
+
+    def _read_list(
+        self,
+        person_id: Optional[str] = None,
+        status: Optional[List[str]] = None,
+        overdue_only: bool = False,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        conditions: List[str] = []
+        params: List[Any] = []
+
+        if person_id:
+            conditions.append("person_id = ?")
+            params.append(person_id)
+
+        if overdue_only:
+            conditions.append("status = 'overdue'")
+        elif status:
+            placeholders = ",".join("?" for _ in status)
+            conditions.append(f"status IN ({placeholders})")
+            params.extend(status)
+
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+        with self._read_lock():
+            conn = self._connect()
+            try:
+                total = conn.execute(
+                    f"SELECT COUNT(*) FROM commitments {where}", params
+                ).fetchone()[0]
+
+                rows = conn.execute(
+                    f"SELECT * FROM commitments {where} ORDER BY made_at DESC",
+                    params,
+                ).fetchall()
+
+                rows = [row for row in rows if self._visible(row)]
+                total = len(rows)
+                return {
+                    "commitments": [self._row_to_dict(r) for r in rows[offset:offset + limit]],
+                    "total": total,
+                    "limit": limit,
+                    "offset": offset,
+                }
+            finally:
+                conn.close()
+
+    def update(
+        self,
+        commitment_id: str,
+        status: Optional[str] = None,
+        fulfilled_at: Optional[str] = None,
+        description: Optional[str] = None,
+        due_at: Optional[str] = None,
+        priority: Optional[int] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        *, clear_due_at: bool = False, expect: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Update a commitment. Returns updated record or None if not found.
+
+        ``due_at`` is normalized exactly as ``create`` normalizes it and is
+        not rejected for being past: a deadline pulled into the past is the
+        overdue flip's business on the next tick. ``clear_due_at`` removes the
+        deadline (a hold: the item stays open, nothing is due). A row already
+        flipped ``overdue`` whose deadline moves into the future, or away, is
+        ``pending`` again so the overdue event fires once more at the new
+        time. ``metadata`` is merged over what is stored, so a snooze or a
+        reschedule note never drops a deliverable's content or a resolution.
+        ``expect`` makes the write a compare-and-set against the description,
+        deadline and metadata keys the caller listed (``_check_expectation``): a row that
+        changed since raises ``CommitmentConflict`` and is left alone.
+
+        Validates status transitions:
+          pending → fulfilled, overdue, cancelled
+          overdue → fulfilled, cancelled
+          fulfilled, cancelled → no transitions allowed (terminal)
+        """
+        VALID_TRANSITIONS = {
+            "pending": {"fulfilled", "overdue", "cancelled"},
+            "overdue": {"fulfilled", "cancelled"},
+        }
+        if clear_due_at and due_at:
+            raise ValueError("due_at and clear_due_at are exclusive")
+        due_dt = None
+        if due_at:
+            due_dt, due_at = _parse_due_at(due_at)
+
+        cancelled_siblings = []
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                self._validate_resolution_recovery_schema(conn)
+                current = conn.execute(
+                    "SELECT * FROM commitments WHERE id = ?", (commitment_id,)
+                ).fetchone()
+                if not current:
+                    conn.commit()
+                    return None
+                self._check_expectation(current, expect)
+
+                current_status = current["status"]
+
+                if status and status != current_status:
+                    allowed = VALID_TRANSITIONS.get(current_status, set())
+                    if status not in allowed:
+                        raise ValueError(
+                            f"Cannot transition from '{current_status}' to '{status}'"
+                        )
+
+                    # Auto-fill fulfilled_at when transitioning to fulfilled
+                    if status == "fulfilled" and not fulfilled_at:
+                        fulfilled_at = now_utc().isoformat()
+
+                # Build UPDATE statement
+                updates: List[str] = []
+                params: List[Any] = []
+
+                if status is not None:
+                    updates.append("status = ?")
+                    params.append(status)
+                if fulfilled_at is not None:
+                    updates.append("fulfilled_at = ?")
+                    params.append(fulfilled_at)
+                if description is not None:
+                    updates.append("description = ?")
+                    params.append(description)
+                if due_at or clear_due_at:
+                    updates.append("due_at = ?")
+                    params.append(due_at if due_at else None)
+                    reopened = clear_due_at or due_dt > now_utc()
+                    if status is None and current_status == "overdue" and reopened:
+                        updates.append("status = ?")
+                        params.append("pending")
+                if priority is not None:
+                    updates.append("priority = ?")
+                    params.append(priority)
+                if metadata is not None:
+                    stored = self._row_to_dict(current).get("metadata") or {}
+                    updates.append("metadata = ?")
+                    params.append(json.dumps({**stored, **metadata}))
+
+                if not updates:
+                    conn.commit()
+                    return self._row_to_dict(current)
+
+                params.append(commitment_id)
+                conn.execute(
+                    f"UPDATE commitments SET {', '.join(updates)} WHERE id = ?",
+                    params,
+                )
+                if status == "cancelled" and current_status in OPEN_STATUSES:
+                    cancelled_siblings = self._resolve_owner_cadence_siblings(
+                        conn, self._row_to_dict(current), resolved_at=now_utc().isoformat(), resolved_by="owner")
+                conn.commit()
+
+                row = conn.execute(
+                    "SELECT * FROM commitments WHERE id = ?", (commitment_id,)
+                ).fetchone()
+                result = self._row_to_dict(row)
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+        # Outside the lock: a listener may read the store.
+        self._emit_sibling_cancellations(cancelled_siblings)
+        return result
+
+    def delete(self, commitment_id: str) -> bool:
+        """Delete a commitment. Only allowed for terminal states.
+
+        Returns True if deleted, False if not found or not terminal.
+        """
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                self._validate_resolution_recovery_schema(conn)
+                current = conn.execute(
+                    "SELECT status FROM commitments WHERE id = ?", (commitment_id,)
+                ).fetchone()
+                if not current:
+                    conn.commit()
+                    return False
+                if current["status"] not in ("fulfilled", "cancelled"):
+                    conn.commit()
+                    return False
+                operation = conn.execute(
+                    """SELECT 1 FROM commitment_resolution_operations
+                       WHERE commitment_id=?""",
+                    (commitment_id,),
+                ).fetchone()
+                if operation is not None:
+                    conn.commit()
+                    return False
+                conn.execute(
+                    "DELETE FROM commitments WHERE id = ?", (commitment_id,)
+                )
+                conn.commit()
+                return True
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+
+    # ------------------------------------------------------------------
+    # Query helpers
+    # ------------------------------------------------------------------
+
+    def get_overdue(self) -> List[Dict[str, Any]]:
+        """Get open commitments (pending OR already flipped to overdue) whose
+        due_at has passed. Including 'overdue' matters: the condition worker
+        flips pending→overdue, and a pending-only query would make flipped
+        items invisible to everything that surfaces owed work."""
+        return self._fenced_read(lambda: self._read_get_overdue(), empty=[])
+
+    def _read_get_overdue(self) -> List[Dict[str, Any]]:
+        now = now_utc().isoformat()
+        with self._read_lock():
+            conn = self._connect()
+            try:
+                rows = conn.execute(
+                    """SELECT * FROM commitments
+                       WHERE status IN ('pending', 'overdue')
+                         AND due_at IS NOT NULL AND due_at < ?
+                       ORDER BY due_at ASC""",
+                    (now,),
+                ).fetchall()
+                return [self._row_to_dict(r) for r in rows if self._visible(r)]
+            finally:
+                conn.close()
+
+    def reattribute(self, old_id: str, new_id: str) -> int:
+        """Move a merged contact's items to the contact kept (a merge): the rows owed to or by
+        ``old_id``, and every owner's message addressed to it (``metadata.recipient_id``)."""
+        if not old_id or not new_id or old_id == new_id:
+            return 0
+        with self._lock:
+            conn = self._connect()
+            try:
+                with conn:
+                    moved = conn.execute("UPDATE commitments SET person_id = ? WHERE person_id = ?",
+                                         (new_id, old_id)).rowcount
+                    moved += conn.execute(
+                        "UPDATE commitments SET metadata = json_set(metadata, '$.recipient_id', ?) "
+                        "WHERE json_valid(metadata) AND json_extract(metadata, '$.recipient_id') = ?",
+                        (new_id, old_id)).rowcount
+            finally:
+                conn.close()
+        return int(moved or 0)
+
+    def get_pending_for_person(self, person_id: str) -> List[Dict[str, Any]]:
+        """Get OPEN commitments (pending + overdue) for a specific person.
+        Callers use this as "what is still owed" — an item that went overdue
+        is owed more, not less, so it must stay in this list (it is also the
+        dedup list the introspection extractor sees)."""
+        return self._fenced_read(lambda: self._read_get_pending_for_person(person_id), empty=[])
+
+    def _read_get_pending_for_person(self, person_id: str) -> List[Dict[str, Any]]:
+        with self._lock:
+            conn = self._connect()
+            try:
+                rows = conn.execute(
+                    """SELECT * FROM commitments
+                       WHERE person_id = ? AND status IN ('pending', 'overdue')
+                       ORDER BY priority DESC, due_at ASC""",
+                    (person_id,),
+                ).fetchall()
+                return [self._row_to_dict(r) for r in rows if self._visible(r)]
+            finally:
+                conn.close()
+
+    def get_open_for_counterpart(self, aliases: List[str]) -> List[Dict[str, Any]]:
+        """Open items, anyone's, whose recorded counterpart is one of ``aliases``.
+
+        The extractor records the other party of an obligation as
+        ``metadata.counterpart`` (the contact as the conversation named them);
+        a turn attributed to that contact lists these next to the contact's
+        own items, so the person an item is owed to, or owed by, can move or
+        close it. Names compare in the normalized form used for wording, so
+        ``Sam`` and ``sam.`` are one person. Rows without a counterpart (every
+        row that predates the field) match nobody.
+        """
+        return self._fenced_read(lambda: self._read_get_open_for_counterpart(aliases), empty=[])
+
+    def _read_get_open_for_counterpart(self, aliases: List[str]) -> List[Dict[str, Any]]:
+        wanted = {_normalize_desc(str(alias)) for alias in aliases if str(alias or "").strip()}
+        wanted.discard("")
+        if not wanted:
+            return []
+        with self._lock:
+            conn = self._connect()
+            try:
+                rows = conn.execute(
+                    """SELECT * FROM commitments
+                       WHERE status IN ('pending', 'overdue')
+                         AND json_extract(metadata, '$.counterpart') IS NOT NULL
+                       ORDER BY priority DESC, due_at ASC""",
+                ).fetchall()
+            finally:
+                conn.close()
+        out = []
+        for row in rows:
+            if not self._visible(row):
+                continue
+            item = self._row_to_dict(row)
+            counterpart = (item.get("metadata") or {}).get("counterpart")
+            if isinstance(counterpart, str) and _normalize_desc(counterpart) in wanted:
+                out.append(item)
+        return out
+
+    def _find_open_duplicate(self, conn, person_id, description, same=None):
+        norm = _normalize_desc(description)
+        if not norm and same is None:
+            return None
+        rows = conn.execute(
+            "SELECT * FROM commitments WHERE person_id=? AND status IN (?,?) ORDER BY made_at DESC",
+            (person_id, *OPEN_STATUSES))
+        for row in rows:
+            if not self._visible(row):
+                continue
+            if (same(self._row_to_dict(row)) if same is not None
+                    else _similar_desc(norm, _normalize_desc(row["description"] or ""))):
+                return self._row_to_dict(row)
+        return None
+
+    # ------------------------------------------------------------------
+    # Resolution: settle an item with a reason the system can learn from
+    # ------------------------------------------------------------------
+
+    def _resolve_owner_cadence_siblings(self, conn, current, *, resolved_at, resolved_by):
+        """Cancel the owner/interval group atomically, sparing replacements from the last ten minutes."""
+        from colonymind.identity import get_owner_contact_id
+        from colonymind.mind.drives import owner_cadence
+
+        owner = get_owner_contact_id()
+        cadence = owner_cadence(current, owner_id=owner)
+        if cadence is None or cadence[0] != owner:
+            return []
+        siblings = conn.execute(
+            "SELECT * FROM commitments WHERE person_id=? AND status IN ('pending','overdue') AND id<>? "
+            # CASE, not AND: SQLite may evaluate json_extract on a row json_valid rejects.
+            "AND CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.kind') END = 'cadence' "
+            "AND CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.cadence_minutes') END = ? "
+            "AND julianday(made_at) < julianday(?, '-10 minutes')",
+            (owner, current["id"], cadence[1], resolved_at)).fetchall()
+        cancelled = []
+        for stored in siblings:
+            sibling = self._row_to_dict(stored)
+            other = owner_cadence(sibling, owner_id=owner)
+            if other is None or other[:2] != cadence[:2]:
+                continue
+            meta = dict(sibling.get("metadata") or {})
+            meta["resolution"] = {
+                "outcome": "obsolete", "at": resolved_at, "by": resolved_by,
+                "cancelled_by_commitment_id": current["id"],
+            }
+            conn.execute("UPDATE commitments SET status='cancelled',metadata=? WHERE id=?",
+                         (json.dumps(meta), sibling["id"]))
+            cancelled.append({"commitment_id": sibling["id"], "person_id": sibling["person_id"],
+                              "outcome": "obsolete", "resolved_by": resolved_by,
+                              "cancelled_by_commitment_id": current["id"]})
+        return cancelled
+
+    @staticmethod
+    def _emit_sibling_cancellations(cancelled):
+        """The ``commitment.cancelled`` event the route emits for the row itself, once per cancelled sibling."""
+        for payload in cancelled:
+            try:
+                from colonymind.events.broadcaster import emit
+                emit("commitment.cancelled", payload)
+            except Exception as error:
+                from colonymind.health_counters import bump
+                logger.warning("commitment resolution event failed (%s, %s)", type(error).__name__,
+                               getattr(error, "sqlite_errorname", None))
+                bump("writes_dropped.commitment_resolution_event")
+
+    def resolve(
+        self,
+        commitment_id: str,
+        outcome: str = "done",
+        note: Optional[str] = None,
+        resolved_by: str = "owner",
+        operation_id: Optional[str] = None,
+        expect: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Settle a commitment with an outcome (done | invalid | duplicate |
+        wont_do | obsolete). Legacy calls remain state-idempotent.  A caller
+        supplying ``operation_id`` gets exact idempotency: an existing terminal
+        row is accepted only when its stored operation, outcome, note, resolver,
+        and resulting status all match. ``expect`` is the compare-and-set of
+        ``update``: the row must still be the open row the caller listed, or
+        ``CommitmentConflict`` is raised and nothing is written. Emits the
+        matching commitment.* event on an actual transition."""
+        status = OUTCOME_TO_STATUS.get(outcome)
+        if status is None:
+            raise ValueError(
+                f"unknown outcome '{outcome}' (expected one of "
+                f"{sorted(OUTCOME_TO_STATUS)})")
+        if operation_id is not None and (
+            type(operation_id) is not str
+            or not operation_id
+            or operation_id != operation_id.strip()
+            or len(operation_id) > 192
+        ):
+            raise ValueError("commitment resolution operation_id is invalid")
+        full_note = note or ""
+        note_text = full_note[:300]
+        resolver = str(resolved_by)
+        expected_resolution = {
+            "outcome": outcome,
+            "note": note_text,
+            "note_digest": hashlib.sha256(full_note.encode("utf-8")).hexdigest(),
+            "by": resolver,
+        }
+        if operation_id is not None:
+            expected_resolution["operation_id"] = operation_id
+
+        transitioned = False
+        cancelled_siblings = []
+        row: Optional[Dict[str, Any]] = None
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                self._validate_resolution_recovery_schema(conn)
+                stored = conn.execute(
+                    "SELECT * FROM commitments WHERE id = ?", (commitment_id,)
+                ).fetchone()
+                stored_operation = conn.execute(
+                    """SELECT * FROM commitment_resolution_operations
+                       WHERE commitment_id=?""",
+                    (commitment_id,),
+                ).fetchone()
+                operation = (
+                    self._operation_receipt(stored_operation)
+                    if stored_operation is not None else None
+                )
+                if stored is None:
+                    if operation is not None:
+                        raise CommitmentResolutionConflict(
+                            "operation-bound commitment row is missing"
+                        )
+                    conn.commit()
+                    return None
+                self._check_expectation(stored, expect)
+                current = self._row_to_dict(stored)
+                if current["status"] in ("fulfilled", "cancelled"):
+                    if operation_id is not None:
+                        expected_operation = {
+                            "operation_id": operation_id,
+                            "commitment_id": commitment_id,
+                            "outcome": outcome,
+                            "note": note_text,
+                            "note_digest": expected_resolution["note_digest"],
+                            "resolved_by": resolver,
+                            "status": status,
+                        }
+                        if (
+                            operation is None
+                            or any(
+                                operation.get(name) != value
+                                for name, value in expected_operation.items()
+                            )
+                            or current["status"] != status
+                        ):
+                            raise CommitmentResolutionConflict(
+                                "terminal commitment has a different operation"
+                            )
+                    conn.commit()
+                    return current
+                if current["status"] not in OPEN_STATUSES:
+                    raise CommitmentResolutionConflict(
+                        "commitment is not open or terminal"
+                    )
+                if operation is not None:
+                    raise CommitmentResolutionConflict(
+                        "open commitment already has a resolution operation"
+                    )
+
+                meta = dict(current.get("metadata") or {})
+                resolved_at = now_utc().isoformat()
+                meta["resolution"] = {
+                    **expected_resolution,
+                    "at": resolved_at,
+                }
+                if operation_id is not None:
+                    operation = _operation_material(
+                        operation_id=operation_id,
+                        commitment_id=commitment_id,
+                        outcome=outcome,
+                        note=note_text,
+                        note_digest=expected_resolution["note_digest"],
+                        resolved_by=resolver,
+                        status=status,
+                        resolved_at=resolved_at,
+                    )
+                    conn.execute(
+                        """INSERT INTO commitment_resolution_operations
+                           (operation_id,commitment_id,outcome,note,note_digest,
+                            resolved_by,status,resolved_at,record_digest)
+                           VALUES (?,?,?,?,?,?,?,?,?)""",
+                        (
+                            operation["operation_id"],
+                            operation["commitment_id"], operation["outcome"],
+                            operation["note"], operation["note_digest"],
+                            operation["resolved_by"], operation["status"],
+                            operation["resolved_at"], operation["record_digest"],
+                        ),
+                    )
+                fulfilled_at = (
+                    resolved_at
+                    if status == "fulfilled" else current.get("fulfilled_at")
+                )
+                changed = conn.execute(
+                    """UPDATE commitments
+                       SET status=?,fulfilled_at=?,metadata=?
+                       WHERE id=? AND status=?""",
+                    (
+                        status, fulfilled_at, json.dumps(meta),
+                        commitment_id, current["status"],
+                    ),
+                ).rowcount
+                if changed != 1:
+                    raise CommitmentResolutionConflict(
+                        "commitment changed before resolution was recorded"
+                    )
+                if outcome in {"wont_do", "obsolete"} and current["status"] in OPEN_STATUSES:
+                    cancelled_siblings = self._resolve_owner_cadence_siblings(
+                        conn, current, resolved_at=resolved_at, resolved_by=resolver)
+                conn.commit()
+                stored = conn.execute(
+                    "SELECT * FROM commitments WHERE id = ?", (commitment_id,)
+                ).fetchone()
+                row = self._row_to_dict(stored)
+                transitioned = True
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+
+        if transitioned and row is not None:
+            try:
+                from colonymind.events.broadcaster import emit
+                emit(f"commitment.{status}", {
+                    "commitment_id": row["id"],
+                    "person_id": row["person_id"],
+                    "outcome": outcome,
+                    "resolved_by": resolver,
+                })
+            except Exception as error:
+                from colonymind.health_counters import bump
+                logger.warning("commitment resolution event failed (%s, %s)", type(error).__name__,
+                               getattr(error, "sqlite_errorname", None))
+                bump("writes_dropped.commitment_resolution_event")
+            self._emit_sibling_cancellations(cancelled_siblings)
+        return row
+
+    def resolution_stats(self, days: int=30) -> Dict[str, Any]:
+        """Per-source_type counts of how items created in the window ended up:
+        fulfilled, cancelled (with outcome breakdown), still open. This is the
+        calibration signal for whatever generates items — a source whose items
+        keep getting cancelled as invalid should get more conservative."""
+        return self._fenced_read(lambda: self._read_resolution_stats(days), empty={'days': days, 'by_source': {}})
+
+    def _read_resolution_stats(self, days: int = 30) -> Dict[str, Any]:
+        cutoff = now_utc().timestamp() - days * 86400
+        with self._lock:
+            conn = self._connect()
+            try:
+                rows = conn.execute("SELECT * FROM commitments").fetchall()
+            finally:
+                conn.close()
+        by_source: Dict[str, Dict[str, Any]] = {}
+        for r in rows:
+            if not self._visible(r):
+                continue
+            d = self._row_to_dict(r)
+            try:
+                made = datetime.fromisoformat(d["made_at"]).timestamp()
+            except (ValueError, TypeError):
+                continue
+            if made < cutoff:
+                continue
+            src = d.get("source_type") or "manual"
+            s = by_source.setdefault(src, {
+                "created": 0, "fulfilled": 0, "cancelled": 0,
+                "open": 0, "outcomes": {},
+            })
+            s["created"] += 1
+            status = d.get("status")
+            if status in OPEN_STATUSES:
+                s["open"] += 1
+            elif status in ("fulfilled", "cancelled"):
+                s[status] += 1
+                res = (d.get("metadata") or {}).get("resolution") or {}
+                oc = res.get("outcome") or (
+                    "done" if status == "fulfilled" else "unspecified")
+                s["outcomes"][oc] = s["outcomes"].get(oc, 0) + 1
+        return {"days": days, "by_source": by_source}
+
+    def recent_rejections(self, limit: int=6, source_types: Optional[List[str]]=None) -> List[Dict[str, Any]]:
+        """Most recently cancelled items judged invalid, duplicate or obsolete
+        (dismissed as stale) — the negative examples the extraction side
+        injects into its prompt so the same item is not recorded again."""
+        return self._fenced_read(lambda: self._read_recent_rejections(limit, source_types), empty=[])
+
+    def _read_recent_rejections(
+        self, limit: int = 6,
+        source_types: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        with self._lock:
+            conn = self._connect()
+            try:
+                rows = conn.execute(
+                    """SELECT * FROM commitments WHERE status = 'cancelled'
+                       ORDER BY made_at DESC LIMIT 200""",
+                ).fetchall()
+            finally:
+                conn.close()
+        out: List[Dict[str, Any]] = []
+        for r in rows:
+            if not self._visible(r):
+                continue
+            d = self._row_to_dict(r)
+            if source_types and (d.get("source_type") or "manual") not in source_types:
+                continue
+            res = (d.get("metadata") or {}).get("resolution") or {}
+            if res.get("outcome") not in ("invalid", "duplicate", "obsolete"):
+                continue
+            out.append({
+                "description": d.get("description") or "",
+                "outcome": res.get("outcome"),
+                "note": res.get("note") or "",
+                "at": res.get("at") or "",
+            })
+            if len(out) >= limit:
+                break
+        return out

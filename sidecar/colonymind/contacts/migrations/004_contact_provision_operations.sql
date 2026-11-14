@@ -1,0 +1,4 @@
+-- Owner-verified contact provisioning and its idempotency receipts were retired by the people
+-- milestone (the /contact-policy/provision route went with it). A fresh store creates nothing
+-- here; an upgrade drops the table from an older store after its backup (init.RETIRED_TABLES).
+-- The file stays so version 004 keeps its place.

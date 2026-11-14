@@ -1,0 +1,8 @@
+[Unit]
+Description=Report stuck jobs and broken dependencies
+
+[Service]
+Type=oneshot
+ExecStart=/absolute/path/to/venv/bin/colonymind --instance /absolute/path/to/instance watch --once
+UMask=0077
+TimeoutStartSec=4min

@@ -1,0 +1,475 @@
+"""Metadata receipts for a transport-owned durable inbox, in the communications DB.
+
+No message bodies or attachment bytes belong here. A claimed handoff is deliberately
+not retried: an unbound claim from a prior gateway becomes explicitly uncertain.
+Only an actual canonical turn receipt can settle its processing.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+import sqlite3
+import time
+
+
+def ensure_schema(conn: sqlite3.Connection) -> None:
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS transport_ingress (
+            receipt_id TEXT PRIMARY KEY, producer TEXT NOT NULL,
+            account_id TEXT NOT NULL, epoch TEXT NOT NULL, sequence INTEGER NOT NULL,
+            event_id TEXT NOT NULL, contact_id TEXT, occurred_at REAL NOT NULL,
+            journal_ref TEXT NOT NULL, payload_digest TEXT NOT NULL,
+            media_available INTEGER NOT NULL, metadata_json TEXT NOT NULL,
+            state TEXT NOT NULL DEFAULT 'admitted', batch_id TEXT,
+            native_turn_json TEXT, source_versions_json TEXT,
+            outcome TEXT, created_at REAL NOT NULL, completed_at REAL,
+            UNIQUE(producer,account_id,epoch,sequence));
+        CREATE INDEX IF NOT EXISTS transport_ingress_native
+            ON transport_ingress(native_turn_json,state);
+        CREATE TABLE IF NOT EXISTS transport_ingress_superseded (
+            receipt_id TEXT NOT NULL, native_turn_json TEXT NOT NULL,
+            PRIMARY KEY(receipt_id,native_turn_json));
+        CREATE TABLE IF NOT EXISTS transport_ingress_interrupted (
+            receipt_id TEXT PRIMARY KEY, native_turn_json TEXT NOT NULL,
+            at REAL NOT NULL);
+        CREATE TABLE IF NOT EXISTS transport_ingress_settled (
+            receipt_id TEXT PRIMARY KEY, producer TEXT NOT NULL,
+            native_turn_json TEXT NOT NULL, source_versions_json TEXT NOT NULL,
+            version INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS transport_ingress_coverage (
+            producer TEXT NOT NULL, account_id TEXT NOT NULL, epoch TEXT NOT NULL,
+            connected_since REAL, observed_at REAL NOT NULL, watermark INTEGER NOT NULL,
+            connected INTEGER NOT NULL, unavailable INTEGER NOT NULL,
+            sequence_floor INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY(producer,account_id));
+    ''')
+    columns = {row[1] for row in conn.execute('PRAGMA table_info(transport_ingress_coverage)')}
+    if 'sequence_floor' not in columns:
+        conn.execute('ALTER TABLE transport_ingress_coverage ADD COLUMN sequence_floor INTEGER NOT NULL DEFAULT 0')
+    with conn:
+        conn.execute('BEGIN IMMEDIATE')
+        columns = {row[1] for row in conn.execute('PRAGMA table_info(transport_ingress)')}
+        if 'native_interrupted' in columns:
+            # Earlier deadline-fix builds appended this column. Preserve their
+            # releases while restoring an earlier layout for kept-store rollback.
+            conn.execute('INSERT OR REPLACE INTO transport_ingress_interrupted '
+                         'SELECT receipt_id,native_turn_json,? FROM transport_ingress '
+                         'WHERE native_interrupted=1 AND native_turn_json IS NOT NULL', (time.time(),))
+            conn.execute('ALTER TABLE transport_ingress DROP COLUMN native_interrupted')
+
+
+def _json(value):
+    return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False)
+
+
+def _text(value, name, limit=512):
+    if not isinstance(value, str) or not value or len(value) > limit:
+        raise ValueError('invalid_ingress_' + name)
+    return value
+
+
+def _native(value):
+    if set(value) != {'session_id', 'task_id', 'turn_id'}:
+        raise ValueError('invalid_ingress_native_turn')
+    return _json({key: _text(item, key, 256) for key, item in value.items()})
+
+
+_INGRESS_COLUMNS = ('SELECT transport_ingress.*, EXISTS ('
+                  'SELECT 1 FROM transport_ingress_interrupted AS interrupted '
+                  'WHERE interrupted.receipt_id=transport_ingress.receipt_id '
+                  'AND interrupted.native_turn_json=transport_ingress.native_turn_json) '
+                  'AS native_interrupted, EXISTS ('
+                  'SELECT 1 FROM transport_ingress_settled AS settled '
+                  'WHERE settled.receipt_id=transport_ingress.receipt_id '
+                  'AND settled.producer=transport_ingress.producer '
+                  'AND settled.native_turn_json=transport_ingress.native_turn_json '
+                  'AND settled.source_versions_json=transport_ingress.source_versions_json '
+                  'AND settled.version=1) AS metadata_settled')
+_INGRESS_SELECT = _INGRESS_COLUMNS + ' FROM transport_ingress '
+
+# All retained bindings remain erasable, including a completed turn replaced
+# after interruption. Indexed tombstone lookups share the receipt snapshot.
+_ERASED_SOURCE = '''(SELECT source_id FROM (
+    SELECT json_extract(transport_ingress.native_turn_json, '$.turn_id') AS source_id
+    UNION ALL SELECT key FROM json_each(transport_ingress.source_versions_json)
+    UNION ALL SELECT json_extract(prior.native_turn_json, '$.turn_id')
+        FROM transport_ingress_superseded AS prior
+        WHERE prior.receipt_id=transport_ingress.receipt_id
+) WHERE EXISTS (SELECT 1 FROM ingress_sources.source_erasures AS erased
+                WHERE erased.turn_id=source_id AND erased.contact_id=transport_ingress.contact_id)
+     OR EXISTS (SELECT 1 FROM ingress_sources.source_projection_erasures AS erased
+                WHERE erased.turn_id=source_id)
+LIMIT 1)'''
+
+
+class TransportIngress:
+    """Use the caller's existing CommsLog connection and transaction lifetime."""
+
+    def __init__(self, conn: sqlite3.Connection):
+        self.conn = conn
+        self._erasure_database = None
+
+    def _attach_erasures(self, ledger):
+        """Keep one read-only ledger attachment for fresh tombstones on every poll."""
+        path = Path(ledger.db_path).resolve()
+        stat = path.stat()
+        identity = (str(path), stat.st_dev, stat.st_ino)
+        if identity == self._erasure_database:
+            return
+        if self._erasure_database is not None:
+            self.conn.execute('DETACH DATABASE ingress_sources')
+            self._erasure_database = None
+        self.conn.execute('ATTACH DATABASE ? AS ingress_sources', (path.as_uri() + '?mode=ro',))
+        self._erasure_database = identity
+
+    def mark_settled(self, row):
+        """Only a successfully reconciled, still matching completion is settled."""
+        with self.conn:
+            self.conn.execute('''INSERT OR REPLACE INTO transport_ingress_settled
+                SELECT receipt_id,producer,native_turn_json,source_versions_json,1
+                FROM transport_ingress WHERE receipt_id=? AND producer=?
+                AND native_turn_json=? AND source_versions_json=? AND state='completed' ''',
+                (row['receipt_id'], row['producer'], row['native_turn_json'], row['source_versions_json']))
+
+    def get(self, receipt_id):
+        row = self.conn.execute(_INGRESS_SELECT + 'WHERE receipt_id=?',
+                                (receipt_id,)).fetchone()
+        return dict(row) if row else None
+
+    def for_event(self, *, producer, account_id, epoch, sequence):
+        row = self.conn.execute(_INGRESS_SELECT + 'WHERE producer=? AND account_id=? '
+                                'AND epoch=? AND sequence=?', (producer, account_id, epoch, sequence)).fetchone()
+        return dict(row) if row else None
+
+    def admit(self, *, producer, account_id, epoch, sequence, event_id, contact_id,
+              occurred_at, journal_ref, payload_digest, media_available, metadata=None,
+              now=None):
+        now = time.time() if now is None else float(now)
+        for name, value in [('producer', producer), ('account_id', account_id),
+                            ('epoch', epoch), ('event_id', event_id), ('journal_ref', journal_ref)]:
+            _text(value, name)
+        if (type(sequence) is not int or sequence < 1 or type(media_available) is not bool
+                or not 0 < float(occurred_at) <= now + 1
+                or len(payload_digest) != 64 or any(c not in '0123456789abcdef' for c in payload_digest)):
+            raise ValueError('invalid_ingress_envelope')
+        if contact_id is not None:
+            _text(contact_id, 'contact_id', 128)
+        metadata = dict(metadata or {})
+        if set(metadata) - {'channel', 'sender_ref', 'reply_to_ref', 'from_owner', 'is_group'}:
+            raise ValueError('ingress_metadata_only')
+        if len(_json(metadata)) > 2048:
+            raise ValueError('ingress_metadata_too_large')
+        receipt_id = 'ingress:' + hashlib.sha256(_json([producer, account_id, epoch, sequence]).encode()).hexdigest()
+        fields = dict(producer=producer, account_id=account_id, epoch=epoch, sequence=sequence,
+                      event_id=event_id, contact_id=contact_id, occurred_at=float(occurred_at),
+                      journal_ref=journal_ref, payload_digest=payload_digest,
+                      media_available=int(media_available), metadata_json=_json(metadata))
+        with self.conn:
+            # The event itself is the identity, not the digest of its tuple: a
+            # receipt adopted from a retired producer keeps the id the transport
+            # already journaled, and a re-admit must find it.
+            old = self.for_event(producer=producer, account_id=account_id, epoch=epoch, sequence=sequence)
+            if old:
+                receipt_id = old['receipt_id']
+                if old['state'] == 'erased':
+                    if any(old[key] != fields[key] for key in ('event_id', 'journal_ref', 'payload_digest')):
+                        raise ValueError('ingress_event_conflict')
+                    return self.view(old)
+                # A retained provider event can acquire its missing attachment later.
+                # No claimed turn or identity/timestamp may be rewritten by repair.
+                repair = (old['state'] == 'admitted' and not old['media_available']
+                          and fields['media_available'] == 1
+                          and all(old[key] == val for key, val in fields.items()
+                                  if key not in {'payload_digest', 'media_available'}))
+                if repair:
+                    self.conn.execute('UPDATE transport_ingress SET payload_digest=?,media_available=1 '
+                                      'WHERE receipt_id=?', (payload_digest, receipt_id))
+                    return self.view(self.get(receipt_id))
+                if any(old[key] != val for key, val in fields.items()):
+                    raise ValueError('ingress_event_conflict')
+                return self.view(old)
+            columns = ','.join(fields)
+            self.conn.execute(f'INSERT INTO transport_ingress (receipt_id,{columns},created_at) '
+                              f'VALUES ({",".join("?" for _ in range(len(fields)+2))})',
+                              (receipt_id, *fields.values(), now))
+        return self.view(self.get(receipt_id))
+
+    @staticmethod
+    def view(row):
+        return {key: row[key] for key in ('receipt_id', 'state', 'batch_id', 'journal_ref',
+                                         'media_available', 'source_versions_json', 'outcome')} | {
+                                             'native_bound': row['native_turn_json'] is not None}
+
+    def handoff(self, *, producer, receipt_ids, batch_id, native_turn=None):
+        _text(batch_id, 'batch_id', 128)
+        ids = sorted(set(receipt_ids))
+        if not ids or len(ids) > 100:
+            raise ValueError('invalid_ingress_batch')
+        native = _native(native_turn) if native_turn is not None else None
+        with self.conn:
+            self.conn.execute('BEGIN IMMEDIATE')
+            rows = [self.get(receipt) for receipt in ids]
+            if any(not row or row['producer'] != producer for row in rows):
+                raise ValueError('ingress_receipt_scope_mismatch')
+            # Gateways prefix the stable batch digest with a process UUID. A
+            # different process may flag the old claim, but must never replay it:
+            # gateway command replies can precede (or omit) native binding.
+            process, separator, digest = batch_id.partition(':')
+            if (native is None and separator and len(process) == 32
+                    and all(char in '0123456789abcdef' for char in process)
+                    and all(row['batch_id'] and row['batch_id'] != batch_id
+                            and row['batch_id'].rsplit(':', 1)[-1] == digest for row in rows)):
+                uncertain = []
+                for row in rows:
+                    if row['state'] == 'handed_off' and row['native_turn_json'] is None:
+                        self.conn.execute("UPDATE transport_ingress SET state='uncertain', "
+                                          "outcome='unbound_handoff_after_restart' WHERE receipt_id=?",
+                                          (row['receipt_id'],))
+                        uncertain.append(row['receipt_id'])
+                return {'receipt_ids': ids, 'batch_id': batch_id, 'may_dispatch': False,
+                        'native_bound': all(row['native_turn_json'] is not None for row in rows),
+                        'processing_complete': all(row['state'] == 'completed' for row in rows),
+                        'uncertain_receipt_ids': uncertain}
+            if any((row['state'] not in {'admitted', 'handed_off'}
+                    and not (native and row['state'] == 'completed'
+                             and (row['native_interrupted'] or row['native_turn_json'] == native)))
+                   or not row['media_available'] for row in rows):
+                raise ValueError('ingress_not_ready')
+            if any(row['batch_id'] not in (None, batch_id) for row in rows):
+                raise ValueError('ingress_handoff_conflict')
+            replacing = [row for row in rows if native and row['native_turn_json'] not in (None, native)]
+            for row in replacing:
+                prior = json.loads(row['native_turn_json'])
+                replay = self.conn.execute('SELECT 1 FROM transport_ingress_superseded '
+                    'WHERE receipt_id=? AND native_turn_json=?', (row['receipt_id'], native)).fetchone()
+                if not row['native_interrupted'] or prior['session_id'] != native_turn['session_id'] or replay:
+                    raise ValueError('ingress_native_turn_conflict')
+            may_dispatch = all(row['state'] == 'admitted' for row in rows)
+            if native and may_dispatch:
+                raise ValueError('ingress_handoff_required_before_native_binding')
+            for row in rows:
+                if row in replacing:
+                    self.conn.execute('INSERT INTO transport_ingress_superseded VALUES (?,?)',
+                                      (row['receipt_id'], row['native_turn_json']))
+                    self.conn.execute('DELETE FROM transport_ingress_interrupted WHERE receipt_id=?',
+                                      (row['receipt_id'],))
+                self.conn.execute('UPDATE transport_ingress SET state=?,batch_id=?, '
+                                  'native_turn_json=COALESCE(?,native_turn_json) '
+                                  'WHERE receipt_id=?',
+                                  ('completed' if row['state'] == 'completed' else 'handed_off', batch_id,
+                                   native, row['receipt_id']))
+        return {'receipt_ids': ids, 'batch_id': batch_id, 'may_dispatch': may_dispatch,
+                'native_bound': native is not None, 'processing_complete': all(row['state'] == 'completed' for row in rows)}
+
+    def native_settled(self, *, producer, native_turn, interrupted, host=False):
+        """A trusted host ended this exact turn; allow its same-session successor.
+
+        This releases only the binding. Canonical source capture still owns
+        processing completion, and a late receipt for an old turn cannot settle
+        its replacement. Only the instance host may release an exact tuple
+        bound by another transport producer. Superseded identities stay erasable.
+        """
+        if interrupted is not True:
+            raise ValueError('interrupted_native_turn_required')
+        with self.conn:
+            result = self.conn.execute('INSERT OR REPLACE INTO transport_ingress_interrupted '
+                '(receipt_id,native_turn_json,at) SELECT receipt_id,native_turn_json,? FROM transport_ingress '
+                "WHERE (? OR producer=?) AND native_turn_json=? AND state IN ('handed_off','completed')",
+                (time.time(), host is True, producer, _native(native_turn)))
+        return {'released': result.rowcount, 'processing_complete': False}
+
+    def complete(self, *, native_turn, source_versions, outcome, now=None):
+        """Call only after canonical source admission; not exposed to a model tool."""
+        if not source_versions or outcome not in {'captured', 'interrupted', 'failed'}:
+            raise ValueError('canonical_ingress_completion_required')
+        for key, value in source_versions.items():
+            _text(key, 'source_id'); _text(value, 'source_version')
+        stamp = time.time() if now is None else now
+        rows = self.conn.execute('SELECT * FROM transport_ingress WHERE native_turn_json=?',
+                                 (_json(native_turn),)).fetchall()
+        with self.conn:
+            for row in rows:
+                if row['state'] == 'erased':
+                    continue
+                if row['state'] == 'completed':
+                    if row['source_versions_json'] != _json(source_versions) or row['outcome'] != outcome:
+                        raise ValueError('ingress_completion_conflict')
+                    continue
+                self.conn.execute('UPDATE transport_ingress SET state=?,source_versions_json=?, '
+                                  'outcome=?,completed_at=? WHERE receipt_id=?',
+                                  ('completed', _json(source_versions), outcome, stamp, row['receipt_id']))
+        return [self.view(self.get(row['receipt_id'])) for row in rows]
+
+    def for_canonical_turn(self, *, turn_id, contact_id):
+        """Unique native tuple bound by the transport producer, never a text match."""
+        rows = self.conn.execute(_INGRESS_SELECT + "WHERE contact_id=? "
+                                 "AND native_turn_json IS NOT NULL AND state!='erased'", (contact_id,)).fetchall()
+        rows = [row for row in rows if json.loads(row['native_turn_json']).get('turn_id') == turn_id]
+        tuples = {row['native_turn_json'] for row in rows}
+        return ([dict(row) for row in rows] if len(tuples) == 1 else [])
+
+    def receipts(self, *, producer, receipt_ids):
+        return [self.view(row) for row in self.receipt_rows(producer=producer, receipt_ids=receipt_ids)]
+
+    def receipt_rows(self, *, producer, receipt_ids, ledger=None):
+        """Validate the whole page before the caller performs any settlement."""
+        if len(receipt_ids) > 100:
+            raise ValueError('invalid_ingress_batch')
+        columns = _INGRESS_COLUMNS
+        if ledger is not None:
+            self._attach_erasures(ledger)
+            columns += ", CASE WHEN state!='erased' THEN " + _ERASED_SOURCE + ' END AS erased_source_id'
+        found = self.conn.execute(columns + ' FROM transport_ingress WHERE receipt_id IN ('
+                                  + ','.join('?' for _ in receipt_ids) + ')', receipt_ids).fetchall()
+        by_id = {row['receipt_id']: dict(row) for row in found}
+        rows = [by_id.get(receipt) for receipt in receipt_ids]
+        if any(not row or row['producer'] != producer for row in rows):
+            raise ValueError('ingress_receipt_scope_mismatch')
+        return rows
+
+    def erase_sources(self, source_ids):
+        """Return locators root must erase at the sole payload owner, idempotently."""
+        wanted = set(source_ids)
+        superseded = {row['receipt_id'] for row in self.conn.execute('SELECT * FROM transport_ingress_superseded')
+                      if json.loads(row['native_turn_json'])['turn_id'] in wanted}
+        rows = self.conn.execute('SELECT * FROM transport_ingress WHERE source_versions_json IS NOT NULL '
+                                 'OR native_turn_json IS NOT NULL').fetchall()
+        selected = [row for row in rows if wanted.intersection(json.loads(row['source_versions_json'] or '{}'))
+                    or json.loads(row['native_turn_json'] or '{}').get('turn_id') in wanted
+                    or row['receipt_id'] in superseded]
+        with self.conn:
+            for row in selected:
+                self.conn.execute("UPDATE transport_ingress SET state='erased',metadata_json='{}',"
+                                  "contact_id=NULL WHERE receipt_id=?", (row['receipt_id'],))
+        return [{'receipt_id': row['receipt_id'], 'journal_ref': row['journal_ref']} for row in selected]
+
+    def observe_coverage(self, *, producer, account_id, epoch, connected_since, observed_at,
+                         watermark, connected, unavailable, sequence_floor=0, now=None):
+        stamp = time.time() if now is None else float(now)
+        if (type(watermark) is not int or watermark < 0 or type(connected) is not bool
+                or type(sequence_floor) is not int or not 0 <= sequence_floor <= watermark
+                or type(unavailable) is not int or unavailable < 0
+                or not 0 < float(observed_at) <= stamp + 1
+                or (connected and (connected_since is None or not 0 < connected_since <= observed_at))):
+            raise ValueError('invalid_ingress_coverage')
+        old = self.conn.execute('SELECT * FROM transport_ingress_coverage WHERE producer=? AND account_id=?',
+                                (producer, account_id)).fetchone()
+        if old and (observed_at < old['observed_at'] or (epoch == old['epoch'] and watermark < old['watermark'])):
+            raise ValueError('ingress_coverage_regression')
+        with self.conn:
+            self.conn.execute('INSERT OR REPLACE INTO transport_ingress_coverage VALUES (?,?,?,?,?,?,?,?,?)',
+                              (producer, account_id, epoch, connected_since, observed_at,
+                               watermark, int(connected), unavailable, sequence_floor))
+
+    def coverage(self, *, producer, account_id, contact_id, since, now=None, max_age=5,
+                 until=None, observation=None):
+        """Read current coverage or recheck a retained internal observation.
+
+        A fixed horizon excludes later activity from that earlier interval.
+        Rechecking a stored observation still queries current intake/erasure
+        records; it never treats a retained coverage hash as timeless proof.
+        """
+        now = time.time() if now is None else now
+        row = observation if observation is not None else self.conn.execute(
+            'SELECT * FROM transport_ingress_coverage WHERE producer=? AND account_id=?',
+            (producer, account_id)).fetchone()
+        if observation is not None and (row['producer'] != producer or row['account_id'] != account_id):
+            raise ValueError('coverage_observation_scope_mismatch')
+        if until is not None and not since <= until <= now:
+            raise ValueError('invalid_coverage_interval')
+        reasons = []
+        if not row or not row['connected'] or row['connected_since'] is None or row['connected_since'] > since:
+            reasons.append('connection_interval_unknown')
+        if not row or now - row['observed_at'] > max_age:
+            reasons.append('intake_observation_stale')
+        if row:
+            admitted = self.conn.execute('SELECT COUNT(*) FROM transport_ingress WHERE producer=? '
+                'AND account_id=? AND epoch=? AND sequence>? AND sequence<=?',
+                (producer, account_id, row['epoch'], row['sequence_floor'], row['watermark'])).fetchone()[0]
+            if admitted != row['watermark'] - row['sequence_floor'] or row['unavailable']:
+                reasons.append('intake_gap')
+        activity = self.conn.execute('SELECT receipt_id,state,metadata_json FROM transport_ingress '
+            'WHERE producer=? AND account_id=? AND occurred_at>=? AND '
+            '(contact_id=? OR contact_id IS NULL)'+(' AND occurred_at<=?' if until is not None else ''),
+            (producer, account_id, since, contact_id, *([until] if until is not None else []))).fetchall()
+        activity = [item for item in activity if not json.loads(item['metadata_json']).get('from_owner')]
+        if activity:
+            reasons.append('recipient_activity_requires_review')
+        return {'observed': not reasons, 'reasons': reasons, 'observed_through': row['observed_at'] if row else None,
+                'watermark': row['watermark'] if row else None, 'activity_receipts': [r['receipt_id'] for r in activity],
+                'effect_authorized': False}
+
+
+def _has_table(conn: sqlite3.Connection, name: str) -> bool:
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
+
+
+def retired_producer_rows(conn: sqlite3.Connection, producer: str) -> dict:
+    """What ``adopt_retired_producers`` would change: receipts and coverage rows
+    stamped by any producer other than *producer*, minus the receipts whose event
+    already exists under *producer* (those are kept as they are)."""
+    result = {'receipts': 0, 'coverage': 0, 'producers': []}
+    if not _has_table(conn, 'transport_ingress'):
+        return result
+    adoptable = conn.execute(
+        'SELECT producer FROM transport_ingress AS r WHERE r.producer!=? AND NOT EXISTS ('
+        'SELECT 1 FROM transport_ingress AS t WHERE t.producer=? AND t.account_id=r.account_id '
+        'AND t.epoch=r.epoch AND t.sequence=r.sequence)', (producer, producer)).fetchall()
+    result['receipts'] = len(adoptable)
+    producers = {row[0] for row in adoptable}
+    if _has_table(conn, 'transport_ingress_coverage'):
+        result['coverage'] = conn.execute('SELECT COUNT(*) FROM transport_ingress_coverage WHERE producer!=?',
+                                          (producer,)).fetchone()[0]
+        producers.update(row[0] for row in conn.execute(
+            'SELECT DISTINCT producer FROM transport_ingress_coverage WHERE producer!=?', (producer,)))
+    result['producers'] = sorted(producers)
+    return result
+
+
+def adopt_retired_producers(conn: sqlite3.Connection, producer: str) -> dict:
+    """Re-scope every receipt and coverage row of a retired producer to *producer*.
+
+    The instance authenticates one credential, so every row stamped by another
+    producer was written by a principal that can no longer present itself; the
+    transport that journaled those receipts now presents the instance key and
+    must still read, hand off and settle them. Receipt ids are kept (the
+    transport holds them). Rows of every state move together, because a coverage
+    observation counts the receipts of its epoch window whatever their state.
+    A receipt whose event already exists under *producer* is kept as it is.
+    Coverage is one row per (producer, account): the newest observation wins.
+    Idempotent: a second call finds nothing to adopt.
+    """
+    result = {'receipts': 0, 'coverage': 0, 'kept': 0, 'producers': []}
+    if not _has_table(conn, 'transport_ingress'):
+        return result
+    producers = set()
+    with conn:
+        rows = conn.execute('SELECT receipt_id, producer, account_id, epoch, sequence FROM transport_ingress '
+                            'WHERE producer!=? ORDER BY created_at, receipt_id', (producer,)).fetchall()
+        for row in rows:
+            producers.add(row['producer'])
+            taken = conn.execute('SELECT 1 FROM transport_ingress WHERE producer=? AND account_id=? AND epoch=? '
+                                 'AND sequence=?', (producer, row['account_id'], row['epoch'], row['sequence'])).fetchone()
+            if taken:
+                result['kept'] += 1
+                continue
+            conn.execute('UPDATE transport_ingress SET producer=? WHERE receipt_id=?', (producer, row['receipt_id']))
+            result['receipts'] += 1
+        if _has_table(conn, 'transport_ingress_coverage'):
+            accounts = [row[0] for row in conn.execute(
+                'SELECT DISTINCT account_id FROM transport_ingress_coverage WHERE producer!=?', (producer,))]
+            for account_id in accounts:
+                candidates = conn.execute(
+                    'SELECT * FROM transport_ingress_coverage WHERE account_id=? '
+                    'ORDER BY observed_at DESC, watermark DESC, (producer=?) DESC', (account_id, producer)).fetchall()
+                producers.update(row['producer'] for row in candidates if row['producer'] != producer)
+                winner = candidates[0]
+                conn.execute('DELETE FROM transport_ingress_coverage WHERE account_id=? AND producer!=?',
+                             (account_id, winner['producer']))
+                if winner['producer'] != producer:
+                    conn.execute('UPDATE transport_ingress_coverage SET producer=? WHERE account_id=? AND producer=?',
+                                 (producer, account_id, winner['producer']))
+                result['coverage'] += 1
+    result['producers'] = sorted(producers)
+    return result

@@ -1,0 +1,90 @@
+"""Native cron remains authoritative; shared reads neither recover nor grant."""
+from datetime import datetime, timezone
+import hashlib
+import json
+import sqlite3
+from types import SimpleNamespace
+
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
+import pytest
+
+from onekey import RequestAuthority
+from colonymind.api.routers import executions, host
+from colonymind.turns.hermes_work import cron_view
+
+
+@pytest.fixture
+def native(tmp_path, monkeypatch):
+    state, home = tmp_path/'state', tmp_path/'profile'
+    state.mkdir()
+    (home/'cron').mkdir(parents=True)
+    monkeypatch.setenv('COLONYMIND_STATE_DIR', str(state))
+    monkeypatch.setenv('HERMES_HOME', str(home))
+    path = home/'cron'/'executions.db'
+    with sqlite3.connect(path) as conn:
+        conn.execute('CREATE TABLE executions(id TEXT PRIMARY KEY, job_id TEXT, source TEXT, status TEXT, claimed_at TEXT, started_at TEXT, finished_at TEXT, error TEXT)')
+        for name, status in [('one','running'), ('two','claimed'), ('three','completed'), ('four','unknown')]:
+            conn.execute('INSERT INTO executions VALUES(?,?,?,?,?,?,?,?)', (name, 'job-'+name, 'builtin', status,
+                '2026-09-06T12:00:00+00:00', '2026-09-06T12:01:00+00:00',
+                '2026-09-06T12:02:00+00:00' if status in {'completed','unknown'} else None, 'private error text'))
+    (home/'cron'/'jobs.json').write_text(json.dumps({'jobs': [{'id':'job-one', 'name':'Neutral local check',
+        'prompt':'private prompt text', 'script':'private script path'}]}))
+    return state, home, path
+
+
+def test_one_bound_native_snapshot_preserves_state_and_ids_without_private_payload(native, monkeypatch):
+    state, home, path = native
+    before = path.read_bytes()
+    now = datetime(2026,9,6,12,3,tzinfo=timezone.utc).timestamp()
+    view = cron_view(limit=1, now=now)
+    assert view['available'] and view['complete'] is False
+    assert view['source_home_id'] == hashlib.sha256(str(home).encode()).hexdigest()
+    assert view['total'] == 2 and view['truncated']
+    assert view['items'][0]['execution_id'] == 'two'
+    assert view['items'][0]['liveness'] == 'unknown'
+    assert view['items'][0]['record_age_seconds'] == 120
+    assert view['recent'][0]['status'] == 'completed'
+    assert 'private' not in json.dumps(view)
+    complete = cron_view(limit=8, now=now)
+    assert next(row for row in complete['items'] if row['execution_id']=='one')['name'] == 'Neutral local check'
+    assert {row['status'] for row in complete['recent']} == {'unknown','completed'}
+    assert before == path.read_bytes()
+    # A different explicitly selected profile never sees the first ledger.
+    monkeypatch.setenv('HERMES_HOME', str(home.parent/'other'))
+    assert cron_view()['reason'] == 'native_ledger_absent'
+    assert not (home.parent/'other').exists()
+    monkeypatch.delenv('HERMES_HOME')
+    assert cron_view()['reason'] == 'profile_not_bound'
+    from colonymind.config import DEFAULTS, save_config
+    save_config({**DEFAULTS, 'hermes': {'home': str(home), 'python': ''}}, state)
+    assert cron_view(now=now)['total'] == 2
+    monkeypatch.setenv('HERMES_HOME', str(home.parent/'other'))
+    assert cron_view()['reason'] == 'invalid_profile_binding'
+
+
+def test_unavailable_schema_does_not_claim_no_work(native):
+    _, _, path = native
+    with sqlite3.connect(path) as conn:
+        conn.execute('DROP TABLE executions')
+    view = cron_view()
+    assert view['available'] is False and view['reason'] == 'native_ledger_unavailable'
+    assert view['complete'] is False and 'total' not in view
+
+
+def test_request_projection_keeps_bounded_cron_name_with_exact_native_identity(native):
+    from colonymind.turns.executions import request_work_context
+    _, _, path = native
+    before = path.read_bytes()
+    now = datetime(2026, 9, 6, 12, 3, tzinfo=timezone.utc).timestamp()
+    view = cron_view(now=now)
+    request = request_work_context({'items': [], 'native_cron': view})
+    rows = [json.loads(line) for line in request['text'].splitlines() if line.startswith('{')]
+    named = next(row for row in rows if row.get('job_id') == 'job-one')
+    assert named['name'] == 'Neutral local check'
+    assert named['source'] == 'native_cron' and named['execution_id'] == 'one'
+    assert named['status'] == 'running' and named['liveness'] == 'unknown'
+    assert all('name' not in row for row in rows if row.get('job_id') != 'job-one')
+    assert 'private' not in request['text'] and before == path.read_bytes()
+
+

@@ -1,0 +1,74 @@
+"""Actual reflection jobs use one task selection for dispatch and their budgets."""
+import asyncio
+import json
+
+import pytest
+
+from test_function_routing import config, endpoint, router
+from test_source_appraisals import Processor, state, source as appraisal_source
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('task', ['source_appraisal', 'source_appraisal_revision'])
+@pytest.mark.parametrize('override', [False, True])
+async def test_reflection_task_override_drives_actual_operator_budget_and_dispatch(
+    state, monkeypatch, task, override,
+):
+    # The opinion pass (task self_judgment) is covered with the pass itself.
+    worker, table = state, 'appraisal_runs'
+    if task == 'source_appraisal_revision':
+        appraisal_source(worker, 'prior', 'The export stalled at the validation step.')
+        await worker.process_one(Processor())
+    appraisal_source(worker, 'incident', 'The export failed again after the same retry.')
+    default, alternate = (('reasoning', 'extraction') if task.endswith('_revision')
+                          else ('extraction', 'reasoning'))
+    previous = worker._prepare({'turn_id': 'incident'})[1]['incident_ids']
+    answer = {'observations': [], 'incident_decisions': [
+        {'record_id': identifier, 'outcome': 'uncertain'} for identifier in previous]}
+    selected_role = alternate if override else default
+    expected_deadline = 19 if selected_role == 'reasoning' else 7
+    expected_model = 'strong-neutral' if selected_role == 'reasoning' else 'fast-neutral'
+    observed_leases, observed_timeouts = [], []
+    wait_for = asyncio.wait_for
+
+    async def observed_wait_for(awaitable, timeout):
+        observed_timeouts.append(timeout)
+        return await wait_for(awaitable, timeout)
+
+    def respond(payload):
+        with worker.ledger._connect() as db:
+            row = db.execute(f'SELECT * FROM {table} WHERE turn_id=?', ('incident',)).fetchone()
+        # Appraisal jobs hold a plain claim status; judgment jobs still carry a lease.
+        observed_leases.append((row['status'], row['lease_until'] - worker.clock())
+                               if table == 'self_judgment_runs' else (row['status'],))
+        return json.dumps(answer)
+
+    monkeypatch.setattr(asyncio, 'wait_for', observed_wait_for)
+    with endpoint(content=respond) as (url, requests):
+        cfg = config(url, url)
+        cfg['functionRoles']['extraction'] = {
+            'candidates': ['interactive'], 'timeoutSeconds': 5, 'deadlineSeconds': 7,
+        }
+        cfg['functionRoles']['reasoning'] = {
+            'candidates': ['deliberate'], 'timeoutSeconds': 11, 'deadlineSeconds': 19,
+        }
+        if override:
+            cfg['taskRoles'] = {task: alternate}
+        selected = router(cfg)
+        assert await worker.process_one(selected)
+        assert len(requests) == 1
+        assert requests[0]['payload']['model'] == expected_model
+        assert observed_timeouts[0] == expected_deadline + 5
+        assert observed_leases == ([('running', expected_deadline + 35)] if table == 'self_judgment_runs'
+                                   else [('running',)])
+        with worker.ledger._connect() as db:
+            row = db.execute(f'SELECT status,attempts,disposition FROM {table} WHERE turn_id=?', ('incident',)).fetchone()
+        assert dict(row) == {'status': 'complete', 'attempts': 1, 'disposition': 'abstained'}
+        call = selected.routing_status()['recent_calls'][-1]
+        assert call['function_role'] == selected_role
+        assert call['model_id'] == 'openai/' + expected_model
+        assert selected.function_deadline_seconds(context={'task': task}) == expected_deadline
+        # The deployment task override does not move unrelated extraction.
+        for other in ('tom_affect_extraction', 'source_claim_extraction'):
+            assert selected.function_deadline_seconds(context={'task': other}) == 7
+            assert selected.function_config(context={'task': other}).model_id == 'openai/fast-neutral'

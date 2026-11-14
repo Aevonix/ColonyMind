@@ -1,0 +1,574 @@
+"""ColonyMind Integration Test Suite
+
+Comprehensive end-to-end tests against a fully wired, running ColonyMind sidecar.
+Designed to run after `colonymind init` to verify all systems, and periodically
+as a health check.
+
+Usage:
+    # After colonymind init + colonymind start
+    pytest tests/integration/ -v
+
+    # Against a specific host
+    COLONYMIND_URL=http://node-a:7777 COLONYMIND_API_KEY=xxx pytest tests/integration/ -v
+
+    # Quick smoke test (subset)
+    pytest tests/integration/ -v -m smoke
+
+    # Periodic health check
+    pytest tests/integration/ -v -m health
+
+This historical suite includes mutations. Use an isolated qualification deployment.
+Memory checks are read-only and require a scoped credential plus
+COLONYMIND_TEST_PERSON_ID; useful recall and source persistence are covered by
+../test_canonical_memory_search.py and the canonical source suites.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import time
+import uuid
+from typing import Any, Optional
+
+import httpx
+import pytest
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+BASE_URL = os.environ.get("COLONYMIND_URL", "http://localhost:7777")
+API_KEY = os.environ.get("COLONYMIND_API_KEY", "")
+HEADERS = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
+TIMEOUT = 30.0
+
+
+# ---------------------------------------------------------------------------
+# Client fixture
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def base_url():
+    return BASE_URL
+
+
+@pytest.fixture(scope="session")
+def api_key():
+    return API_KEY
+
+
+@pytest.fixture(scope="session")
+def client():
+    """Shared HTTP client for the entire test session."""
+    with httpx.Client(base_url=BASE_URL, headers=HEADERS, timeout=TIMEOUT) as c:
+        yield c
+
+
+@pytest.fixture(scope="session")
+def async_client():
+    """Shared async HTTP client for the entire test session."""
+    async def _make():
+        async with httpx.AsyncClient(base_url=BASE_URL, headers=HEADERS, timeout=TIMEOUT) as c:
+            return c
+    # httpx async needs event loop; use sync client for simplicity
+    # but provide for tests that need concurrent requests
+    return None
+
+
+def _post(client, path, data, expect_status=200):
+    """Helper: POST JSON and assert status."""
+    resp = client.post(f"/v1/host{path}", json=data)
+    assert resp.status_code == expect_status, f"POST {path} returned {resp.status_code}: {resp.text[:200]}"
+    return resp.json()
+
+
+def _memory_search_payload(query):
+    person = os.environ.get('COLONYMIND_TEST_PERSON_ID', '').strip()
+    assert person, "Set COLONYMIND_TEST_PERSON_ID to this credential's exact participant"
+    return {'identity': {'host_id': 'integration'}, 'person_id': person,
+            'session_id': 'memory-integration', 'query': query, 'limit': 5}
+
+
+def _get(client, path, expect_status=200):
+    """Helper: GET and assert status."""
+    resp = client.get(f"/v1/host{path}")
+    assert resp.status_code == expect_status, f"GET {path} returned {resp.status_code}: {resp.text[:200]}"
+    return resp.json()
+
+
+# ===========================================================================
+# 1. INFRASTRUCTURE
+# ===========================================================================
+
+
+class TestHealth:
+    """Core health and connectivity checks."""
+
+    def test_health_endpoint(self, client):
+        """Sidecar health returns ok with capabilities list."""
+        data = _get(client, "/health")
+        assert data["status"] == "ok"
+        assert "capabilities" in data
+        assert len(data["capabilities"]) >= 20
+
+    def test_capabilities_count(self, client):
+        """The expected capabilities are wired."""
+        data = _get(client, "/health")
+        caps = set(data["capabilities"])
+        expected = {
+            "memory", "embed",
+            "contacts", "delivery",
+            "secrets", "autonomy",
+        }
+        missing = expected - caps
+        assert not missing, f"Missing capabilities: {missing}"
+
+    def test_openapi_spec(self, client):
+        """OpenAPI spec is valid and complete."""
+        resp = client.get("/openapi.json")
+        assert resp.status_code == 200
+        spec = resp.json()
+        assert "paths" in spec
+        assert len(spec["paths"]) >= 25
+
+
+class TestAuthentication:
+    """API key enforcement."""
+
+    def test_no_auth_rejected(self):
+        """Requests without API key are rejected."""
+        with httpx.Client(base_url=BASE_URL, timeout=10) as c:
+            resp = c.post("/v1/host/memory/search", json={
+                "identity": {"host_id": "test"},
+                "person_id": "c1", "session_id": "s1",
+                "query": "test",
+            })
+            if API_KEY:  # only test if auth is configured
+                assert resp.status_code == 401
+
+    def test_wrong_key_rejected(self):
+        """Requests with wrong API key are rejected."""
+        with httpx.Client(base_url=BASE_URL, headers={"Authorization": "Bearer wrong-key"}, timeout=10) as c:
+            resp = c.post("/v1/host/memory/search", json={
+                "identity": {"host_id": "test"},
+                "person_id": "c1", "session_id": "s1",
+                "query": "test",
+            })
+            if API_KEY:
+                assert resp.status_code == 401
+
+    def test_health_no_auth(self):
+        """Health endpoint does not require auth."""
+        with httpx.Client(base_url=BASE_URL, timeout=10) as c:
+            resp = c.get("/v1/host/health")
+            assert resp.status_code == 200
+
+    def test_valid_auth_accepted(self, client):
+        """Valid API key returns data."""
+        data = _get(client, "/commitments")
+        assert "commitments" in data
+
+
+class TestErrorHandling:
+    """Proper error responses for malformed input."""
+
+    def test_malformed_json(self, client):
+        """Malformed JSON returns 422."""
+        resp = client.post("/v1/host/memory/search",
+                           content="{invalid json",
+                           headers={"Content-Type": "application/json"})
+        assert resp.status_code == 422
+
+    def test_missing_required_fields(self, client):
+        """Missing required fields returns 422."""
+        resp = client.post("/v1/host/memory/search", json={"identity": {"host_id": "test"}})
+        assert resp.status_code == 422
+
+    def test_nonexistent_endpoint(self, client):
+        """Nonexistent endpoint returns 404."""
+        resp = client.get("/v1/host/does-not-exist")
+        assert resp.status_code == 404
+
+    def test_nonexistent_commitment(self, client):
+        """Getting a nonexistent commitment returns 404."""
+        resp = client.get(f"/v1/host/commitments/{uuid.uuid4()}")
+        assert resp.status_code == 404
+
+
+# ===========================================================================
+# 2. MEMORY SUBSYSTEM
+# ===========================================================================
+
+
+class TestMemory:
+    """Read the scoped canonical surface without creating health-check memories."""
+
+    def test_search_response_contract(self, client):
+        data = _post(client, '/memory/search', _memory_search_payload('memory'))
+        assert isinstance(data['content'], str) and 0 <= data['count'] <= 5
+        assert data['watermark'] >= 0
+        assert isinstance(data['source_refs'], list)
+        assert data['retrieval']['semantic'] in {'ready', 'failed', 'unavailable'}
+
+    def test_canonical_projection_status(self, client):
+        scope = _memory_search_payload('memory')
+        response = client.get('/v1/host/memory/sources/claims/status',
+                              params={'contact_id':scope['person_id']})
+        assert response.status_code == 200, response.text
+        assert set(response.json()) == {'sources', 'media', 'semantic'}
+
+
+class TestEmbedding:
+    """Embedding pipeline health and functionality."""
+
+    def test_embed_health(self, client):
+        """Embedding pipeline reports healthy."""
+        data = _get(client, "/embed/health")
+        assert data.get("status") == "ok"
+        assert data.get("dims", 0) > 0
+        assert data.get("latency_ms", 0) > 0
+
+    def test_embed_dimensions(self, client):
+        """Embedding dimensions match configuration."""
+        data = _get(client, "/embed/health")
+        dims = data.get("dims", 0)
+        assert dims in (384, 768, 1024, 2048, 4096), f"Unexpected dims: {dims}"
+
+    def test_embed_text(self, client):
+        """Text embedding returns vectors with correct dimensions."""
+        data = _post(client, "/memory/embed", {
+            "identity": {"host_id": "test"},
+            "context": {"session_id": "s1", "contact_id": "c1"},
+            "inputs": ["Hello world", "Testing embeddings"],
+        })
+        vectors = data.get("vectors", data.get("embeddings", []))
+        assert len(vectors) == 2, f"Expected 2 vectors, got {len(vectors)}"
+        health = _get(client, "/embed/health")
+        expected_dims = health.get("dims", 384)
+        assert len(vectors[0]) == expected_dims, \
+            f"Vector dims {len(vectors[0])} != expected {expected_dims}"
+
+
+# ===========================================================================
+# 6. SECRETS VAULT
+# ===========================================================================
+
+
+class TestSecrets:
+    """Secrets CRUD lifecycle."""
+
+    def test_secrets_crud(self, client):
+        """Full CRUD: set → get → list → delete → verify gone."""
+        key = f"test_key_{uuid.uuid4().hex[:6]}"
+        value = "super_secret_value_123"
+
+        # Set
+        data = _post(client, "/secrets/set", {
+            "identity": {"host_id": "test"},
+            "key": key,
+            "value": value,
+        })
+        assert data.get("stored") is True
+
+        # Get
+        data = _post(client, "/secrets/get", {
+            "identity": {"host_id": "test"},
+            "key": key,
+        })
+        assert data.get("exists") is True
+        assert data.get("value") == value
+
+        # List
+        data = _post(client, "/secrets/list", {
+            "identity": {"host_id": "test"},
+        })
+        assert key in data.get("keys", [])
+
+        # Delete
+        data = _post(client, "/secrets/delete", {
+            "identity": {"host_id": "test"},
+            "key": key,
+        })
+        assert data.get("deleted") is True
+
+        # Verify gone
+        data = _post(client, "/secrets/get", {
+            "identity": {"host_id": "test"},
+            "key": key,
+        })
+        assert data.get("exists") is False
+
+    def test_secrets_prefix_filter(self, client):
+        """List with prefix filters keys correctly."""
+        prefix = f"pfx_{uuid.uuid4().hex[:4]}_"
+        for i in range(3):
+            _post(client, "/secrets/set", {
+                "identity": {"host_id": "test"},
+                "key": f"{prefix}{i}",
+                "value": f"val{i}",
+            })
+        _post(client, "/secrets/set", {
+            "identity": {"host_id": "test"},
+            "key": f"other_{uuid.uuid4().hex[:4]}",
+            "value": "other",
+        })
+        data = _post(client, "/secrets/list", {
+            "identity": {"host_id": "test"},
+            "prefix": prefix,
+        })
+        keys = data.get("keys", [])
+        assert all(k.startswith(prefix) for k in keys), f"Non-matching keys: {keys}"
+        # Cleanup
+        for k in keys:
+            _post(client, "/secrets/delete", {"identity": {"host_id": "test"}, "key": k})
+
+
+# ===========================================================================
+# 7. CONTACTS
+# ===========================================================================
+
+
+class TestContacts:
+    """Contact store and relationship management."""
+
+    def test_list_contacts(self, client):
+        """List contacts returns a list (may be empty)."""
+        data = _get(client, "/contacts")
+        assert "contacts" in data
+        assert isinstance(data["contacts"], list)
+
+    def test_contact_not_found(self, client):
+        """Getting nonexistent contact returns 404."""
+        resp = client.get(f"/v1/host/contacts/{uuid.uuid4()}")
+        assert resp.status_code == 404
+
+
+# ===========================================================================
+# 9. CONTEXT ASSEMBLY
+# ===========================================================================
+
+
+class TestContextAssembly:
+    """Multi-subsystem context aggregation."""
+
+    def test_assemble_returns_sections(self, client):
+        """Context assembly returns multiple sections."""
+        data = _post(client, "/context/assemble", {
+            "identity": {"host_id": "test"},
+            "context": {"session_id": "s1", "contact_id": "c1"},
+            "incoming_message": {"content": "ColonyMind project", "role": "user"},
+            "limit": 10,
+        })
+        sections = data.get("sections", [])
+        assert isinstance(sections, list)
+        assert len(sections) > 0, "Context assembly returned no sections"
+
+    def test_assemble_sections_have_ids(self, client):
+        """Each section has an id, title, body, and priority."""
+        data = _post(client, "/context/assemble", {
+            "identity": {"host_id": "test"},
+            "context": {"session_id": "s1", "contact_id": "c1"},
+            "incoming_message": {"content": "ColonyMind", "role": "user"},
+            "limit": 10,
+        })
+        for section in data.get("sections", []):
+            assert "id" in section, f"Section missing id: {section}"
+            assert "title" in section, f"Section missing title: {section}"
+            assert "body" in section, f"Section missing body: {section}"
+            assert "priority" in section, f"Section missing priority: {section}"
+
+    def test_assemble_does_not_advertise_internal_executor_skills(self, client):
+        """The host's installed skill catalog is separate from sidecar executors."""
+        data = _post(client, "/context/assemble", {
+            "identity": {"host_id": "test"},
+            "context": {"session_id": "s1", "contact_id": "c1"},
+            "incoming_message": {"content": "test", "role": "user"},
+            "limit": 10,
+        })
+        section_ids = [s["id"] for s in data.get("sections", [])]
+        assert "colonymind-skills" not in section_ids, f"Internal executor catalog leaked into context: {section_ids}"
+
+
+# ===========================================================================
+# 14. AUTONOMY LOOP
+# ===========================================================================
+
+
+class TestAutonomy:
+    """Background autonomy loop."""
+
+    def test_autonomy_status(self, client):
+        """Autonomy status returns structured response."""
+        data = _get(client, "/autonomy/status")
+        assert "running" in data
+
+    def test_autonomy_cycle(self, client):
+        """Triggering a single autonomy cycle completes."""
+        data = _post(client, "/autonomy/cycle", {
+            "identity": {"host_id": "test"},
+        })
+        assert data.get("completed") is True or data.get("error") is not None
+
+
+# ===========================================================================
+# 17. DELIVERY
+# ===========================================================================
+
+
+class TestDelivery:
+    """Proactive message delivery bridge."""
+
+    def test_pending_deliveries(self, client):
+        """Pending deliveries endpoint returns a list."""
+        data = _get(client, "/delivery/pending")
+        assert "pending" in data
+
+
+# ===========================================================================
+# 19. PERSISTENCE
+# ===========================================================================
+
+
+class TestPersistence:
+    """Data survives across sidecar restarts.
+
+    Run this manually after restarting the sidecar:
+        pytest tests/integration/ -v -k persistence
+    """
+
+    def test_memories_persisted(self, client):
+        """Search previously recorded source evidence after a manual restart."""
+        query = os.environ.get('COLONYMIND_TEST_MEMORY_QUERY', '').strip()
+        assert query, 'Set COLONYMIND_TEST_MEMORY_QUERY to known retained evidence after restart'
+        data = _post(client, '/memory/search', _memory_search_payload(query))
+        assert data['count'] > 0 and data['source_refs'], 'Known source evidence was not recalled'
+
+
+# ===========================================================================
+# 20. WEBSOCKET EVENTS
+# ===========================================================================
+
+
+class TestWebSocket:
+    """Real-time event streaming via WebSocket."""
+
+    @pytest.mark.asyncio
+    async def test_ws_connect_and_auth(self):
+        """WebSocket connects and authenticates successfully."""
+        try:
+            import websockets
+        except ImportError:
+            pytest.skip("websockets not installed")
+
+        uri = f"ws://{BASE_URL.replace('http://', '')}/v1/host/events"
+        try:
+            async with websockets.connect(uri) as ws:
+                await ws.send(json.dumps({
+                    "type": "auth",
+                    "token": API_KEY,
+                }))
+                # Wait for auth acknowledgment or first event
+                try:
+                    msg = await asyncio.wait_for(ws.recv(), timeout=3)
+                    data = json.loads(msg)
+                    assert data.get("type") in ("auth_ok", "connected", "event"), \
+                        f"Unexpected WS message type: {data.get('type')}"
+                except asyncio.TimeoutError:
+                    pass  # No immediate message is acceptable
+        except Exception as e:
+            pytest.skip(f"WebSocket connection failed: {e}")
+
+
+# ===========================================================================
+# 21. CONSOLIDATED HEALTH CHECK
+# ===========================================================================
+
+
+class TestSystemHealthCheck:
+    """Single comprehensive health check that verifies all subsystems.
+
+    Designed for periodic monitoring — run as:
+        pytest tests/integration/ -v -k system_health
+    """
+
+    def test_all_systems_operational(self, client):
+        """Every subsystem is wired and responding."""
+        results = {}
+
+        # Health
+        data = _get(client, "/health")
+        results["health"] = data["status"] == "ok"
+        results["capabilities"] = len(data["capabilities"])
+
+        # Memory availability is a read. Creating synthetic memories here
+        # polluted ordinary recall on every periodic health check.
+        try:
+            data = _post(client, '/memory/search', _memory_search_payload('memory'))
+            results['memory_search'] = isinstance(data['source_refs'], list)
+        except Exception:
+            results['memory_search'] = False
+
+        # Gate
+        try:
+            data = _post(client, "/safety/check", {
+                "identity": {"host_id": "test"},
+                "context": {"session_id": "s1", "contact_id": "c1"},
+                "response_text": "Clean",
+                "turn_id": "hc1",
+            })
+            results["gate_pass"] = not data["blocked"]
+        except Exception:
+            results["gate_pass"] = False
+
+        try:
+            data = _post(client, "/safety/check", {
+                "identity": {"host_id": "test"},
+                "context": {"session_id": "s1", "contact_id": "c1"},
+                "response_text": "SSN: 078-05-1120",
+                "turn_id": "hc2",
+            })
+            results["gate_block"] = data["blocked"]
+        except Exception:
+            results["gate_block"] = False
+
+        # Secrets
+        try:
+            data = _post(client, "/secrets/set", {
+                "identity": {"host_id": "test"},
+                "key": f"_hc_{uuid.uuid4().hex[:6]}",
+                "value": "test",
+            })
+            results["secrets"] = data.get("stored", False)
+        except Exception:
+            results["secrets"] = False
+
+        # Embed
+        try:
+            data = _get(client, "/embed/health")
+            results["embed"] = data.get("status") == "ok"
+        except Exception:
+            results["embed"] = False
+
+        # Context
+        try:
+            data = _post(client, "/context/assemble", {
+                "identity": {"host_id": "test"},
+                "context": {"session_id": "s1", "contact_id": "c1"},
+                "incoming_message": {"content": "health", "role": "user"},
+            })
+            results["context"] = len(data.get("sections", [])) > 0
+        except Exception:
+            results["context"] = False
+
+        # Autonomy
+        try:
+            data = _post(client, "/autonomy/cycle", {"identity": {"host_id": "test"}})
+            results["autonomy"] = data.get("completed", False)
+        except Exception:
+            results["autonomy"] = False
+
+        # Report
+        failures = {k: v for k, v in results.items() if v is False}
+        assert not failures, f"Subsystem health check failures: {failures}"

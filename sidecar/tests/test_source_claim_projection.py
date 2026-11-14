@@ -1,0 +1,515 @@
+"""Natural source ingestion -> durable claims -> scoped context, with no oracle store."""
+from datetime import datetime, timezone
+import json
+import sqlite3
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+from httpx import ASGITransport, AsyncClient
+import pytest
+
+from colonymind.api.routers import host
+from colonymind.beliefs.source_claims import validated_claims
+from colonymind.beliefs.source_projection import SourceClaimProjection
+from colonymind.beliefs.source_time import interpret_time_query
+from colonymind.turns import TurnIdempotencyLedger
+from test_turn_source_evidence import source_app
+
+
+class Model:
+    """Controlled extractor output; the source/claims/selection flow is real."""
+    def __init__(self, outputs, model="fixture-model-a"):
+        self.outputs, self.model, self.calls = outputs, model, []
+
+    def tier_config(self, tier):
+        return SimpleNamespace(base_url="http://127.0.0.1:8080/v1")
+
+    async def complete(self, messages, **kwargs):
+        payload = json.loads(messages[-1]["content"])
+        self.calls.append((payload, kwargs))
+        if kwargs.get('context', {}).get('task') == 'source_claim_review':
+            return SimpleNamespace(content=json.dumps({str(row['index']): {
+                'keep': True, 'reason': 'Controlled review accepts this source-grounded fixture.'}
+                for row in payload['proposals']}), model_id=self.model)
+        result = dict(self.outputs[payload["message"]])
+        if result.pop("match_prior", False):
+            result["prior_claim_id"] = payload["prior_assertions"][0]["id"]
+        return SimpleNamespace(content=json.dumps([result]), model_id=self.model)
+
+
+def claim(text, value, **kwargs):
+    return {"subject": "I", "predicate": "office_location", "value": value,
+            "evidence": text, "operation": "assert", "prior_claim_id": None,
+            "memory_kind": "personal_context", "recall_reason": "Use the reported location when helping with future visits.",
+            "valid_from_text": None, "valid_to_text": None, "event_at_text": None, **kwargs}
+
+
+async def ingest(client, turn, text, *, occurred="2026-03-01T09:00:00+00:00", contact="contact-a", tz="UTC"):
+    response = await client.put(f"/v2/host/turns/{turn}", json={
+        "identity": {"host_id": "test-host"},
+        "context": {"session_id": "session-a", "contact_id": contact, "turn_id": turn,
+                    "channel_id": "test:thread-a", "timezone": tz, "metadata": {"occurred_at": occurred}},
+        "user_message": {"role": "user", "content": text},
+    })
+    assert response.status_code == 201, response.text
+
+
+def prepared(projection, query="office", *, now="2026-03-20T12:00:00+00:00", tz="UTC", contact="contact-a"):
+    hits = projection.ledger.search_sources(query, contact_id=contact, session_id="session-b", limit=10)
+    _, rows = projection.prepare_context([], hits, contact_id=contact, session_id="session-b",
+        time_query=interpret_time_query(query, now=datetime.fromisoformat(now), timezone_name=tz))
+    return [json.loads(row["content"]) for row in rows if row.get("atomic_evidence")]
+
+
+@pytest.mark.asyncio
+async def test_ordinary_correction_survives_model_change_restart_and_context(source_app, tmp_path, monkeypatch):
+    old, new = "My office is in River.", "Correction: My office is in Lake, not River."
+    projection = SourceClaimProjection(TurnIdempotencyLedger(tmp_path / "turn-idempotency.db"))
+    first = Model({old: claim(old, "River")})
+    second = Model({new: claim(new, "Lake", operation="correct", match_prior=True)}, model="fixture-model-b")
+    async with AsyncClient(transport=ASGITransport(app=source_app), base_url="http://test") as client:
+        await ingest(client, "old", old)
+        assert await projection.process_one(first)
+        await ingest(client, "new", new, occurred="2026-03-02T09:00:00+00:00")
+        assert await projection.process_one(second)
+        monkeypatch.setenv("COLONYMIND_RECALL_RERANK", "off")
+        response = await client.post("/v1/host/context/assemble", json={
+            "identity": {"host_id": "test-host"}, "context": {"contact_id": "contact-a", "session_id": "later"},
+            "incoming_message": {"role": "user", "content": "office location"}})
+        assert "Lake" in response.text and "source_assertion" in response.text
+    reopened = SourceClaimProjection(TurnIdempotencyLedger(projection.ledger.db_path))
+    packet = prepared(reopened)[0]
+    assert [row["value"] for row in packet["assertions"]] == ["Lake"]
+    assert packet["assertions"][0]["operation"] == "correct"
+    assert packet["assertions"][0]["prior_claim_id"]
+    with sqlite3.connect(projection.ledger.db_path) as conn:
+        rows = conn.execute('SELECT data_json,retracted_by FROM source_claims').fetchall()
+    assert len(rows) == 2 and any("River" in data and ref for data, ref in rows)
+    assert not await reopened.process_one(second)
+
+
+@pytest.mark.asyncio
+async def test_explicit_effective_date_preserves_historical_state(source_app, tmp_path):
+    old = "From 2026-03-01, my office is in River."
+    new = "Starting 2026-03-12, my office is now in Lake."
+    projection = SourceClaimProjection(TurnIdempotencyLedger(tmp_path / "turn-idempotency.db"))
+    model = Model({old: claim(old, "River", valid_from_text="2026-03-01"),
+                   new: claim(new, "Lake", operation="change", match_prior=True, valid_from_text="2026-03-12")})
+    async with AsyncClient(transport=ASGITransport(app=source_app), base_url="http://test") as client:
+        await ingest(client, "old", old)
+        await projection.process_one(model)
+        await ingest(client, "new", new, occurred="2026-03-02T09:00:00+00:00")
+        await projection.process_one(model)
+    past = prepared(projection, "Where was my office as of 2026-03-05?")[0]["assertions"]
+    current = prepared(projection, "Where was my office as of March 20, 2026?")[0]["assertions"]
+    assert [row["value"] for row in past] == ["River"]
+    assert past[0]["valid_to"] == "2026-03-12T00:00:00+00:00"
+    assert [row["value"] for row in current] == ["Lake"]
+    assert current[0]["observed_at"] == "2026-03-02T09:00:00+00:00"
+    assert current[0]["recorded_at"] != current[0]["observed_at"]
+    for expression in ('5 March 2026', '"5 March 2026"'):
+        historical = prepared(projection, f"Where was my office as of {expression}?")[0]["assertions"]
+        assert [row["value"] for row in historical] == ["River"]
+
+
+@pytest.mark.asyncio
+async def test_literal_time_on_date_correction_preserves_source_and_validity(source_app, tmp_path):
+    # Controlled valid proposals exercise the demonstrated source-date grammar;
+    # they do not reconstruct discarded output from a previous model run.
+    old = "My workshop access ends at 16:30 UTC on 18 September 2026."
+    new = "Correction: My workshop access ends at 17:15 UTC on 18 September 2026."
+    projection = SourceClaimProjection(TurnIdempotencyLedger(tmp_path / "turn-idempotency.db"))
+    model = Model({
+        old: claim(old, "16:30 UTC on 18 September 2026", predicate="access_until",
+                   valid_to_text="16:30 UTC on 18 September 2026"),
+        new: claim(new, "17:15 UTC on 18 September 2026", predicate="access_until",
+                   operation="correct", match_prior=True,
+                   valid_to_text="17:15 UTC on 18 September 2026"),
+    })
+    async with AsyncClient(transport=ASGITransport(app=source_app), base_url="http://test") as client:
+        await ingest(client, "access-original", old, tz="America/New_York")
+        assert await projection.process_one(model)
+        await ingest(client, "access-correction", new, tz="America/New_York")
+        assert await projection.process_one(model)
+    reopened = SourceClaimProjection(TurnIdempotencyLedger(projection.ledger.db_path))
+    packet = prepared(reopened, "workshop access", now="2026-09-18T16:45:00+00:00")[0]
+    current, = packet["assertions"]
+    assert current["value"] == "17:15 UTC on 18 September 2026"
+    assert current["operation"] == "correct"
+    assert current["valid_to"] == "2026-09-18T17:15:00+00:00"
+    with sqlite3.connect(projection.ledger.db_path) as db:
+        rows = db.execute('SELECT data_json,retracted_by FROM source_claims').fetchall()
+    assert len(rows) == 2
+    assert next(json.loads(data) for data, ref in rows if not ref)["evidence"] == new
+    prior = next((json.loads(data), ref) for data, ref in rows if json.loads(data)["evidence"] == old)
+    assert prior[0]["valid_to"] == "2026-09-18T16:30:00+00:00" and prior[1]
+
+
+def test_date_support_does_not_accept_a_normalized_expression_absent_from_the_source():
+    text = "My workshop access ends at 17:15 UTC on 18 September 2026."
+    proposal = claim(text, "17:15 UTC on 18 September 2026", predicate="access_until",
+                     valid_to_text="2026-09-18T17:15Z")
+    assert validated_claims(json.dumps([proposal]), message=text, prior=[], observed_at=None) == []
+
+
+@pytest.mark.asyncio
+async def test_newer_report_does_not_win_and_conflict_is_atomic(source_app, tmp_path, monkeypatch):
+    a, b = "Nora reports the workshop starts at nine.", "Owen reports the workshop starts at ten."
+    projection = SourceClaimProjection(TurnIdempotencyLedger(tmp_path / "turn-idempotency.db"))
+    model = Model({a: claim(a, "nine", subject="workshop", predicate="start_time"),
+                   b: claim(b, "ten", subject="workshop", predicate="start_time", match_prior=True)})
+    async with AsyncClient(transport=ASGITransport(app=source_app), base_url="http://test") as client:
+        await ingest(client, "a", a)
+        await projection.process_one(model)
+        await ingest(client, "b", b, occurred="2026-03-19T09:00:00+00:00")
+        await projection.process_one(model)
+    packet = prepared(projection, "workshop")[0]
+    assert packet["status"] == "unresolved_conflict"
+    assert {row["value"] for row in packet["assertions"]} == {"nine", "ten"}
+    assert {row["source"] for row in packet["assertions"]} == {"turn:a", "turn:b"}
+    hits = projection.ledger.search_sources("workshop", contact_id="contact-a", session_id="s")
+    _, rows = projection.prepare_context([], hits, contact_id="contact-a", session_id="s",
+        time_query=interpret_time_query("workshop", now=datetime.now(timezone.utc)))
+    from colonymind.memory.recall import pack_memory_context
+    # A budget that fits neither the conflict bundle nor its atomic "open the history" notice shows nothing
+    # of it (the one-line header leaves about 200 characters here; the notice row needs about 400).
+    assert pack_memory_context(rows, max_chars=300) == ([], "")
+
+
+@pytest.mark.asyncio
+async def test_today_uses_source_event_and_timezone_not_ingestion(source_app, tmp_path):
+    text = "Today I spotted a parcel by the orchard gate."
+    projection = SourceClaimProjection(TurnIdempotencyLedger(tmp_path / "turn-idempotency.db"))
+    model = Model({text: claim(text, "parcel", predicate="gate_observation", event_at_text="Today")})
+    async with AsyncClient(transport=ASGITransport(app=source_app), base_url="http://test") as client:
+        await ingest(client, "old", text, occurred="2026-03-09T15:00:00+00:00", tz="America/New_York")
+        await projection.process_one(model)
+        await ingest(client, "today", text, occurred="2026-03-11T02:00:00+00:00", tz="America/New_York")
+        await projection.process_one(model)
+    packet = prepared(projection, "Was a parcel spotted today?", now="2026-03-11T03:00:00+00:00", tz="America/New_York")[0]
+    assert [row["source"] for row in packet["assertions"]] == ["turn:today"]
+    assert packet["assertions"][0]["event_at"] == "2026-03-10T04:00:00+00:00"
+
+
+# Made-up values: a password, a passphrase and a PIN.
+WIFI = "Hunter" + "22!" + "wifi"
+
+
+@pytest.mark.parametrize("text, fields", [
+    # The label names a credential that the quotation never names: a strong value, a weak one and a phrase.
+    (f"The wifi at the lake house is {WIFI}, on the router's sticker.",
+     {"subject": "lake house", "predicate": "wifi_password", "value": WIFI}),
+    ("The wifi at the lake house is sunshine.", {"subject": "lake house", "predicate": "wifi password",
+                                                 "value": "sunshine"}),
+    ("At the boathouse the network wants blue heron at dawn now.",
+     {"subject": "boathouse", "predicate": "network passphrase", "value": "blue heron at dawn"}),
+    # A label the capture detector reads as a secret's: a PIN, a door code, a seed phrase, an API key.
+    ("The garage door opens with 4821.", {"subject": "garage door", "predicate": "PIN", "value": "4821"}),
+    ("The garage door opens with 4821.", {"subject": "garage door", "predicate": "passcode", "value": "4821"}),
+    ("The build server uses Maple-7731-Cedar.", {"subject": "build server", "predicate": "access token",
+                                                 "value": "Maple-7731-Cedar"}),
+    ("The build server uses Maple-7731-Cedar.", {"subject": "build server", "predicate": "credentials",
+                                                 "value": "Maple-7731-Cedar"}),
+    # A credential's name as the detector reads one in an assignment or a JSON field, however it is written.
+    ("The build server uses Maple-7731-Cedar.", {"subject": "build server", "predicate": "AUTH_KEY",
+                                                 "value": "Maple-7731-Cedar"}),
+    ("The build server uses Maple-7731-Cedar.", {"subject": "build server", "predicate": "refresh_token",
+                                                 "value": "Maple-7731-Cedar"}),
+    ("The build server uses Maple-7731-Cedar.", {"subject": "build server", "predicate": "refreshToken",
+                                                 "value": "Maple-7731-Cedar"}),
+    ("The build server uses Maple-7731-Cedar.", {"subject": "build server", "predicate": "client secret",
+                                                 "value": "Maple-7731-Cedar"}),
+])
+def test_a_claim_whose_own_label_names_a_credential_is_refused(text, fields):
+    """A credential never becomes a claim (docs/SECRETS.md): the words that refuse a quotation refuse the claim's own
+    label too, with the labels the capture detector reads as a secret's, so a value the quotation gives without its
+    label ("the wifi ... is ...") is never stored as a credential."""
+    diagnostic = {}
+    proposal = claim(text, fields["value"], subject=fields["subject"], predicate=fields["predicate"])
+    assert validated_claims(json.dumps([proposal]), message=text, prior=[], observed_at=None,
+                            diagnostics=diagnostic) == []
+    assert diagnostic["rejection_counts"] == {"credential_label": 1}
+    # The same quotation under a label that names no credential is a claim.
+    ordinary = claim(text, fields["value"], subject=fields["subject"], predicate="note")
+    assert [row["value"] for row in validated_claims(json.dumps([ordinary]), message=text, prior=[],
+                                                     observed_at=None)] == [fields["value"]]
+
+
+@pytest.mark.parametrize("label", [
+    "password", "wifi password", "passwd", "passphrase", "passcode", "pin", "pin code", "otp", "one-time code",
+    "2fa code", "verification code", "security code", "backup codes", "recovery code", "recovery phrase", "seed phrase",
+    "api key", "secret key", "access key", "private key", "auth token", "access token", "cvv", "cvc",
+])
+def test_every_label_the_capture_detector_reads_names_a_credential(label):
+    """The validator's credential labels hold every label the capture detector reads before a secret's value, written
+    with spaces or underscores."""
+    from colonymind.secrets.claims import names_a_credential
+    from colonymind.secrets.detect import find_secrets
+    assert [hit.value for hit in find_secrets(f"the {label} is 4821")] == ["4821"], label
+    assert names_a_credential(label) and names_a_credential(label.replace(" ", "_"))
+
+
+# The detector's credential names in assignments (``_SECRET_NAME``) and JSON fields, with a made-up value.
+ASSIGNED = "Zq7xK9mP2vL4" + "Bn8w"
+
+
+@pytest.mark.parametrize("name", [
+    "API_KEY", "APIKEY", "AUTH_KEY", "GITHUB_TOKEN", "DB_PASSWORD", "DB_PASSWD", "CLIENT_SECRET", "AWS_CREDENTIALS",
+    "PRIVATE_KEY", "REFRESH_TOKEN",
+])
+def test_every_name_the_capture_detector_reads_as_a_credential_names_one(name):
+    """Capture, the validator and the display share one reading of a credential's name: every name the capture
+    detector seals a value under in an assignment or a JSON field names a credential as a claim's label, written as
+    the name, in lower case, with spaces or in camel case."""
+    from colonymind.secrets.claims import names_a_credential
+    from colonymind.secrets.detect import find_secrets
+    lower = name.lower()
+    camel = lower.split("_")[0] + "".join(word.title() for word in lower.split("_")[1:])
+    assert [hit.rule for hit in find_secrets(f"{name}={ASSIGNED}")] == ["assign"], name
+    if lower in {"api_key", "apikey", "refresh_token", "client_secret", "private_key"}:
+        assert [hit.rule for hit in find_secrets(f'{{"{lower}": "{ASSIGNED}"}}')] == ["json_field"], name
+    for label in (name, lower, lower.replace("_", " "), camel):
+        assert names_a_credential(label), label
+
+
+@pytest.mark.parametrize("name", [
+    # What the detector reads as about a credential, never one: its id, address, kind, count or lifetime.
+    "TOKEN_COUNT", "AUTH_TOKEN_ID", "TOKEN_URL", "TOKEN_TYPE", "TOKEN_TTL", "API_KEY_NAME", "PASSWORD_LENGTH",
+])
+def test_a_name_the_capture_detector_reads_as_about_a_credential_names_none(name):
+    from colonymind.secrets.claims import names_a_credential
+    from colonymind.secrets.detect import find_secrets
+    assert find_secrets(f"{name}={ASSIGNED}") == [], name
+    for label in (name, name.lower(), name.lower().replace("_", " ")):
+        assert not names_a_credential(label), label
+
+
+@pytest.mark.parametrize("label", ["secretary", "tokens used", "number of tokens", "keynote speaker", "house key",
+                                   "passport", "favorite subway line"])
+def test_a_word_that_only_contains_a_credential_word_names_none(label):
+    """A credential's name is read word by word in a label: a secretary is no secret, and tokens counted are no
+    token."""
+    from colonymind.secrets.claims import names_a_credential
+    assert not names_a_credential(label)
+
+
+def test_ungrounded_value_or_unknown_relative_date_is_not_a_claim():
+    text = "Today my office is in River."
+    assert validated_claims(json.dumps([claim(text, "Lake")]), message=text, prior=[], observed_at=None) == []
+    assert validated_claims(json.dumps([claim(text, "River", valid_from_text="Today")]), message=text, prior=[], observed_at=None) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("output", ["[{", '{"claims": [], "extra": true}', '[null]', '[{}, {}, {}, {}, {}, {}, {}]'])
+async def test_malformed_extraction_stays_pending_and_recovers_without_losing_source(tmp_path, output):
+    text = "My office is in River."
+    ledger = TurnIdempotencyLedger(tmp_path / "ledger.db")
+    projection = SourceClaimProjection(ledger)
+    ledger.record_source("source", contact_id="contact-a", session_id="session-a",
+                         messages=[{"role": "user", "content": text}])
+    model = Model({text: claim(text, "River")})
+    model.complete = AsyncMock(return_value=SimpleNamespace(content=output, model_id="fixture-malformed"))
+
+    assert await projection.process_one(model)
+    status = projection.status("contact-a")[0]
+    assert status["status"] == "pending"
+    assert status["error"] == "SourceClaimOutputError"
+    assert status["claim_count"] == 0
+    assert status["model"] is None
+    assert ledger.search_sources("office", contact_id="contact-a", session_id="later")
+    assert not await projection.process_one(model)  # The existing backoff still applies.
+    assert model.complete.await_count == 1
+
+    with sqlite3.connect(ledger.db_path) as conn:
+        conn.execute("UPDATE source_claim_jobs SET next_attempt=0 WHERE turn_id='source'")
+    recovered = SourceClaimProjection(TurnIdempotencyLedger(ledger.db_path))
+    assert await recovered.process_one(Model({text: claim(text, "River")}))
+    assert recovered.status("contact-a")[0]["status"] == "complete"
+    assert recovered.status("contact-a")[0]["claim_count"] == 1
+    assert prepared(recovered)[0]["assertions"][0]["value"] == "River"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("output", ["[]", "```json\n[]\n```", json.dumps([claim("My office is in Lake.", "Lake")])])
+async def test_valid_empty_or_unsupported_extraction_completes_without_a_claim(tmp_path, output):
+    text = "My office is in River."
+    ledger = TurnIdempotencyLedger(tmp_path / "ledger.db")
+    projection = SourceClaimProjection(ledger)
+    ledger.record_source("source", contact_id="contact-a", session_id="session-a",
+                         messages=[{"role": "user", "content": text}])
+    model = Model({text: claim(text, "River")})
+    model.complete = AsyncMock(return_value=SimpleNamespace(content=output, model_id="fixture-complete"))
+    assert await projection.process_one(model)
+    status = projection.status("contact-a")[0]
+    assert status["status"] == "complete"
+    assert status["error"] is None
+    assert status["claim_count"] == 0
+    assert status["model"] == "fixture-complete"
+    assert ledger.search_sources("office", contact_id="contact-a", session_id="later")
+
+
+@pytest.mark.asyncio
+async def test_correction_masks_overlapping_chunks_without_fabricating_quotes(source_app, tmp_path):
+    evidence = "My office is in River."
+    # The assertion starts just before the second chunk and ends inside it.
+    text = "neutral padding " * 119 + evidence + " Unrelated fact: the drawer label is violet."
+    new = "Correction: My office is in Lake."
+    projection = SourceClaimProjection(TurnIdempotencyLedger(tmp_path / "turn-idempotency.db"))
+    model = Model({text: claim(evidence, "River"), new: claim(new, "Lake", operation="correct", match_prior=True)})
+    async with AsyncClient(transport=ASGITransport(app=source_app), base_url="http://test") as client:
+        await ingest(client, "old", text)
+        await projection.process_one(model)
+        await ingest(client, "new", new)
+        await projection.process_one(model)
+    hits = projection.ledger.search_sources("office drawer", contact_id="contact-a", session_id="s", limit=10)
+    _, rows = projection.prepare_context([], hits, contact_id="contact-a", session_id="s",
+        time_query=interpret_time_query("office drawer", now=datetime.now(timezone.utc)))
+    quotes = [row["content"] for row in rows if not row.get("atomic_evidence")]
+    assert quotes and any("violet" in quote for quote in quotes)
+    assert all(quote in text for quote in quotes)
+    assert all("River" not in quote for quote in quotes)
+    assert any(row.get("excerpt_truncated") for row in rows)
+
+
+@pytest.mark.asyncio
+async def test_intraday_change_is_history_not_conflict(source_app, tmp_path):
+    old = "From 2026-03-12T09:00:00Z, my office is in River."
+    new = "Starting 2026-03-12T12:00:00Z, my office is now in Lake."
+    projection = SourceClaimProjection(TurnIdempotencyLedger(tmp_path / "turn-idempotency.db"))
+    model = Model({old: claim(old, "River", valid_from_text="2026-03-12T09:00:00Z"),
+                   new: claim(new, "Lake", operation="change", match_prior=True, valid_from_text="2026-03-12T12:00:00Z")})
+    async with AsyncClient(transport=ASGITransport(app=source_app), base_url="http://test") as client:
+        await ingest(client, "old", old)
+        await projection.process_one(model)
+        await ingest(client, "new", new)
+        await projection.process_one(model)
+    packet = prepared(projection, "Where was my office as of 2026-03-12?")[0]
+    assert packet["status"] == "temporal_history"
+    assert {a["value"] for a in packet["assertions"]} == {"River", "Lake"}
+
+
+@pytest.mark.asyncio
+async def test_repeated_identical_values_do_not_hide_conflicting_value(source_app, tmp_path):
+    a, b = "The workshop starts at nine.", "The workshop starts at ten."
+    projection = SourceClaimProjection(TurnIdempotencyLedger(tmp_path / "turn-idempotency.db"))
+    model = Model({a: claim(a, "nine", subject="workshop", predicate="start_time"),
+                   b: claim(b, "ten", subject="workshop", predicate="start_time")})
+    async with AsyncClient(transport=ASGITransport(app=source_app), base_url="http://test") as client:
+        await ingest(client, "different", b)
+        await projection.process_one(model)
+        for index in range(12):
+            await ingest(client, f"repeated-{index}", a)
+            await projection.process_one(model)
+    packet = prepared(projection, "workshop")[0]
+    assert packet["status"] == "unresolved_conflict"
+    assert {a["value"] for a in packet["assertions"]} == {"nine", "ten"}
+    assert len(packet["assertions"]) == 2
+
+
+def test_expired_worker_cannot_commit_or_complete_reclaimed_job(tmp_path):
+    projection = SourceClaimProjection(TurnIdempotencyLedger(tmp_path / "ledger.db"))
+    message = {"role": "user", "content": "My office is in River."}
+    projection.ledger.record_source("turn", contact_id="c", session_id="s", messages=[message])
+    first = projection.claim_job()
+    with sqlite3.connect(projection.ledger.db_path) as conn:
+        conn.execute("UPDATE source_claim_jobs SET lease_until=0")
+    second = projection.claim_job()
+    claims = validated_claims(json.dumps([claim(message["content"], "River")]),
+                              message=message["content"], prior=[], observed_at=None)
+    assert projection.commit(first, message, claims, model="first", lease_token=first["lease_token"]) == 0
+    projection.finish_job(first, model="first")
+    assert projection.status("c")[0]["status"] == "running"
+    assert projection.commit(second, message, claims, model="second", lease_token=second["lease_token"]) == 1
+    projection.finish_job(second, model="second")
+    assert projection.status("c")[0]["model"] == "second"
+
+
+@pytest.mark.asyncio
+async def test_local_extraction_disables_router_escalation(monkeypatch):
+    from colonymind.beliefs.source_claims import local_tier
+    from colonymind.router.router import LLMRouter
+    from colonymind.router.tiers import ModelTier
+    router = LLMRouter()
+    router._litellm_call = AsyncMock(side_effect=TimeoutError())
+    router._fallback = SimpleNamespace(should_escalate=lambda *args: True,
+                                       next_tier=lambda tier: ModelTier.MEDIUM)
+    with pytest.raises(RuntimeError):
+        await router.complete([{"role": "user", "content": "neutral"}], force_tier=ModelTier.SMALL,
+                              context={"allow_fallback": False})
+    assert router._litellm_call.await_count == 1
+    monkeypatch.setenv("OPENAI_API_BASE", "http://127.0.0.1:8080/v1")
+    assert local_tier(router) is None  # Default Anthropic must not inherit this endpoint.
+    monkeypatch.setattr(router, "tier_config", lambda tier: SimpleNamespace(base_url=None, model_id="openai/local"))
+    assert local_tier(router) is ModelTier.SMALL
+
+
+def test_unicode_values_stay_distinct():
+    from colonymind.beliefs.source_claims import norm_value
+    assert norm_value("東京") != norm_value("京都")
+    assert norm_value("CAFÉ") == norm_value("Cafe\u0301")
+
+
+def test_unsupported_time_range_is_not_silently_current():
+    from colonymind.beliefs.source_time import filter_unstructured
+    # "last month", "before <date>" and "between <date> and <date>" now resolve (tests/test_recall_time.py).
+    for text in ("office next month", "office after 2026-03-12", "office until March 5, 2026"):
+        query = interpret_time_query(text, now=datetime.now(timezone.utc))
+        assert query.mode == "unresolved_time"
+        assert not query.accepts_claim({"valid_from": "2026-03-01T00:00:00+00:00"})
+        assert filter_unstructured([{"content": "original quote"}], query)[0]["validity_status"] == "unknown"
+
+
+def test_validity_clock_is_canonical_utc_and_event_date_is_not_validity():
+    previous = {"id": "old", "subject_key": "speaker", "predicate": "office location"}
+    text = "My office is now in Lake."
+    row = validated_claims(json.dumps([claim(text, "Lake", operation="change", prior_claim_id="old")]),
+        message=text, prior=[previous], observed_at="2026-03-12T08:30:00-04:00")[0]
+    assert row["valid_from"] == "2026-03-12T12:30:00+00:00"
+    assert row["validity_basis"] == "assertion_time"
+    event = "Today I spotted a parcel."
+    row = validated_claims(json.dumps([claim(event, "parcel", event_at_text="Today")]),
+        message=event, prior=[], observed_at="2026-03-12T08:30:00-04:00")[0]
+    assert row["event_at"] and row["valid_from"] is None and row["validity_basis"] == "unspecified"
+
+from colonymind.memory import curated
+
+@pytest.mark.asyncio
+async def test_scopes_and_erasure_do_not_revive_old_assertions(source_app, tmp_path):
+    old, new = "My office is in River.", "Correction: My office is in Lake."
+    projection = SourceClaimProjection(TurnIdempotencyLedger(tmp_path / "turn-idempotency.db"))
+    model = Model({old: claim(old, "River"), new: claim(new, "Lake", operation="correct", match_prior=True)})
+    async with AsyncClient(transport=ASGITransport(app=source_app), base_url="http://test") as client:
+        await ingest(client, "old", old)
+        await projection.process_one(model)
+        await ingest(client, "new", new)
+        await projection.process_one(model)
+        await ingest(client, "other", old, contact="contact-b")
+        await projection.process_one(model)
+    assert prepared(projection, contact="contact-b")[0]["assertions"][0]["value"] == "River"
+    from test_curated_memory import historical_bytes
+    _native_before_forget = historical_bytes(projection.ledger)
+    _source_forget_receipt = curated.forget_sources(projection.ledger, 'contact-a', source_ids=['new'])
+    assert historical_bytes(projection.ledger) == _native_before_forget
+    assert all(curated.is_forgotten(projection.ledger, sid) for sid in _source_forget_receipt['source_ids'])
+    assert prepared(projection) == []
+
+
+@pytest.mark.asyncio
+async def test_erasure_during_extraction_blocks_late_claim_write(source_app, tmp_path):
+    text = 'My office is in River.'
+    projection = SourceClaimProjection(TurnIdempotencyLedger(tmp_path / 'turn-idempotency.db'))
+    model = Model({text: claim(text, 'River')})
+    complete = model.complete
+
+    async def erase_then_return(*args, **kwargs):
+        response = await complete(*args, **kwargs)
+        from test_curated_memory import historical_bytes
+        _native_before_withdrawal = historical_bytes(projection.ledger)
+        curated.forget_sources(projection.ledger, 'contact-a', source_ids=['source'])
+        assert historical_bytes(projection.ledger) == _native_before_withdrawal
+        return response
+    model.complete = erase_then_return
+    async with AsyncClient(transport=ASGITransport(app=source_app), base_url='http://test') as client:
+        await ingest(client, 'source', text)
+    await projection.process_one(model)
+    assert prepared(projection) == []

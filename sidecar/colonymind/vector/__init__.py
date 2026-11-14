@@ -1,0 +1,64 @@
+"""ColonyMind Vector Store — local LanceDB-backed vector search.
+
+Public API:
+  - EmbeddingPipeline   — provider + caching + latency monitoring
+  - Collection          — enum of named vector collections
+  - get_store()         — retrieve the singleton VectorStore instance
+  - get_pipeline()      — retrieve the singleton EmbeddingPipeline instance
+"""
+
+from colonymind.vector.collections import Collection
+from colonymind.vector.config import EmbeddingConfig, VectorStoreConfig
+from colonymind.vector.embedder import (
+    CPUEmbeddingProvider,
+    CUDAEmbeddingProvider,
+    EmbeddingPipeline,
+    EmbeddingProvider,
+    MLXEmbeddingProvider,
+    make_provider,
+)
+from colonymind.vector.query import VectorItem, VectorResult
+
+# Lazy import — VectorStore depends on pyarrow/lancedb which may not be installed
+from typing import Any, Optional
+_store: Any = None
+_pipeline: Optional[EmbeddingPipeline] = None
+
+
+def set_store(store: Any) -> None:
+    global _store
+    _store = store
+
+
+def set_pipeline(pipeline: EmbeddingPipeline) -> None:
+    global _pipeline
+    _pipeline = pipeline
+
+
+def get_store() -> Any:
+    """Retrieve the singleton VectorStore, or None if not configured."""
+    return _store
+
+
+def get_pipeline() -> Optional[EmbeddingPipeline]:
+    """Retrieve the singleton EmbeddingPipeline, or None if not configured."""
+    return _pipeline
+
+
+__all__ = [
+    "Collection",
+    "EmbeddingConfig",
+    "EmbeddingPipeline",
+    "EmbeddingProvider",
+    "CUDAEmbeddingProvider",
+    "CPUEmbeddingProvider",
+    "MLXEmbeddingProvider",
+    "VectorItem",
+    "VectorResult",
+    "VectorStoreConfig",
+    "get_pipeline",
+    "get_store",
+    "make_provider",
+    "set_pipeline",
+    "set_store",
+]

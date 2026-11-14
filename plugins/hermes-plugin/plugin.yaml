@@ -1,0 +1,13 @@
+name: colonymind
+version: 1.0.0
+description: |
+  ColonyMind adapter on stock Hermes seams: durable turn capture, the guard for
+  mind-originated and non-owner runs, the /mind command, and the memory, self
+  (with the agent's opinions), people and reminder tools. Recall itself comes
+  from the colonymind-memory provider.
+author: Aevonix
+entry_point: __init__.py
+requires_hermes: ">=0.21.3,<0.24"
+category: general
+requires:
+  - httpx

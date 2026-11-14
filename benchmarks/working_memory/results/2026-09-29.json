@@ -1,0 +1,1186 @@
+{
+  "provenance": {
+    "inputs": "Handback uses generated synthetic worker material from benchmarks/working_memory/handback/sets.py, version wm-handback-2, seeds 1301, 1302, 1303, with hashes recorded under handback.sets. Prize declares request traces from paired development campaigns, excluding host-only attempts and held-out campaigns.",
+    "execution": "Offline prize token counting under the default one-model routing table; local handback model serving and decoding configuration are recorded under handback. Model revision, prompt hash, set hashes and tokenizer identity are retained.",
+    "publication_scope": "Historical aggregate experiment on benchmark inputs. Counts, timings and verdicts apply to the recorded configuration; they are not production measurements or runtime defaults.",
+    "limitations": "Prize raw traces and their campaign revisions are absent, so their full input provenance cannot be independently verified from this aggregate. Raw handback answer receipts are also absent."
+  },
+  "date": "2026-09-29",
+  "handback": {
+    "children": {
+      "context_tokens": {
+        "max": 24169,
+        "mean": 17863.6,
+        "min": 9561,
+        "n": 24
+      },
+      "excerpt_passages": {
+        "max": 16,
+        "mean": 14.1,
+        "min": 12,
+        "n": 24
+      },
+      "excerpt_tokens": {
+        "max": 2000,
+        "mean": 1938.8,
+        "min": 1818,
+        "n": 24
+      },
+      "handles_named": {
+        "max": 40,
+        "mean": 39.5,
+        "min": 33,
+        "n": 24
+      },
+      "selections_cut_at_their_cap": 18,
+      "summary_tokens": {
+        "max": 416,
+        "mean": 310.2,
+        "min": 132,
+        "n": 24
+      }
+    },
+    "consult_calls": {
+      "cut_at_their_cap": 43,
+      "errors": 0,
+      "n": 1200
+    },
+    "decoding": {
+      "enable_thinking": false,
+      "seed": 0,
+      "temperature": 0.0,
+      "top_p": 1.0
+    },
+    "errors": 0,
+    "excerpt_budget": 2000,
+    "max_tokens": {
+      "consult": 256,
+      "excerpts": 512,
+      "parent": 64,
+      "summary": 1024
+    },
+    "model": "Qwen/Qwen3.5-4B",
+    "model_revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+    "per_set": {
+      "1301": {
+        "arms": {
+          "consult": {
+            "accuracy": 0.725,
+            "correct": 232,
+            "n": 320
+          },
+          "excerpts": {
+            "accuracy": 0.0813,
+            "correct": 26,
+            "n": 320
+          },
+          "full": {
+            "accuracy": 0.6937,
+            "correct": 222,
+            "n": 320
+          },
+          "summary": {
+            "accuracy": 0.0031,
+            "correct": 1,
+            "n": 320
+          }
+        },
+        "verdict": {
+          "complete": true,
+          "consult_passes": true,
+          "consult_points_above_summary": 72.19,
+          "consult_within_one_question_of_full": true,
+          "excerpts_within_one_question_of_full": false,
+          "outcome": "branches_earned"
+        }
+      },
+      "1302": {
+        "arms": {
+          "consult": {
+            "accuracy": 0.7344,
+            "correct": 235,
+            "n": 320
+          },
+          "excerpts": {
+            "accuracy": 0.1062,
+            "correct": 34,
+            "n": 320
+          },
+          "full": {
+            "accuracy": 0.7281,
+            "correct": 233,
+            "n": 320
+          },
+          "summary": {
+            "accuracy": 0.0281,
+            "correct": 9,
+            "n": 320
+          }
+        },
+        "verdict": {
+          "complete": true,
+          "consult_passes": true,
+          "consult_points_above_summary": 70.63,
+          "consult_within_one_question_of_full": true,
+          "excerpts_within_one_question_of_full": false,
+          "outcome": "branches_earned"
+        }
+      },
+      "1303": {
+        "arms": {
+          "consult": {
+            "accuracy": 0.725,
+            "correct": 232,
+            "n": 320
+          },
+          "excerpts": {
+            "accuracy": 0.0969,
+            "correct": 31,
+            "n": 320
+          },
+          "full": {
+            "accuracy": 0.6937,
+            "correct": 222,
+            "n": 320
+          },
+          "summary": {
+            "accuracy": 0.0,
+            "correct": 0,
+            "n": 320
+          }
+        },
+        "verdict": {
+          "complete": true,
+          "consult_passes": true,
+          "consult_points_above_summary": 72.5,
+          "consult_within_one_question_of_full": true,
+          "excerpts_within_one_question_of_full": false,
+          "outcome": "branches_earned"
+        }
+      }
+    },
+    "pooled": {
+      "arms": {
+        "consult": {
+          "accuracy": 0.7281,
+          "by_type": {
+            "contradiction": {
+              "accuracy": 0.9333,
+              "correct": 224,
+              "n": 240
+            },
+            "cross_child": {
+              "accuracy": 0.0125,
+              "correct": 3,
+              "n": 240
+            },
+            "relation": {
+              "accuracy": 0.9667,
+              "correct": 232,
+              "n": 240
+            },
+            "single": {
+              "accuracy": 1.0,
+              "correct": 240,
+              "n": 240
+            }
+          },
+          "correct": 699,
+          "cost": {
+            "cache_hit_share": 1.0,
+            "cached_tokens_mean": 21887.8,
+            "completion_tokens_mean": 69.154,
+            "consult_calls": {
+              "cache_hit_share": 1.0,
+              "cached_tokens_mean": 17510.24,
+              "calls": 1200,
+              "incremental_tokens_mean": 281.902,
+              "prompt_tokens_mean": 17792.143,
+              "wall_s_mean": 0.637,
+              "wall_s_p95": 1.961
+            },
+            "incremental_tokens_mean": 523.848,
+            "prompt_tokens_mean": 22411.648,
+            "wall_s_mean": 0.891,
+            "wall_s_p50": 0.464,
+            "wall_s_p95": 3.047
+          },
+          "n": 960
+        },
+        "excerpts": {
+          "accuracy": 0.0948,
+          "by_type": {
+            "contradiction": {
+              "accuracy": 0.0042,
+              "correct": 1,
+              "n": 240
+            },
+            "cross_child": {
+              "accuracy": 0.0083,
+              "correct": 2,
+              "n": 240
+            },
+            "relation": {
+              "accuracy": 0.1667,
+              "correct": 40,
+              "n": 240
+            },
+            "single": {
+              "accuracy": 0.2,
+              "correct": 48,
+              "n": 240
+            }
+          },
+          "correct": 91,
+          "cost": {
+            "cache_hit_share": 0.0,
+            "cached_tokens_mean": 0.0,
+            "completion_tokens_mean": 2.805,
+            "incremental_tokens_mean": 2533.162,
+            "prompt_tokens_mean": 2533.162,
+            "wall_s_mean": 0.2,
+            "wall_s_p50": 0.16,
+            "wall_s_p95": 0.3
+          },
+          "n": 960
+        },
+        "full": {
+          "accuracy": 0.7052,
+          "by_type": {
+            "contradiction": {
+              "accuracy": 0.8917,
+              "correct": 214,
+              "n": 240
+            },
+            "cross_child": {
+              "accuracy": 0.0583,
+              "correct": 14,
+              "n": 240
+            },
+            "relation": {
+              "accuracy": 0.8708,
+              "correct": 209,
+              "n": 240
+            },
+            "single": {
+              "accuracy": 1.0,
+              "correct": 240,
+              "n": 240
+            }
+          },
+          "correct": 677,
+          "cost": {
+            "cache_hit_share": 0.0,
+            "cached_tokens_mean": 0.0,
+            "completion_tokens_mean": 6.446,
+            "incremental_tokens_mean": 22206.509,
+            "prompt_tokens_mean": 22206.509,
+            "wall_s_mean": 1.835,
+            "wall_s_p50": 1.554,
+            "wall_s_p95": 3.838
+          },
+          "n": 960
+        },
+        "summary": {
+          "accuracy": 0.0104,
+          "by_type": {
+            "contradiction": {
+              "accuracy": 0.0417,
+              "correct": 10,
+              "n": 240
+            },
+            "cross_child": {
+              "accuracy": 0.0,
+              "correct": 0,
+              "n": 240
+            },
+            "relation": {
+              "accuracy": 0.0,
+              "correct": 0,
+              "n": 240
+            },
+            "single": {
+              "accuracy": 0.0,
+              "correct": 0,
+              "n": 240
+            }
+          },
+          "correct": 10,
+          "cost": {
+            "cache_hit_share": 0.0,
+            "cached_tokens_mean": 0.0,
+            "completion_tokens_mean": 2.056,
+            "incremental_tokens_mean": 495.416,
+            "prompt_tokens_mean": 495.416,
+            "wall_s_mean": 0.064,
+            "wall_s_p50": 0.058,
+            "wall_s_p95": 0.09
+          },
+          "n": 960
+        }
+      },
+      "coverage": {
+        "arms": {
+          "consult": {
+            "answered": 960,
+            "duplicates": 0,
+            "missing": 0
+          },
+          "excerpts": {
+            "answered": 960,
+            "duplicates": 0,
+            "missing": 0
+          },
+          "full": {
+            "answered": 960,
+            "duplicates": 0,
+            "missing": 0
+          },
+          "summary": {
+            "answered": 960,
+            "duplicates": 0,
+            "missing": 0
+          }
+        },
+        "complete": true,
+        "questions": 960,
+        "unmatched_rows": 0
+      },
+      "method": {
+        "bar_points": 10.0,
+        "bar_questions": 1,
+        "interval": "95% percentile bootstrap of the paired difference, resampling questions",
+        "resamples": 10000,
+        "seed": 1
+      },
+      "pairs": {
+        "consult-excerpts": {
+          "a_correct": 699,
+          "b_correct": 91,
+          "difference": 0.6333,
+          "high": 0.6646,
+          "low": 0.6021,
+          "n": 960
+        },
+        "consult-summary": {
+          "a_correct": 699,
+          "b_correct": 10,
+          "difference": 0.7177,
+          "high": 0.7458,
+          "low": 0.6885,
+          "n": 960
+        },
+        "excerpts-summary": {
+          "a_correct": 91,
+          "b_correct": 10,
+          "difference": 0.0844,
+          "high": 0.1042,
+          "low": 0.0646,
+          "n": 960
+        },
+        "full-consult": {
+          "a_correct": 677,
+          "b_correct": 699,
+          "difference": -0.0229,
+          "high": -0.0073,
+          "low": -0.0385,
+          "n": 960
+        },
+        "full-excerpts": {
+          "a_correct": 677,
+          "b_correct": 91,
+          "difference": 0.6104,
+          "high": 0.6427,
+          "low": 0.5792,
+          "n": 960
+        },
+        "full-summary": {
+          "a_correct": 677,
+          "b_correct": 10,
+          "difference": 0.6948,
+          "high": 0.7229,
+          "low": 0.6656,
+          "n": 960
+        }
+      },
+      "verdict": {
+        "complete": true,
+        "consult_passes": true,
+        "consult_points_above_summary": 71.77,
+        "consult_within_one_question_of_full": true,
+        "excerpts_within_one_question_of_full": false,
+        "outcome": "branches_earned"
+      }
+    },
+    "prompts_sha256": "6922eead65924d578e1e5bbbeaebc51c3c4456b6e3408bbadee25d94b1a5308c",
+    "serving": "vLLM 0.30.0 on one 24 GB GPU, bf16, prefix caching on (hybrid align mode, 528-token blocks), greedy decoding, thinking off, one model for every arm and role",
+    "sets": {
+      "sets": [
+        {
+          "seed": 1301,
+          "sha256": "d57f5ca44b34e6621b94efb60a5e4156968f4582aeea3a3aa8677b487e2e6058"
+        },
+        {
+          "seed": 1302,
+          "sha256": "eb009b5cac36fe4570282905b4df1f8e6c7aafaf9095aadcece742326dcca658"
+        },
+        {
+          "seed": 1303,
+          "sha256": "8f43418a5d4c143a1fc04fdde61c9458dfac6dfebc0a0aac9e3b96861af8d2f8"
+        }
+      ],
+      "version": "wm-handback-2"
+    },
+    "starts": 1,
+    "superseded": {
+      "correct_of_960": {
+        "consult": 677,
+        "excerpts": 90,
+        "full": 676,
+        "summary": 10
+      },
+      "outcome": "branches_earned",
+      "what": "the first run of 2026-09-29, on sets version wm-handback-1 (the same seeds and material)",
+      "why": "its dependency questions asked which task must be finished before another can start, which the dependency's own dependency answers too; version 2 asks for the direct prerequisite"
+    }
+  },
+  "labels": "Every size, cap, budget, seed and resample count here was chosen when the benchmark was built (an assumption, not a measured bound); the WM3 bars are the design's assumptions, set before the run.",
+  "prize": {
+    "block_16": {
+      "block": 16,
+      "per_turn": {
+        "calls": {
+          "max": 19,
+          "mean": 4.5,
+          "median": 4,
+          "n": 3777,
+          "p90": 8
+        },
+        "prompt_tokens": {
+          "max": 47704,
+          "mean": 10168.1,
+          "median": 8621,
+          "n": 3777,
+          "p90": 16268
+        },
+        "served_before_turn": {
+          "max": 35929,
+          "mean": 4246.7,
+          "median": 4830,
+          "n": 3777,
+          "p90": 8058
+        },
+        "served_tokens": {
+          "max": 40858,
+          "mean": 5635.9,
+          "median": 6850,
+          "n": 3777,
+          "p90": 11509
+        },
+        "turn_tokens": {
+          "max": 1176,
+          "mean": 225.1,
+          "median": 192,
+          "n": 3777,
+          "p90": 360
+        },
+        "wm1_bound": {
+          "max": 1029,
+          "mean": 157.8,
+          "median": 141,
+          "n": 3777,
+          "p90": 290
+        },
+        "wm1_new_tokens": {
+          "max": 608,
+          "mean": 132.9,
+          "median": 132,
+          "n": 3777,
+          "p90": 237
+        }
+      },
+      "protocol": "wm-prize-1",
+      "routing": {
+        "default": "one-model",
+        "kinds": {}
+      },
+      "sources": {
+        "attempts": 1550,
+        "skipped_no_colonymind": 695
+      },
+      "template_failures": 0,
+      "totals": {
+        "by_group": {
+          "one-model": {
+            "before_turn_tokens": 28407029,
+            "calls": 17900,
+            "prompt_tokens": 39787099,
+            "served_before_turn": 16039916,
+            "served_share": 0.5468,
+            "served_tokens": 21756909,
+            "served_tokens_block": 21635824,
+            "turn_located_calls": 13136,
+            "turn_served_today": 96989,
+            "turn_tokens": 850169,
+            "wm1_bound": 596095,
+            "wm1_new_share": 0.0126,
+            "wm1_new_tokens": 501977,
+            "wm1_share": 0.015
+          }
+        },
+        "by_kind": {
+          "commitment_extract": {
+            "before_turn_tokens": 16015723,
+            "calls": 4574,
+            "prompt_tokens": 18443978,
+            "served_before_turn": 10191429,
+            "served_share": 0.6175,
+            "served_tokens": 11388283,
+            "served_tokens_block": 11364448,
+            "turn_located_calls": 4216,
+            "turn_served_today": 32973,
+            "turn_tokens": 285855,
+            "wm1_bound": 192224,
+            "wm1_new_share": 0.0087,
+            "wm1_new_tokens": 160561,
+            "wm1_share": 0.0104
+          },
+          "mind_claim_relation": {
+            "before_turn_tokens": 0,
+            "calls": 11,
+            "prompt_tokens": 3065,
+            "served_before_turn": 0,
+            "served_share": 0.0144,
+            "served_tokens": 44,
+            "served_tokens_block": 0,
+            "turn_located_calls": 0,
+            "turn_served_today": 0,
+            "turn_tokens": 0,
+            "wm1_bound": 0,
+            "wm1_new_share": 0.0,
+            "wm1_new_tokens": 0,
+            "wm1_share": 0.0
+          },
+          "mind_consolidate_digest": {
+            "before_turn_tokens": 0,
+            "calls": 1,
+            "prompt_tokens": 317,
+            "served_before_turn": 0,
+            "served_share": 0.0126,
+            "served_tokens": 4,
+            "served_tokens_block": 0,
+            "turn_located_calls": 0,
+            "turn_served_today": 0,
+            "turn_tokens": 0,
+            "wm1_bound": 0,
+            "wm1_new_share": 0.0,
+            "wm1_new_tokens": 0,
+            "wm1_share": 0.0
+          },
+          "mind_consolidate_episode": {
+            "before_turn_tokens": 0,
+            "calls": 33,
+            "prompt_tokens": 10943,
+            "served_before_turn": 0,
+            "served_share": 0.009,
+            "served_tokens": 99,
+            "served_tokens_block": 0,
+            "turn_located_calls": 0,
+            "turn_served_today": 0,
+            "turn_tokens": 0,
+            "wm1_bound": 0,
+            "wm1_new_share": 0.0,
+            "wm1_new_tokens": 0,
+            "wm1_share": 0.0
+          },
+          "mind_consolidate_narrative": {
+            "before_turn_tokens": 0,
+            "calls": 26,
+            "prompt_tokens": 10386,
+            "served_before_turn": 0,
+            "served_share": 0.01,
+            "served_tokens": 104,
+            "served_tokens_block": 0,
+            "turn_located_calls": 0,
+            "turn_served_today": 0,
+            "turn_tokens": 0,
+            "wm1_bound": 0,
+            "wm1_new_share": 0.0,
+            "wm1_new_tokens": 0,
+            "wm1_share": 0.0
+          },
+          "mind_deliberate": {
+            "before_turn_tokens": 0,
+            "calls": 296,
+            "prompt_tokens": 135468,
+            "served_before_turn": 0,
+            "served_share": 0.1846,
+            "served_tokens": 25009,
+            "served_tokens_block": 23408,
+            "turn_located_calls": 0,
+            "turn_served_today": 0,
+            "turn_tokens": 0,
+            "wm1_bound": 0,
+            "wm1_new_share": 0.0,
+            "wm1_new_tokens": 0,
+            "wm1_share": 0.0
+          },
+          "mind_lessons": {
+            "before_turn_tokens": 0,
+            "calls": 269,
+            "prompt_tokens": 161707,
+            "served_before_turn": 0,
+            "served_share": 0.0077,
+            "served_tokens": 1246,
+            "served_tokens_block": 0,
+            "turn_located_calls": 0,
+            "turn_served_today": 0,
+            "turn_tokens": 0,
+            "wm1_bound": 0,
+            "wm1_new_share": 0.0,
+            "wm1_new_tokens": 0,
+            "wm1_share": 0.0
+          },
+          "mind_question_answer": {
+            "before_turn_tokens": 304,
+            "calls": 1,
+            "prompt_tokens": 579,
+            "served_before_turn": 3,
+            "served_share": 0.0052,
+            "served_tokens": 3,
+            "served_tokens_block": 0,
+            "turn_located_calls": 1,
+            "turn_served_today": 0,
+            "turn_tokens": 48,
+            "wm1_bound": 48,
+            "wm1_new_share": 0.0829,
+            "wm1_new_tokens": 48,
+            "wm1_share": 0.0829
+          },
+          "mind_report_substance": {
+            "before_turn_tokens": 0,
+            "calls": 1,
+            "prompt_tokens": 205,
+            "served_before_turn": 0,
+            "served_share": 0.0195,
+            "served_tokens": 4,
+            "served_tokens_block": 0,
+            "turn_located_calls": 0,
+            "turn_served_today": 0,
+            "turn_tokens": 0,
+            "wm1_bound": 0,
+            "wm1_new_share": 0.0,
+            "wm1_new_tokens": 0,
+            "wm1_share": 0.0
+          },
+          "opinion_pass": {
+            "before_turn_tokens": 604695,
+            "calls": 1286,
+            "prompt_tokens": 1286417,
+            "served_before_turn": 67528,
+            "served_share": 0.2305,
+            "served_tokens": 296477,
+            "served_tokens_block": 289856,
+            "turn_located_calls": 793,
+            "turn_served_today": 2006,
+            "turn_tokens": 47914,
+            "wm1_bound": 47822,
+            "wm1_new_share": 0.0356,
+            "wm1_new_tokens": 45816,
+            "wm1_share": 0.0372
+          },
+          "source_appraisal": {
+            "before_turn_tokens": 3546299,
+            "calls": 4186,
+            "prompt_tokens": 6637702,
+            "served_before_turn": 1282251,
+            "served_share": 0.5546,
+            "served_tokens": 3681127,
+            "served_tokens_block": 3650176,
+            "turn_located_calls": 2392,
+            "turn_served_today": 2757,
+            "turn_tokens": 159033,
+            "wm1_bound": 15573,
+            "wm1_new_share": 0.0019,
+            "wm1_new_tokens": 12816,
+            "wm1_share": 0.0023
+          },
+          "source_claim_review": {
+            "before_turn_tokens": 1930270,
+            "calls": 2577,
+            "prompt_tokens": 4109206,
+            "served_before_turn": 854187,
+            "served_share": 0.279,
+            "served_tokens": 1146646,
+            "served_tokens_block": 1129760,
+            "turn_located_calls": 2115,
+            "turn_served_today": 12679,
+            "turn_tokens": 122708,
+            "wm1_bound": 120350,
+            "wm1_new_share": 0.0262,
+            "wm1_new_tokens": 107737,
+            "wm1_share": 0.0293
+          },
+          "source_claims": {
+            "before_turn_tokens": 6309738,
+            "calls": 4535,
+            "prompt_tokens": 8962552,
+            "served_before_turn": 3644518,
+            "served_share": 0.5819,
+            "served_tokens": 5214924,
+            "served_tokens_block": 5175648,
+            "turn_located_calls": 3619,
+            "turn_served_today": 46574,
+            "turn_tokens": 234611,
+            "wm1_bound": 220078,
+            "wm1_new_share": 0.0195,
+            "wm1_new_tokens": 174999,
+            "wm1_share": 0.0246
+          },
+          "untyped": {
+            "before_turn_tokens": 0,
+            "calls": 104,
+            "prompt_tokens": 24574,
+            "served_before_turn": 0,
+            "served_share": 0.1196,
+            "served_tokens": 2939,
+            "served_tokens_block": 2528,
+            "turn_located_calls": 0,
+            "turn_served_today": 0,
+            "turn_tokens": 0,
+            "wm1_bound": 0,
+            "wm1_new_share": 0.0,
+            "wm1_new_tokens": 0,
+            "wm1_share": 0.0
+          }
+        },
+        "by_phase": {
+          "night": {
+            "before_turn_tokens": 0,
+            "calls": 340,
+            "prompt_tokens": 186418,
+            "served_before_turn": 0,
+            "served_share": 0.008,
+            "served_tokens": 1497,
+            "served_tokens_block": 0,
+            "turn_located_calls": 0,
+            "turn_served_today": 0,
+            "turn_tokens": 0,
+            "wm1_bound": 0,
+            "wm1_new_share": 0.0,
+            "wm1_new_tokens": 0,
+            "wm1_share": 0.0
+          },
+          "turn": {
+            "before_turn_tokens": 28406725,
+            "calls": 17158,
+            "prompt_tokens": 39439855,
+            "served_before_turn": 16039913,
+            "served_share": 0.5509,
+            "served_tokens": 21727457,
+            "served_tokens_block": 21609888,
+            "turn_located_calls": 13135,
+            "turn_served_today": 96989,
+            "turn_tokens": 850121,
+            "wm1_bound": 596047,
+            "wm1_new_share": 0.0127,
+            "wm1_new_tokens": 501929,
+            "wm1_share": 0.0151
+          },
+          "window": {
+            "before_turn_tokens": 304,
+            "calls": 402,
+            "prompt_tokens": 160826,
+            "served_before_turn": 3,
+            "served_share": 0.1738,
+            "served_tokens": 27955,
+            "served_tokens_block": 25936,
+            "turn_located_calls": 1,
+            "turn_served_today": 0,
+            "turn_tokens": 48,
+            "wm1_bound": 48,
+            "wm1_new_share": 0.0003,
+            "wm1_new_tokens": 48,
+            "wm1_share": 0.0003
+          }
+        },
+        "host_calls": 17106,
+        "nights": 288,
+        "owner_turns": 3777,
+        "colonymind_calls": 17900,
+        "turn_not_in_rendering": 0
+      },
+      "unattributed_calls": 519
+    },
+    "block_528": {
+      "block": 528,
+      "per_turn": {
+        "calls": {
+          "max": 19,
+          "mean": 4.5,
+          "median": 4,
+          "n": 3777,
+          "p90": 8
+        },
+        "prompt_tokens": {
+          "max": 47704,
+          "mean": 10168.1,
+          "median": 8621,
+          "n": 3777,
+          "p90": 16268
+        },
+        "served_before_turn": {
+          "max": 35929,
+          "mean": 4246.7,
+          "median": 4830,
+          "n": 3777,
+          "p90": 8058
+        },
+        "served_tokens": {
+          "max": 40858,
+          "mean": 5635.9,
+          "median": 6850,
+          "n": 3777,
+          "p90": 11509
+        },
+        "turn_tokens": {
+          "max": 1176,
+          "mean": 225.1,
+          "median": 192,
+          "n": 3777,
+          "p90": 360
+        },
+        "wm1_bound": {
+          "max": 1029,
+          "mean": 157.8,
+          "median": 141,
+          "n": 3777,
+          "p90": 290
+        },
+        "wm1_new_tokens": {
+          "max": 608,
+          "mean": 132.9,
+          "median": 132,
+          "n": 3777,
+          "p90": 237
+        }
+      },
+      "protocol": "wm-prize-1",
+      "routing": {
+        "default": "one-model",
+        "kinds": {}
+      },
+      "sources": {
+        "attempts": 1550,
+        "skipped_no_colonymind": 695
+      },
+      "template_failures": 0,
+      "totals": {
+        "by_group": {
+          "one-model": {
+            "before_turn_tokens": 28407029,
+            "calls": 17900,
+            "prompt_tokens": 39787099,
+            "served_before_turn": 16039916,
+            "served_share": 0.5468,
+            "served_tokens": 21756909,
+            "served_tokens_block": 19407168,
+            "turn_located_calls": 13136,
+            "turn_served_today": 96989,
+            "turn_tokens": 850169,
+            "wm1_bound": 596095,
+            "wm1_new_share": 0.0126,
+            "wm1_new_tokens": 501977,
+            "wm1_share": 0.015
+          }
+        },
+        "by_kind": {
+          "commitment_extract": {
+            "before_turn_tokens": 16015723,
+            "calls": 4574,
+            "prompt_tokens": 18443978,
+            "served_before_turn": 10191429,
+            "served_share": 0.6175,
+            "served_tokens": 11388283,
+            "served_tokens_block": 10875216,
+            "turn_located_calls": 4216,
+            "turn_served_today": 32973,
+            "turn_tokens": 285855,
+            "wm1_bound": 192224,
+            "wm1_new_share": 0.0087,
+            "wm1_new_tokens": 160561,
+            "wm1_share": 0.0104
+          },
+          "mind_claim_relation": {
+            "before_turn_tokens": 0,
+            "calls": 11,
+            "prompt_tokens": 3065,
+            "served_before_turn": 0,
+            "served_share": 0.0144,
+            "served_tokens": 44,
+            "served_tokens_block": 0,
+            "turn_located_calls": 0,
+            "turn_served_today": 0,
+            "turn_tokens": 0,
+            "wm1_bound": 0,
+            "wm1_new_share": 0.0,
+            "wm1_new_tokens": 0,
+            "wm1_share": 0.0
+          },
+          "mind_consolidate_digest": {
+            "before_turn_tokens": 0,
+            "calls": 1,
+            "prompt_tokens": 317,
+            "served_before_turn": 0,
+            "served_share": 0.0126,
+            "served_tokens": 4,
+            "served_tokens_block": 0,
+            "turn_located_calls": 0,
+            "turn_served_today": 0,
+            "turn_tokens": 0,
+            "wm1_bound": 0,
+            "wm1_new_share": 0.0,
+            "wm1_new_tokens": 0,
+            "wm1_share": 0.0
+          },
+          "mind_consolidate_episode": {
+            "before_turn_tokens": 0,
+            "calls": 33,
+            "prompt_tokens": 10943,
+            "served_before_turn": 0,
+            "served_share": 0.009,
+            "served_tokens": 99,
+            "served_tokens_block": 0,
+            "turn_located_calls": 0,
+            "turn_served_today": 0,
+            "turn_tokens": 0,
+            "wm1_bound": 0,
+            "wm1_new_share": 0.0,
+            "wm1_new_tokens": 0,
+            "wm1_share": 0.0
+          },
+          "mind_consolidate_narrative": {
+            "before_turn_tokens": 0,
+            "calls": 26,
+            "prompt_tokens": 10386,
+            "served_before_turn": 0,
+            "served_share": 0.01,
+            "served_tokens": 104,
+            "served_tokens_block": 0,
+            "turn_located_calls": 0,
+            "turn_served_today": 0,
+            "turn_tokens": 0,
+            "wm1_bound": 0,
+            "wm1_new_share": 0.0,
+            "wm1_new_tokens": 0,
+            "wm1_share": 0.0
+          },
+          "mind_deliberate": {
+            "before_turn_tokens": 0,
+            "calls": 296,
+            "prompt_tokens": 135468,
+            "served_before_turn": 0,
+            "served_share": 0.1846,
+            "served_tokens": 25009,
+            "served_tokens_block": 0,
+            "turn_located_calls": 0,
+            "turn_served_today": 0,
+            "turn_tokens": 0,
+            "wm1_bound": 0,
+            "wm1_new_share": 0.0,
+            "wm1_new_tokens": 0,
+            "wm1_share": 0.0
+          },
+          "mind_lessons": {
+            "before_turn_tokens": 0,
+            "calls": 269,
+            "prompt_tokens": 161707,
+            "served_before_turn": 0,
+            "served_share": 0.0077,
+            "served_tokens": 1246,
+            "served_tokens_block": 0,
+            "turn_located_calls": 0,
+            "turn_served_today": 0,
+            "turn_tokens": 0,
+            "wm1_bound": 0,
+            "wm1_new_share": 0.0,
+            "wm1_new_tokens": 0,
+            "wm1_share": 0.0
+          },
+          "mind_question_answer": {
+            "before_turn_tokens": 304,
+            "calls": 1,
+            "prompt_tokens": 579,
+            "served_before_turn": 3,
+            "served_share": 0.0052,
+            "served_tokens": 3,
+            "served_tokens_block": 0,
+            "turn_located_calls": 1,
+            "turn_served_today": 0,
+            "turn_tokens": 48,
+            "wm1_bound": 48,
+            "wm1_new_share": 0.0829,
+            "wm1_new_tokens": 48,
+            "wm1_share": 0.0829
+          },
+          "mind_report_substance": {
+            "before_turn_tokens": 0,
+            "calls": 1,
+            "prompt_tokens": 205,
+            "served_before_turn": 0,
+            "served_share": 0.0195,
+            "served_tokens": 4,
+            "served_tokens_block": 0,
+            "turn_located_calls": 0,
+            "turn_served_today": 0,
+            "turn_tokens": 0,
+            "wm1_bound": 0,
+            "wm1_new_share": 0.0,
+            "wm1_new_tokens": 0,
+            "wm1_share": 0.0
+          },
+          "opinion_pass": {
+            "before_turn_tokens": 604695,
+            "calls": 1286,
+            "prompt_tokens": 1286417,
+            "served_before_turn": 67528,
+            "served_share": 0.2305,
+            "served_tokens": 296477,
+            "served_tokens_block": 208560,
+            "turn_located_calls": 793,
+            "turn_served_today": 2006,
+            "turn_tokens": 47914,
+            "wm1_bound": 47822,
+            "wm1_new_share": 0.0356,
+            "wm1_new_tokens": 45816,
+            "wm1_share": 0.0372
+          },
+          "source_appraisal": {
+            "before_turn_tokens": 3546299,
+            "calls": 4186,
+            "prompt_tokens": 6637702,
+            "served_before_turn": 1282251,
+            "served_share": 0.5546,
+            "served_tokens": 3681127,
+            "served_tokens_block": 2798928,
+            "turn_located_calls": 2392,
+            "turn_served_today": 2757,
+            "turn_tokens": 159033,
+            "wm1_bound": 15573,
+            "wm1_new_share": 0.0019,
+            "wm1_new_tokens": 12816,
+            "wm1_share": 0.0023
+          },
+          "source_claim_review": {
+            "before_turn_tokens": 1930270,
+            "calls": 2577,
+            "prompt_tokens": 4109206,
+            "served_before_turn": 854187,
+            "served_share": 0.279,
+            "served_tokens": 1146646,
+            "served_tokens_block": 722304,
+            "turn_located_calls": 2115,
+            "turn_served_today": 12679,
+            "turn_tokens": 122708,
+            "wm1_bound": 120350,
+            "wm1_new_share": 0.0262,
+            "wm1_new_tokens": 107737,
+            "wm1_share": 0.0293
+          },
+          "source_claims": {
+            "before_turn_tokens": 6309738,
+            "calls": 4535,
+            "prompt_tokens": 8962552,
+            "served_before_turn": 3644518,
+            "served_share": 0.5819,
+            "served_tokens": 5214924,
+            "served_tokens_block": 4802160,
+            "turn_located_calls": 3619,
+            "turn_served_today": 46574,
+            "turn_tokens": 234611,
+            "wm1_bound": 220078,
+            "wm1_new_share": 0.0195,
+            "wm1_new_tokens": 174999,
+            "wm1_share": 0.0246
+          },
+          "untyped": {
+            "before_turn_tokens": 0,
+            "calls": 104,
+            "prompt_tokens": 24574,
+            "served_before_turn": 0,
+            "served_share": 0.1196,
+            "served_tokens": 2939,
+            "served_tokens_block": 0,
+            "turn_located_calls": 0,
+            "turn_served_today": 0,
+            "turn_tokens": 0,
+            "wm1_bound": 0,
+            "wm1_new_share": 0.0,
+            "wm1_new_tokens": 0,
+            "wm1_share": 0.0
+          }
+        },
+        "by_phase": {
+          "night": {
+            "before_turn_tokens": 0,
+            "calls": 340,
+            "prompt_tokens": 186418,
+            "served_before_turn": 0,
+            "served_share": 0.008,
+            "served_tokens": 1497,
+            "served_tokens_block": 0,
+            "turn_located_calls": 0,
+            "turn_served_today": 0,
+            "turn_tokens": 0,
+            "wm1_bound": 0,
+            "wm1_new_share": 0.0,
+            "wm1_new_tokens": 0,
+            "wm1_share": 0.0
+          },
+          "turn": {
+            "before_turn_tokens": 28406725,
+            "calls": 17158,
+            "prompt_tokens": 39439855,
+            "served_before_turn": 16039913,
+            "served_share": 0.5509,
+            "served_tokens": 21727457,
+            "served_tokens_block": 19407168,
+            "turn_located_calls": 13135,
+            "turn_served_today": 96989,
+            "turn_tokens": 850121,
+            "wm1_bound": 596047,
+            "wm1_new_share": 0.0127,
+            "wm1_new_tokens": 501929,
+            "wm1_share": 0.0151
+          },
+          "window": {
+            "before_turn_tokens": 304,
+            "calls": 402,
+            "prompt_tokens": 160826,
+            "served_before_turn": 3,
+            "served_share": 0.1738,
+            "served_tokens": 27955,
+            "served_tokens_block": 0,
+            "turn_located_calls": 1,
+            "turn_served_today": 0,
+            "turn_tokens": 48,
+            "wm1_bound": 48,
+            "wm1_new_share": 0.0003,
+            "wm1_new_tokens": 48,
+            "wm1_share": 0.0003
+          }
+        },
+        "host_calls": 17106,
+        "nights": 288,
+        "owner_turns": 3777,
+        "colonymind_calls": 17900,
+        "turn_not_in_rendering": 0
+      },
+      "unattributed_calls": 519
+    },
+    "source": "request traces of paired development campaigns (held-out campaigns never read, attempts of the host alone left out); the prompts were produced by the campaigns' own models, and only the token counts use the tokenizer below",
+    "tokenizer": "Qwen3.5-4B chat template, thinking off",
+    "what": "For each owner turn, every model call ColonyMind made for it, under the default routing table (every role and the host on one model). Served counts are upper bounds: no eviction, one cache per attempt."
+  },
+  "protocol": "wm-results-1"
+}

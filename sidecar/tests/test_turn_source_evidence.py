@@ -1,0 +1,215 @@
+"""Source bytes survive ingestion and are consumed by scoped context recall."""
+
+import hashlib
+import json
+import sqlite3
+
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
+import pytest
+
+from colonymind.api.errors import install_exception_handlers
+from colonymind.api.routers import host
+from colonymind.api.schemas.host import TurnSyncRequest
+from colonymind.turns import TurnIdempotencyLedger, canonical_turn_digest
+
+
+@pytest.fixture
+def source_app(monkeypatch, tmp_path):
+    monkeypatch.setenv("COLONYMIND_STATE_DIR", str(tmp_path))
+    for name in ("_contacts_store", "_telemetry", "_reranker", "_context_recall_selector", "_comms_log"):
+        monkeypatch.setattr(host, name, None)
+    app = FastAPI()
+    install_exception_handlers(app)
+    app.include_router(host.router)
+    app.include_router(host.v2_router)
+    from colonymind.api.routers import curated_memory
+    from colonymind.turns import get_turn_idempotency_ledger
+
+    class CuratedLedger:
+        # This standalone app has no startup lifespan. Resolve the test ledger
+        # only when its curated route is used, preserving invalid-capture tests.
+        db_path = tmp_path / 'turn-idempotency.db'
+        _curated_available = True
+
+        def __getattr__(self, name):
+            return getattr(get_turn_idempotency_ledger(tmp_path), name)
+
+    app.include_router(curated_memory.router)
+    curated_memory.bind_ledger(app, CuratedLedger())
+    return app
+
+
+def envelope(turn_id, *, checkpoint=False):
+    content = "ordinary context " * 180 + "The hydrofoil departure is Friday at nine."
+    body = {
+        "identity": {"host_id": "test-host"},
+        "context": {"session_id": "session-a", "contact_id": "contact-a", "channel_id": "test:thread-a", "turn_id": turn_id},
+    }
+    if checkpoint:
+        body["checkpoint_messages"] = [{"role": "user", "content": content}]
+    else:
+        body["user_message"] = {"role": "user", "content": content}
+        body["assistant_message"] = {"role": "assistant", "content": "Understood."}
+    return body
+
+
+async def recalled(client, *, contact="contact-a", session="session-a", query="hydrofoil"):
+    response = await client.post("/v1/host/context/assemble", json={
+        "identity": {"host_id": "test-host"},
+        "context": {"contact_id": contact, "session_id": session},
+        "incoming_message": {"role": "user", "content": query},
+    })
+    assert response.status_code == 200, response.text
+    return "\n".join(
+        section["body"] for section in response.json()["sections"]
+        if section["id"] == "colonymind-memory"
+    )
+
+
+@pytest.mark.asyncio
+async def test_complete_turn_is_recalled_across_sessions_after_reopen(source_app, tmp_path):
+    async with AsyncClient(transport=ASGITransport(app=source_app), base_url="http://test") as client:
+        body = envelope("turn-source")
+        body["context"]["metadata"] = {"occurred_at": "2026-01-02T03:04:05+00:00"}
+        response = await client.put("/v2/host/turns/turn-source", json=body)
+        assert response.status_code == 201
+        assert response.json()["source_recorded"] is True
+        assert response.json()["continuity_updated"] is True
+        assert response.json()["skipped_reason"] is None
+        assert "Friday at nine" in await recalled(client, session="session-b")
+        assert await recalled(client, contact="contact-b") == ""
+    reopened = TurnIdempotencyLedger(tmp_path / "turn-idempotency.db")
+    assert "Friday at nine" in reopened.search_sources(
+        "hydrofoil", contact_id="contact-a", session_id="later"
+    )[0]["content"]
+    hit = reopened.search_sources("hydrofoil", contact_id="contact-a", session_id="later")[0]
+    assert hit["occurred_at"] == "2026-01-02T03:04:05+00:00"
+    assert hit["ingested_at"] != hit["occurred_at"]
+    with sqlite3.connect(tmp_path / "turn-idempotency.db") as conn:
+        messages = json.loads(conn.execute("SELECT messages_json FROM turn_sources").fetchone()[0])
+        assert messages[0]["content"] == body["user_message"]["content"]
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_replay_has_no_ordinary_effect_and_is_session_scoped(source_app, monkeypatch, tmp_path):
+    async def forbidden(*args, **kwargs):
+        raise AssertionError("checkpoint ran ordinary conversation effects")
+    monkeypatch.setattr(host, "_process_turn_sync", forbidden)
+    async with AsyncClient(transport=ASGITransport(app=source_app), base_url="http://test") as client:
+        body = envelope("checkpoint-source", checkpoint=True)
+        first = await client.put("/v2/host/turns/checkpoint-source", json=body)
+        again = await client.put("/v2/host/turns/checkpoint-source", json=body)
+        assert first.status_code == 201 and again.status_code == 200
+        assert first.json()["source_recorded"] is True
+        assert "Friday at nine" in await recalled(client)
+        assert await recalled(client, session="session-b") == ""
+        assert await recalled(client, contact="contact-b") == ""
+        body["checkpoint_messages"][0]["content"] += " Changed."
+        changed = await client.put("/v2/host/turns/checkpoint-source", json=body)
+        assert changed.status_code == 409
+    with sqlite3.connect(tmp_path / "turn-idempotency.db") as conn:
+        assert conn.execute("SELECT count(*) FROM turn_sources").fetchone()[0] == 1
+        assert conn.execute("SELECT count(*) FROM turn_ingestion").fetchone()[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_media_references_retained_but_not_lexically_indexed(source_app, tmp_path):
+    body = envelope("media-source", checkpoint=True)
+    blocks = [
+        {"type": "text", "text": "The hydrofoil is pictured here."},
+        {"type": "image_url", "image_url": {"url": "https://example.invalid/mediaonlymarker.png"}},
+    ]
+    body["checkpoint_messages"][0]["content"] = blocks
+    async with AsyncClient(transport=ASGITransport(app=source_app), base_url="http://test") as client:
+        assert (await client.put("/v2/host/turns/media-source", json=body)).status_code == 201
+        assert "pictured here" in await recalled(client)
+        assert await recalled(client, query="mediaonlymarker") == ""
+        body["checkpoint_messages"][0]["api_content"] = "injected recall"
+        assert (await client.put("/v2/host/turns/invalid-source", json=body)).status_code == 422
+    with sqlite3.connect(tmp_path / "turn-idempotency.db") as conn:
+        stored = json.loads(conn.execute("SELECT messages_json FROM turn_sources").fetchone()[0])[0]
+        assert stored["content"][0] == blocks[0]
+        assert stored["content"][1]["type"] == "image_unretained"
+        from colonymind.turns.idempotency import source_message_hash
+        assert source_message_hash("session-a", stored) == source_message_hash("session-a", {"role": "user", "content": blocks})
+
+
+def test_additive_schema_preserves_existing_idempotency_digest():
+    payload = TurnSyncRequest.model_validate(envelope("existing-turn"))
+    legacy = payload.model_dump(mode="json", exclude_none=False)
+    for additive in ('checkpoint_messages', 'assistant_source_refs', 'assistant_input_refs', 'source_only', 'work'):
+        legacy.pop(additive)
+    expected = hashlib.sha256(json.dumps(
+        legacy, ensure_ascii=False, separators=(",", ":"), sort_keys=True,
+    ).encode()).hexdigest()
+    assert canonical_turn_digest(payload) == expected
+
+
+@pytest.mark.asyncio
+async def test_empty_checkpoint_is_rejected_without_storing_garbage(source_app, tmp_path):
+    body = envelope("empty-source", checkpoint=True)
+    body["checkpoint_messages"] = []
+    async with AsyncClient(transport=ASGITransport(app=source_app), base_url="http://test") as client:
+        assert (await client.put("/v2/host/turns/empty-source", json=body)).status_code == 422
+    assert not (tmp_path / "turn-idempotency.db").exists()
+
+
+@pytest.mark.asyncio
+async def test_repeated_event_keeps_its_date_until_context_time_selection(source_app, monkeypatch):
+    monkeypatch.setenv("COLONYMIND_RECALL_RERANK", "off")
+    text = "The camera spotted a crate by the loading door."
+    async with AsyncClient(transport=ASGITransport(app=source_app), base_url="http://test") as client:
+        for turn, day in (("earlier-event", "2026-03-01"), ("later-event", "2026-03-03")):
+            body = envelope(turn)
+            body["user_message"]["content"] = text
+            body["context"]["metadata"] = {"occurred_at": day + "T09:00:00+00:00"}
+            assert (await client.put(f"/v2/host/turns/{turn}", json=body)).status_code == 201
+        for day, expected, excluded in (("2026-03-01", "earlier-event", "later-event"),
+                                        ("2026-03-03", "later-event", "earlier-event")):
+            context = await recalled(client, session="voice-session", query=f"What did the camera spot on {day}?")
+            assert text in context
+            assert f'"source": "turn:{expected}"' in context
+            assert f'"source": "turn:{excluded}"' not in context
+        # Ordinary recall can still collapse repeated words by the same known
+        # speaker after it has retained their canonical lineage for time checks.
+        context = await recalled(client, query="camera crate")
+        assert context.count(text) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("multimodal", [False, True])
+async def test_long_source_excerpt_is_marked_incomplete_before_packet_packing(source_app, multimodal):
+    body = envelope("long-procedure")
+    text = "Labeler reset procedure: disconnect the power. " + "Read the status indicator. " * 100
+    text += "Only reconnect after the amber light stops blinking."
+    body["user_message"]["content"] = ([{"type": "text", "text": text}] if multimodal else text)
+    async with AsyncClient(transport=ASGITransport(app=source_app), base_url="http://test") as client:
+        assert (await client.put("/v2/host/turns/long-procedure", json=body)).status_code == 201
+        context = await recalled(client, query="labeler reset disconnect")
+    assert "Labeler reset procedure" in context
+    assert "Only reconnect" not in context
+    assert '"excerpt_truncated": true' in context
+
+
+def test_lexical_recall_reconstructs_only_the_candidates_it_returns(tmp_path, monkeypatch):
+    from colonymind.turns import idempotency
+
+    ledger = TurnIdempotencyLedger(tmp_path / "ledger.db")
+    for index in range(40):
+        ledger.record_source(f"t{index}", contact_id="contact-a", session_id="s",
+                             messages=[{"role": "user", "content": f"Parcel {index} arrives at the depot."}])
+    with ledger._connect() as conn:
+        # A chunk written by an older indexer that no canonical message owns.
+        conn.execute("INSERT INTO turn_source_search(turn_id, role, content) VALUES (?, ?, ?)",
+                     ("t0", "user", "parcel depot parcel depot parcel depot"))
+    parsed = []
+    lexical_chunks = idempotency._lexical_chunks
+    monkeypatch.setattr(idempotency, "_lexical_chunks",
+                        lambda messages: (parsed.append(1), lexical_chunks(messages))[1])
+    hits = ledger.search_sources("parcel depot", contact_id="contact-a", session_id="later", limit=3)
+    assert len(hits) == 3 and len({hit["turn_id"] for hit in hits}) == 3
+    assert all(hit["source_message_hash"] for hit in hits)
+    # Source envelopes are reconstructed for the handful of ranked candidates
+    # consumed, never for every FTS match; the stale row spends no budget.
+    assert len(parsed) <= 4

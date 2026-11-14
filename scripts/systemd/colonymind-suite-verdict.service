@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily ColonyMind test suite verdict
+
+[Service]
+Type=oneshot
+UMask=0077
+EnvironmentFile=%h/.config/colonymind/suite-verdict.conf
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHON_DOTENV_DISABLED=1 COLONYMIND_SKIP_DOTENV=1 LITELLM_LOCAL_MODEL_COST_MAP=True PIP_NO_INDEX=1 COLONYMIND_TEST_POLL_LOOP=1
+ExecStart=/bin/bash ${SUITE_CHECKOUT}/scripts/daily_suite_verdict.sh ${SUITE_CHECKOUT} ${SUITE_VERDICT_LOG}
+TimeoutStartSec=3h
