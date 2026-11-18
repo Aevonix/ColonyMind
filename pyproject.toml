@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "colonymind-hermes"
-version = "1.0.0"
+version = "1.0.1"
 description = "ColonyMind's adapter and memory provider for stock Hermes. A mind for Hermes agents: persistent memory, commitments, initiative and measured autonomy"
 readme = "docs/HERMES-ADAPTER.md"
 requires-python = ">=3.11,<3.15"

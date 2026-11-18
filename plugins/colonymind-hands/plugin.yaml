@@ -1,5 +1,5 @@
 name: colonymind-hands
-version: 1.0.0
+version: 1.0.1
 description: |
   Durable delegated work for ColonyMind in Hermes. Registers the runtime hooks,
   tools, commands and guards; delegation becomes active only after every guard

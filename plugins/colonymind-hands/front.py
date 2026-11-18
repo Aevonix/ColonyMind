@@ -103,6 +103,11 @@ _UNSET = object()
 # (HERMES_GATEWAY_BUSY_TEXT_DEBOUNCE_SECONDS, 0.35 s by default, and its bounded flush); an assumption, generous on
 # purpose: a heard message that never reaches the slot (a hook dropped it) stops counting after this.
 HEARD_WAIT_SECONDS = 3.0
+# Hermes' redirect (agent.redirect) cancels the model request that is running when a follow-up arrives and joins the
+# follow-up to the turn's user message after the first line below. Follow-ups that arrive before it applies are joined
+# to each other after the second.
+REDIRECT_LINE = '\n\nUser correction during the turn: '
+REDIRECT_MORE = '\n\n[Additional user correction]\n'
 
 
 @dataclass
@@ -539,18 +544,24 @@ class FrontGuard:
             self.metrics['capture_refused'] += 1
             return None
         cleaned = _text(text)
+        words = self._owner_words(state, row, cleaned)
+        if words is None:
+            words = self._redirected_words(state, row, cleaned)
+        if words is None:
+            self.metrics['capture_refused'] += 1
+        return words
+
+    def _owner_words(self, state, row, cleaned):
         if state.composed:
             current = [row for row in self.inbound.values() if row.platform == state.platform
                        and row.sender == state.sender and row.chat == state.chat
                        and any(row.message_id == ident for ident, _ in state.composed)]
             if any(not valid_ingress(row.rewrite) or row.mixed for row in (*state.admissions, *current)):
-                self.metrics['capture_refused'] += 1
                 return None
             if cleaned == state.envelope:
                 return '\n\n'.join(words for _, words in state.composed)
             if any(cleaned == words for _, words in state.composed):
                 return cleaned
-            self.metrics['capture_refused'] += 1
             return None
         if row is not None and (_hash(cleaned) == row.text_hash or matches_rewrite(row.rewrite, cleaned)):
             return cleaned
@@ -565,8 +576,32 @@ class FrontGuard:
                 if (_hash(rest) == row.text_hash or (row.stripped_hash and _hash(rest.strip()) == row.stripped_hash)
                         or matches_rewrite(row.rewrite, rest)):
                     return cleaned
-        self.metrics['capture_refused'] += 1
         return None
+
+    def _redirected_words(self, state, row, cleaned):
+        """A turn's own words followed by Hermes' redirect lines (REDIRECT_LINE, REDIRECT_MORE).
+
+        Each follow-up after them must be a message this ledger heard on the busy path from the turn's sender, in
+        the turn's chat, while the turn ran, with its ingress intact; one heard message stands for one follow-up.
+        The words then read as merged queued messages do: each message after a blank line. Nothing is consumed.
+        """
+        own, line, rest = cleaned.partition(REDIRECT_LINE)
+        words = self._owner_words(state, row, own) if line else None
+        if words is None:
+            return None
+        heard = [other for other in self.inbound.values() if other.queued and not other.mixed
+                 and other.consumed is None and other.arrived >= state.started
+                 and (other.platform, other.sender, other.chat) == (state.platform, state.sender, state.chat)
+                 and (not other.session_key or not state.session_key or other.session_key == state.session_key)
+                 and valid_ingress(other.rewrite)]
+        follow_ups = rest.replace(REDIRECT_LINE, REDIRECT_MORE).split(REDIRECT_MORE)
+        for follow_up in follow_ups:
+            match = next((other for other in heard if follow_up.strip() and (_hash(follow_up) == other.stripped_hash
+                          or matches_rewrite(other.rewrite, follow_up, strip=True))), None)
+            if match is None:
+                return None
+            heard.remove(match)
+        return '\n\n'.join((words, *follow_ups))
 
     def owner_started_turn(self, session_id, turn_id=''):
         if self._inactive():
