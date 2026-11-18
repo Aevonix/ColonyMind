@@ -12,6 +12,10 @@ again with the new message included. ColonyMind now records such a turn once, wi
   follow-up is a message it heard from the same sender in the same chat while the turn ran, and capture records the
   messages together, each after a blank line, as it does for merged queued messages. A follow-up the front did not
   hear, or one that carries Hermes' message-origin note, is still refused.
+- The job watch's launchd template ran `watch --once` in the `Background` process class, which macOS throttles: a
+  notice command that starts a heavier program could run several times slower, pass the default 30-second notice
+  limit (`notice_timeout_s`) and wait an hour for its retry. The template no longer sets `ProcessType`, so the job
+  runs in launchd's standard class.
 
 ### Upgrading
 
@@ -20,7 +24,9 @@ again with the new message included. ColonyMind now records such a turn once, wi
     hermes gateway restart
 
 - Nothing else to do. The hands plugin's `front.py` changed: a host that runs the plugin from a copied directory
-  copies that file.
+  copies that file. A job watch loaded from a copy of the launchd template keeps the old class: delete its
+  `ProcessType` line, run `launchctl bootout "gui/$(id -u)/com.colonymind.watch"`, then load it again as in
+  [INSTALL.md](docs/INSTALL.md#optional-job-watch-timer).
 
 ## v1.0.0 - the first release under the name ColonyMind
 
