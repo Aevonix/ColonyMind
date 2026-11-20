@@ -1,6 +1,6 @@
 """Recent ledger responses retain the pre-optimization erasure and window semantics."""
 from contextlib import closing
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import sqlite3
 
@@ -127,11 +127,13 @@ def test_projection_erasure_keeps_other_contacts_and_unlinked_rows(tmp_path):
     historical_source_erasure(ledger, 'person', turn_ids=['parent'])
     with closing(ledger._connect()) as conn, conn:
         conn.execute("INSERT INTO source_projection_erasures VALUES ('answer','parent')")
+    # Inside rollup()'s 30-day window on any run date: a fixed date fell out of it on 2026-11-18.
+    recent = (datetime.now(timezone.utc) - timedelta(days=1)).strftime('%Y-%m-%d')
     for contact in ['person', 'other']:
         with sqlite3.connect(log._db_path) as conn:
             conn.execute('''INSERT INTO communications(id,contact_id,direction,ts,source_lineage_json)
-                VALUES (?,?,'in','2026-10-19',?)''',
-                (contact, contact, json.dumps({'turn_id': 'answer'})))
+                VALUES (?,?,'in',?,?)''',
+                (contact, contact, recent, json.dumps({'turn_id': 'answer'})))
     log.log('person', channel='sms')
     assert log.rollup() == {'unknown': {'in': 1, 'out': 0}, 'sms': {'in': 1, 'out': 0}}
     assert log._conn.execute("SELECT count(*) FROM communications WHERE id='other'").fetchone()[0] == 1
