@@ -399,6 +399,8 @@ class TurnIdempotencyLedger:
                 initialize_channels(conn)
                 from colonymind.pages.store import initialize as initialize_pages
                 initialize_pages(conn)
+                from colonymind.turns.group_chats import initialize as initialize_group_chats
+                initialize_group_chats(conn)
             # Curated storage is optional. Its DDL must not roll back native initialization.
             try:
                 from colonymind.memory.curated import initialize as initialize_curated

@@ -1563,3 +1563,23 @@ def test_a_compression_mid_turn_keeps_the_turns_sender(provider_mod, monkeypatch
     assert provider._lane() == ("guest", "p-03") and provider._prefetch_contact("s2") == "p-03"
     provider.on_session_switch("s3", parent_session_id="", reset=True)
     assert provider._prefetch_contact("s3") != "p-03"
+
+
+def test_a_group_chats_turn_names_its_chat_and_a_direct_chats_turn_does_not(provider_mod, monkeypatch):
+    """A turn the gateway bound to a group chat tells the sidecar its chat kind and ``platform:chat id``: recall
+    then reads that chat's own history only, and the line that says so is never folded into "unchanged". A turn
+    in a direct chat, and one with no gateway behind it, names neither."""
+    set_turn = _install_session_context(monkeypatch)
+    fake = _FakeHttpx(routes={_RESOLVE: {"contact_id": "cid-turn"}, _ASSEMBLE: {"sections": []}})
+    provider = _make_provider(provider_mod, fake, monkeypatch)
+    for number, (kind, chat, named) in enumerate((
+            ("Group", "-1007", {"chat_type": "group", "chat": "telegram:-1007"}),
+            ("channel", "", {"chat_type": "channel"}), ("dm", "alice", {}), ("private", "alice", {}), ("", "", {}))):
+        set_turn(platform="Telegram", sender="alice", chat=chat, chat_type=kind)
+        provider.prefetch(f"What did we say about plan {number}?", session_id=f"s{number}")
+        metadata = _assemble_calls(fake)[-1]["json"]["context"]["metadata"]
+        assert {key: metadata[key] for key in ("chat_type", "chat") if key in metadata} == named, kind
+    assert len(_assemble_calls(fake)) == 5
+    monkeypatch.setitem(sys.modules, "gateway.session_context", None)
+    assert provider._group_chat() == {}
+    assert "Recall narrowed" in provider_mod._ALWAYS_SENT

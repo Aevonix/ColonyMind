@@ -27,10 +27,12 @@ def _ledger() -> Any:
             if (Path(get_state_dir()) / "turn-idempotency.db").exists() else None)
 
 
-def sections(contact_id: Optional[str], *, people: bool = True) -> List[Dict[str, Any]]:
+def sections(contact_id: Optional[str], *, people: bool = True, group: Optional[str] = None,
+             session_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """The page sections of a turn with ``contact_id`` (``id``, ``title``, ``body``, ``priority``): the page
     on that person, then the agent's own. ``people`` off leaves the person's page out. A page with no
-    standing line gives no section."""
+    standing line gives no section. A turn in a group chat (``group``, in session ``session_id``) is given a
+    line only when every turn the line cites took place in that chat (``turns.group_chats``)."""
     ledger = _ledger()
     if ledger is None:
         return []
@@ -39,6 +41,9 @@ def sections(contact_id: Optional[str], *, people: bool = True) -> List[Dict[str
     for subject, ident, title, leads, priority in ((person, PERSON_ID, PERSON_TITLE, PERSON_LEADS, 85),
                                                    (store.SELF, SELF_ID, SELF_TITLE, SELF_LEADS, 82)):
         rows = store.lines(ledger, subject, kinds=tuple(leads)) if subject else []
+        if group is not None:
+            from colonymind.turns import group_chats
+            rows = group_chats.within(ledger, group, session_id, rows, turns=lambda row: row["sources"])
         if rows:
             found.append({"id": ident, "title": title, "priority": priority,
                           "body": "\n".join(f"- {leads[row['kind']]}: {row['text']}" for row in rows)})

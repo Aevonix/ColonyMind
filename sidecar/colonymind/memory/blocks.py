@@ -58,6 +58,7 @@ RANK: Tuple[str, ...] = (
     "colonymind-open-questions",
     "colonymind-corrections",        # corrections to earlier context (owner-critical)
     "colonymind-standing-lessons",
+    "colonymind-recall-narrowed",    # a group turn's one line: recall read the group's own history only
     "colonymind-page-person",        # the agent's page on the turn's person, its boundaries first (pages.turn)
     "colonymind-memory",             # this turn's recall
     "colonymind-lessons",
@@ -95,7 +96,8 @@ FLOOR = 240                  # the head every admitted block keeps under a short
 FOSSIL_DAYS = 7
 HELD_ID, HELD_TITLE = "colonymind-held-back", "Held back this turn"
 #: Sections never collapsed to a line by the provider (its ``_ALWAYS_SENT``).
-ALWAYS_WHOLE = frozenset({"temporal-context", "colonymind-standing-lessons", "colonymind-owner-continuity"})
+ALWAYS_WHOLE = frozenset({"temporal-context", "colonymind-standing-lessons", "colonymind-owner-continuity",
+                          "colonymind-recall-narrowed"})
 #: What the provider sends instead of a section its session's last turn already carried (provider.py).
 UNCHANGED_LINE = "unchanged since your last turn: {title}"
 MARK = "[{chars} characters in {lines} line{s} held back: {why}]"

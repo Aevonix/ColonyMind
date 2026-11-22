@@ -41,7 +41,8 @@ RRF_K = 60
 class CollectedSources:
     """What the lanes found. ``hits`` is every lane fused; ``lexical_hits`` the keyword lanes fused, the evidence
     recall has without a semantic index; ``semantic`` the vector lane's state (``ready``, ``unavailable``,
-    ``failed``); ``lanes`` each lane's own hits, best first (a timed lane's once selection has run it)."""
+    ``failed``); ``lanes`` each lane's own hits, best first (a timed lane's once selection has run it); ``group``
+    the group chat of a turn in one (``turns.group_chats``), whose own history is all that turn recalls."""
     ledger: Any
     contact_id: str
     session_id: str
@@ -53,6 +54,7 @@ class CollectedSources:
     lanes: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     curated_recall: Any = field(default=None, repr=False, compare=False)
     curated_protection: Any = field(default=None, repr=False, compare=False)
+    group: str | None = None
 
 
 @dataclass(frozen=True)
@@ -175,19 +177,22 @@ class MemoryPacket:
 
 async def collect_sources(ledger, *, query: str, contact_id: str, session_id: str,
                           vector_store=None, embedding_pipeline=None, trace=NULL_TRACE,
-                          recall_request=None) -> CollectedSources:
+                          recall_request=None, group: str | None = None) -> CollectedSources:
     """Read exact scoped sources; optional semantic failure keeps lexical evidence.
 
     Every lane of ``LANES`` searches at once, and the lanes are fused here; each lane's ranks go to ``trace``
     (``memory.trace``) where it is fused: a lane fused anywhere else would be invisible to a recall trace. A timed
     lane runs later, in ``select_memory``, where the question's time is read, and is fused and traced there.
+    ``group`` names the group chat of a turn in one: selection then keeps that chat's own history only.
     """
     from colonymind.memory.live_recall import LIVE
     from . import curated
     with curated.strict_read(ledger), LIVE.running():  # background indexing leaves the model endpoint to a live recall
-        return await _collect_sources(ledger, query=query, contact_id=contact_id, session_id=session_id,
-                                      vector_store=vector_store, embedding_pipeline=embedding_pipeline, trace=trace,
-                                      recall_request=recall_request)
+        collected = await _collect_sources(
+            ledger, query=query, contact_id=contact_id, session_id=session_id, vector_store=vector_store,
+            embedding_pipeline=embedding_pipeline, trace=trace, recall_request=recall_request)
+        collected.group = group
+        return collected
 
 
 async def _collect_sources(ledger, *, query, contact_id, session_id, vector_store, embedding_pipeline, trace,
@@ -369,6 +374,12 @@ def _prepare_memory(collected, *, query, time_query, current_work_available, now
     if ledger is not None:
         from .curated import strict_candidates as candidates
         beliefs, quotations = candidates(ledger, collected.contact_id, query, beliefs, quotations)
+    if collected.group is not None:
+        # A turn in a group chat recalls that chat's own history only: a candidate stays when every turn it
+        # names took place there, so a curated entry and anything else with no turn of its own is withheld.
+        from colonymind.turns import group_chats
+        beliefs, quotations = (group_chats.within(ledger, collected.group, collected.session_id, rows)
+                               for rows in (beliefs, quotations))
     return beliefs, quotations
 
 

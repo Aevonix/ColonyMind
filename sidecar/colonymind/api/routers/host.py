@@ -2698,6 +2698,17 @@ async def _assembled_lanes(
 
     # --- Temporal Context: see _build_temporal_section ---
     metadata = body.context.metadata or {}
+    # A turn in a group chat is given that chat's own history only (``turns.group_chats``), so it is nobody's own
+    # turn for the learners and is told of no work in progress. Its session is noted for the chat once its
+    # context is accepted (at once for a caller with no turn budget), off the event loop.
+    from colonymind.turns import group_chats
+    group = group_chats.of_turn(metadata)
+    if group is not None:
+        _owner_turn = current_work_available = False
+        if group and not read_only and turn_budget.current() is not None:
+            turn_budget.defer_write(asyncio.to_thread, group_chats.note, group, body.context.session_id)
+        elif group and not read_only:
+            await asyncio.to_thread(group_chats.note, group, body.context.session_id)
     owner_private_turn = bool(_viewer_is_owner and metadata.get("owner_private_turn") is True
                               and str(metadata.get("chat_type") or "").strip().lower() in {"", "dm"}
                               and body.audience not in {"shared", "global"}
@@ -2778,7 +2789,8 @@ async def _assembled_lanes(
             collected = await collect_sources(source_ledger, query=recall_query,
                 contact_id=body.context.contact_id, session_id=body.context.session_id,
                 vector_store=get_store(), embedding_pipeline=get_pipeline(), trace=recall_trace,
-                **({'recall_request': recall_request} if recall_request is not None else {}))
+                **({'recall_request': recall_request} if recall_request is not None else {}),
+                **({'group': group} if group is not None else {}))
             recall_semantic = collected.semantic
             contact_tz = None
             if not _canonical_only and _contacts_store is not None:
@@ -3029,7 +3041,8 @@ async def _assembled_lanes(
     try:
         from colonymind.pages import turn as page_turn
         sections.extend(ContextSection(**row) for row in await producers.read(
-            page_turn.sections, contact_id, people=faculty_on("people"), default=[]))
+            page_turn.sections, contact_id, people=faculty_on("people"), group=group,
+            session_id=body.context.session_id, default=[]))
     except Exception as exc:
         logger.debug("context_assemble pages failed: %s", exc)
 
@@ -3100,6 +3113,11 @@ async def _assembled_lanes(
     memory = await memory_task if memory_task is not None else None
     sections = [memory if section is memory_slot else section for section in sections
                 if section is not memory_slot or memory is not None]
+    if group is not None:
+        # The clock, the one line that says recall was narrowed, then what was read from the group's own history.
+        return sorted([ContextSection(**group_chats.NOTICE),
+                       *(section for section in sections if section.id in group_chats.KEPT)],
+                      key=lambda section: -(section.priority or 0))
     if status_slot is not None:
         status_text = await _status_section(body, recall=recall_semantic)
         status_section = (ContextSection(id=status_slot.id, title=status_slot.title, body=status_text,
