@@ -22,10 +22,17 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
-from .models import AssignmentHistory, InitiativeStatus, StoredInitiative, OWNER_KINDS
+from .models import AssignmentHistory, InitiativeStatus, StoredInitiative, MIND_TERMINAL_STATUSES, OWNER_KINDS
+from colonymind import recorder
 from colonymind.util.temporal import now_utc
 
 logger = logging.getLogger(__name__)
+
+# One recorder ``card`` line per piece of the agent's own work: the line's source per intention kind, and how a
+# row's decision and final status read as the line's choice and result (any other ending came to nothing).
+CARD_SOURCES = {"task": "mind.task"}
+CARD_CHOICES = {"act": "act", "ask": "ask_owner", "drop": "ignore"}
+CARD_RESULTS = {"done": "done", "failed": "failed", "uncertain": "failed"}
 
 
 @dataclass(frozen=True)
@@ -1006,14 +1013,33 @@ class InitiativeStore:
                 hermes_kind, due_at.isoformat() if due_at else None,
             ],
         )
+        # A piece of the agent's own work opens its recorder line here; the first history row keeps the line id.
+        line = recorder.begin("card", CARD_SOURCES[kind], ref=f"initiative:{intention_id}") \
+            if kind in CARD_SOURCES else None
         self._db.execute(
             "INSERT INTO assignment_history (initiative_id, agent_id, action, timestamp, details) "
             "VALUES (?, ?, ?, ?, ?)",
             [intention_id, self.MIND_ACTOR, f"decided_{decision}", now.isoformat(),
-             json.dumps({"status": status, "reason": decision_reason})],
+             json.dumps({"status": status, "reason": decision_reason, **({"line": line} if line else {})})],
         )
         self._db.commit()
-        return self.get(intention_id), "created"
+        created = self.get(intention_id)
+        if status in MIND_TERMINAL_STATUSES:
+            self.finish_card(created, detail=f"decided_{decision}")
+        return created, "created"
+
+    def card_line(self, initiative_id: str) -> Optional[str]:
+        """The recorder line opened when this intention was raised (its first history row keeps the id), or None."""
+        return next((str(item.details["line"]) for item in self.get_history(initiative_id, limit=1000)
+                     if isinstance(item.details, dict) and item.details.get("line")), None)
+
+    def finish_card(self, row: Optional[StoredInitiative], *, detail: str, result: Optional[str] = None) -> None:
+        """Close the recorder line of a piece of the agent's own work: what came of it (``result``, else read from
+        the row's status), how it was decided, and ``detail``, the code label of what settled it."""
+        line = self.card_line(row.id) if row is not None and row.kind in CARD_SOURCES else None
+        if line:
+            recorder.finish(line, result=result or CARD_RESULTS.get(row.status, "silent"),
+                            choice=CARD_CHOICES.get(row.decision or "", ""), chooser="rule", detail=detail)
 
     def transition(self, initiative_id: str, status: str, *, action: str,
                    details: Optional[Dict[str, Any]] = None, at: Optional[datetime] = None,
@@ -1027,6 +1053,8 @@ class InitiativeStore:
         if guard is not None:
             return self._guarded_transition(initiative_id, status, action=action, details=details, at=now,
                                             guard=guard, updates=updates)
+        settles = status in MIND_TERMINAL_STATUSES and \
+            getattr(self.get(initiative_id), "status", status) not in MIND_TERMINAL_STATUSES
         row = self.update(initiative_id, status=status, **updates)
         if row is not None:
             self._db.execute(
@@ -1036,6 +1064,8 @@ class InitiativeStore:
                  json.dumps(details) if details else None],
             )
             self._db.commit()
+            if settles:
+                self.finish_card(row, detail=str((details or {}).get("label") or action))
         return row
 
     def _guarded_transition(self, initiative_id: str, status: str, *, action: str,
@@ -1069,7 +1099,10 @@ class InitiativeStore:
         except BaseException:
             self._db.rollback()
             raise
-        return self.get(initiative_id)
+        row = self.get(initiative_id)
+        if status in MIND_TERMINAL_STATUSES and not MIND_TERMINAL_STATUSES.intersection(expect):
+            self.finish_card(row, detail=str((details or {}).get("label") or action))
+        return row
 
     # -- explicit answers' idempotency records (``ask_answer_requests``) ------------------------------------------
 

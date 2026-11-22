@@ -7,7 +7,8 @@ reads. Collection polls on the existing body pass at most every five minutes;
 changed originals and owner Build/dismiss actions use a trailing 60-second
 debounce. A trigger arriving during synthesis remains pending. Turning the mind
 off or pausing Hermes prevents new collection; the mind's off/body-stale checks
-prevent synthesis. Expiry and execution bookkeeping still run.
+prevent synthesis and the mind's own start of an offer. Expiry and execution
+bookkeeping still run.
 
 Configure explicit selected native server/account IDs in `colonymind.yaml`:
 
@@ -115,7 +116,9 @@ in-flight work. New thread messages invalidate offers formed from the previous
 thread version. Higher-ranked new offers can supersede weaker offers without a
 dismissal signal. Accepted work leaves recommendations and remains available
 through state, detail and the existing Hands work history. Historical results remain privately readable after
-recommendation expiry while their sources remain current and unerased.
+recommendation expiry while their sources remain current and unerased. An offer
+the mind started (below) leaves recommendations the same way and remains
+available through state and detail.
 
 Build freezes the revision, required evidence work, selected optional items,
 exact source/account bindings, result criteria and review boundary. A guarded
@@ -136,6 +139,37 @@ inside `untrustedEvidence`, explicitly marked as untrusted data, never
 instructions. Retrieved email/calendar text and structured source bindings have
 the same data-only status. Retries of legacy frozen briefs without read scopes are
 refused by Ideas before enqueue.
+
+## Offers the mind starts
+
+An offer is work for the owner alone: its recipient is the owner. On the tick
+that forms work (the mind on, the body alive) each proposed offer is decided by
+the mind's authority, over the worker's toolsets ([MIND.md](MIND.md), Decide).
+Where the level lets owner work act, the offer starts by itself: its row
+becomes an `act` task with the family's fixed step as its description and a
+done-check on the field `result`, queued for the board like any task of the
+mind's, inside the mind's task budgets. At any other level or verdict the offer
+stays a passive card, its reason naming the verdict, and is decided again on
+the next such tick; the owner's Build starts it as before.
+
+A started offer has `buildState` from its row: `accepted` while it waits for
+the board, `working` once the board holds its task, `done` or `failed` when it
+settles. It has no `executionId` or `taskId`. The board task's instructions
+come from the same fixed family templates, with the line the report must carry,
+the same review boundary (no send, spend, renewal, cancellation or external
+edit) and the exact quoted excerpts JSON-escaped as untrusted data. The task
+names no connector read: it works from the quotes with the worker's own read
+tools, and any other effect its run reaches is held as its own ask (MIND.md,
+Holds). The instructions are written when the body pulls the task, and only
+while the offer's sources are current.
+
+The task's report is its result. A report that carries the `result:` line
+settles the row done, and detail shows the report as `result.packet` while the
+offer's sources remain current and unerased. A report without the line settles
+the row failed (`check_not_passed`). What the task came to is also written into
+the agent's memory, bound to the offer's sources, so erasing a source erases
+it. A started offer the board has not taken lapses at the offer's own deadline
+or when its sources stop being current, and an owner dismissal cancels it.
 
 ## Integrated Hands queue
 

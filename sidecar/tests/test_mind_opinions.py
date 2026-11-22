@@ -135,7 +135,7 @@ async def test_a_failed_check_is_a_failure_in_the_run(fx):
     assert head is not None and head["stance_class"] == "avoid"
     assert "check failed: nothing was found" in head["stance"]
     [premise] = [p for p in head["premises"] if p["ref"] == f"intention:{missed.id}"]
-    assert premise["text"].startswith("done, check failed: nothing was found")
+    assert premise["text"].startswith("failed: check failed: nothing was found")
     await attempt(fx, 4, "done", check=FINDING_CHECK, summary="finding: the waggle run encodes distance.")
     prefer = approach(fx)
     assert prefer["stance_class"] == "prefer" and prefer["supersedes"] == head["id"]

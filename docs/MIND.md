@@ -337,18 +337,28 @@ The design is in
    (The floor, below): a task whose toolsets include an executor asks at
    every level unless a standing grant covers it, and each tool call a
    worker makes is classified again when it runs. A strategy-switch question (Feelings) turns an `act` into an
-   `ask` and never turns anything into an `act`. The intention is one row of
+   `ask` and never turns anything into an `act`. A grounded idea
+   ([Grounded Ideas](grounded-ideas.md)) is decided by the same table: its
+   recipient is the owner, so at a level that lets owner work act it starts
+   as a task by itself, and at any other level or verdict it stays a passive
+   card that only the owner's Build starts. The intention is one row of
    the initiatives table, which is also the audit log.
 10. **Dispatch.** The body pulls `GET /v1/mind/dispatch`, creates the kanban
     task with `mind:<id>` as its idempotency key (`goal_mode` for a goal step)
-    and posts `POST /v1/mind/dispatch/{id}/bound {hermes_ref}`. Messages wait
+    and posts `POST /v1/mind/dispatch/{id}/bound {hermes_ref}`. A task whose
+    `success_check` reads its report (`result_field`) is told the line the
+    report must carry (`<field>: ...`): the line closes the task's body,
+    unless the body names the field already. The body of an idea the mind
+    started is written from the idea's sealed payload when the body pulls it,
+    and only while the idea's sources are current. Messages wait
     in `GET /v1/mind/outbox` and go through `sending` and `sent`. Nothing is
     offered twice; a message left in `sending` at a restart is `uncertain`
     and is never resent.
 11. **Outcome.** The body reconciles every `mind:*` task from its run row and
     posts `POST /v1/mind/outcome {id, hermes_ref, status, summary}`. The mind
     records the outcome and its verifier (Verification, below), runs the
-    intention's `success_check`, resolves the
+    intention's `success_check`, which decides whether work reported done is
+    done, resolves the
     expectation it registered, records implicit feedback, checks the
     breaker (a run stopped at its runtime limit fails the task but counts
     toward the breaker only when a retry timed out as well with nothing new
@@ -361,7 +371,19 @@ The design is in
     autobiography entry: an owner-audience ledger row with `origin='mind'`
     that ordinary recall finds in any later session. A finished research
     task, investigation or goal step also stores its finding ("What I
-    learned about X: ...") the same way, so a later turn uses it.
+    learned about X: ...") the same way, so a later turn uses it. Any other
+    task the body reports with a summary stores what it came to ("What my
+    task '...' came to (done): ...") the same way, whatever its outcome, as
+    an entry of that task (`mind:<id>:result`).
+
+Each task intention has one line in the recorder (`colonymind.recorder`: kind
+`card`, source `mind.task`, ref `initiative:<id>`). The line opens when the
+intention is raised and closes when it settles, with what came of it (`done`,
+`failed`, or `silent` for work that lapsed, was dropped or was cancelled), how
+it was decided (`act`, `ask_owner`, `ignore`) and the code label of what
+settled it. The owner's own yes or no to the intention, a Build of an idea and
+a dismissal of one mark the line `owner_acted` or `owner_declined`. A blocked
+task's line stays open until the task settles.
 
 A configured [`action_success` learner](PLASTICITY-LEARNERS.md#action-success-action_success)
 forecasts verified task success from task features, starting at 0.7. For a
@@ -838,6 +860,23 @@ report settles it and recomputes. For lessons a `check` counts only when its
 kind reads state the worker cannot write (`commitment_resolved`,
 `reply_recorded`): a `result_field` check passes on the worker's own summary,
 so it verifies no lesson (the other faculties read `verified` as before).
+
+The check decides whether work reported done is done. A report of done whose
+check passed settles `done`, and the report the check read is kept as the
+row's `result`: the evidence. A report of done whose check did not pass
+settles `failed` with `verified: check`: the report is kept as `result` and
+in `failed_reason` (`check failed: <report>`), the settling history row
+carries the label `check_not_passed`, and the failure does not count toward
+the breaker (`result_metadata.breaker`), because the work ran and no act went
+wrong. A check that could not be evaluated (`check: null`) decides nothing.
+Two verdicts stand whatever a check says: the owner's word, and a goal the
+mind closed over its finished steps. A goal's planned step that did not
+finish is raised once more inside the goal's task budget, so the work
+continues; a reflector's report is applied only when its task settled done. A
+held task settles with its continuation's report (Holds), so the
+continuation's body carries the held task's report line. A failed task whose
+run was stopped at its runtime limit carries the label `elapsed` in its
+settling history row.
 
 ## Lessons
 

@@ -32,6 +32,7 @@ from typing import Any, Awaitable, Callable, Dict, Iterable, List, Mapping, Opti
 from zoneinfo import ZoneInfo
 
 from colonymind import instinct as instinct_core
+from colonymind import recorder
 from colonymind.contacts.comms import MIND_REF, conversation_cadence_minutes
 from colonymind.contacts.digest import WRITER_TEMPLATE, render_template
 from colonymind.initiatives.models import MIND_ACTIVE_STATUSES, StoredInitiative
@@ -70,7 +71,7 @@ from .digest import NEEDS_OK_1_11 as NEEDS_OK_LABEL, lines_of as listed_lines
 from .outbox import ASK_IN_FULL, always_words, ask_sentence
 from .questions import QUESTION_AGAIN, Questions, is_question
 from .outcomes import (FINDING_TYPES, Autobiography, Outcomes, evaluate_check, handed_to_body,
-                       invalidation_reason, owner_answer)
+                       invalidation_reason, owner_answer, report_line)
 from .rank import (Candidate, DEFAULT_ACT_THRESHOLD, OUTREACH_ANSWER, OUTREACH_FOLLOWUP, OUTREACH_TYPES, TASK_OUTCOME,
                    eligible)
 
@@ -2887,6 +2888,9 @@ class Mind:
                 if request:
                     context["body"] = f"{context['body']}\n\n{request}".strip()
                 context["reflector"] = reflector
+            if candidate.kind == "task" and context["body"]:
+                # The line a report-read done-check looks for closes the body, unless the body names it already.
+                context["body"] += report_line(candidate.success_check, context["body"])
             # The budget of the task's kind (``mind.budgets.task_types``); deliberation told the proposer.
             context["max_runtime_seconds"], context["max_retries"] = self.policy.budgets.for_task(candidate.type)
             if candidate.parent_goal_id:
@@ -4004,6 +4008,11 @@ class Mind:
             # The worker reads the strategy-switch note as it stands at dispatch (PL/body.py sends the body verbatim).
             note = self.feelings.note_for(str(context.get("topic") or context.get("concern") or row.description))
             body = context.get("body") or row.description
+            if isinstance(context.get("idea"), dict):
+                # An idea the mind started is written from its sealed payload, and only while its sources are current.
+                body = self.ideas.brief(row)
+                if body is None:
+                    continue
             if note and note not in body:
                 body = body + "\n\n" + note
             for note in self.learned.at(now).notes(row):
@@ -4258,6 +4267,9 @@ class Mind:
         if yes and isinstance(full, dict) and not self._full_text_before(row, answered_at):
             raise PermissionError("this ask was too long to show in full; a yes counts only once its full text has "
                                   "reached the owner, in its own message")
+        if owner_answer(by, details):
+            # The owner's own word on a piece of the agent's work goes on its recorder line.
+            recorder.mark(f"initiative:{row.id}", "owner_acted" if yes else "owner_declined")
         if row.type == GRANT_CONFIRM:
             return await self._activate_grant(row, yes=yes, by=by, details=details)
         if row.type == ALLOW_PROPOSAL:
@@ -5849,6 +5861,9 @@ class Mind:
                 f"The owner approved exactly this call, once: {described}. To make it, {instruction}. Then finish "
                 f"what the task needs and report what happened; any other call of that kind waits for the owner "
                 f"again.")
+            # The held task settles with the continuation's report, so the continuation is told the line that
+            # task's done-check reads.
+            told = body + (report_line(origin.success_check, body) if origin is not None else "")
             code = new_ask_code(self.store.open_ask_codes())
             reason = (f"held at execution from '{name}': {str(verdict.get('reason') or 'needs the owner')}; the exact "
                       f"call: {instruction}")[:1500]
@@ -5860,7 +5875,7 @@ class Mind:
                 decision_reason=reason, status="asked", dedup_key=None,
                 rationale=f"{'a hand' if hand_origin else 'a mind run'} of '{name}' reached a call that waits for the owner's yes",
                 recipient=origin.entity_id if origin is not None else None,
-                context={"body": body, "plan_body": body, "effect": dict(effect), "effect_digest": digest,
+                context={"body": told, "plan_body": body, "effect": dict(effect), "effect_digest": digest,
                          "origin_task": origin_id, "held_from": task_id, "notice": True,
                          **({"origin": "hand"} if hand_origin else {}),
                          **({"payload": typed_payload} if typed_payload is not None else {}),

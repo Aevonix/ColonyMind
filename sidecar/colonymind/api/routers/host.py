@@ -6625,6 +6625,8 @@ async def respond_to_initiative(
             if initiative.context["idea"].get("execution"):
                 raise HTTPException(409, "built_idea_requires_hands_controls")
             _initiative_store.transition(initiative_id, "cancelled", action="idea_dismissed")
+            from colonymind import recorder
+            recorder.mark(f"initiative:{initiative_id}", "owner_declined")
             try:
                 if _feedback_store is not None:
                     from colonymind.mind.outcomes import Outcomes
