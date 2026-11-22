@@ -148,4 +148,8 @@ turns, and `GET /v1/mind/pages/{who}` returns one page (`self` for the agent's
 own). Any other viewer reads the agent's own page and the page about
 themselves, the two a turn with them carries. The routes are in the owner's area
 of the API (`/v1/mind/`): the plugin calls them with the instance's credential
-and names the session's person as the viewer.
+and names the session's person as the viewer. A read or a write from a turn in a
+group chat also names the chat (`chat_type`, `chat`, `session_id`), for the
+owner's turn too: it is shown a line only when every turn the line cites took
+place in that chat, and the line it wrote, and `inspect` there shows who the
+person is without the page.

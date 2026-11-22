@@ -1,5 +1,5 @@
-"""Group turns: a turn in a group chat recalls that chat's own history only and carries one line that says so. A
-turn in a direct chat is never narrowed."""
+"""Group turns: a turn in a group chat recalls that chat's own history only and carries one line that says so, and
+a search made from the turn reads the same history. A turn in a direct chat is never narrowed."""
 import asyncio
 from contextlib import closing
 from types import SimpleNamespace
@@ -14,6 +14,7 @@ from colonymind.memory import blocks, compass, turn_budget
 from colonymind.pages import store as pages
 from colonymind.pages import turn
 from colonymind.turns import get_turn_idempotency_ledger, group_chats
+from onekey import KEY
 from recall_route import ANSWER, OWNER, assemble, recall_app
 from test_recall_exit_counter import SESSION, counter  # noqa: F401  (the capture plugin, loaded from its file)
 
@@ -130,6 +131,28 @@ async def test_the_owner_alone_is_never_narrowed_and_the_owners_group_turn_is(mo
     known, _ = await assemble(world.app, **context(**CREW))
     assert list(known) == ["temporal-context", "colonymind-recall-narrowed", "colonymind-memory"]
     assert ANSWER in known["colonymind-memory"]["body"]
+
+
+async def test_a_search_made_from_a_group_turn_reads_the_groups_own_history(monkeypatch, tmp_path):
+    world = await recall_app(monkeypatch, tmp_path)
+
+    async def found(**chat):
+        async with AsyncClient(transport=ASGITransport(app=world.app), base_url="http://test",
+                               headers={"Authorization": "Bearer " + KEY}) as client:
+            response = await client.post("/v1/host/memory/search", json={
+                "identity": {"host_id": "fixture"}, "person_id": OWNER, "session_id": "session-b",
+                "query": "hydrofoil departure", **chat})
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    # The owner's search from a direct chat, and one that names no chat kind, reads the whole memory.
+    for direct in ({}, {"chat_type": "dm", "chat": "signal:owner"}):
+        assert ANSWER in (await found(**direct))["content"]
+    # From a turn in a group it is the owner's search still, and reads only what that chat's history holds.
+    outside = await found(**CREW)
+    assert outside["count"] == 0 and "hydrofoil" not in outside["content"].casefold()
+    group_chats.note("signal:crew", "session-a")
+    assert ANSWER in (await found(**CREW))["content"]
 
 
 def test_the_turns_group_chat_comes_from_its_chat_kind():

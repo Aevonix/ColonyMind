@@ -48,7 +48,7 @@ async def test_night_refuses_larger_fallback_and_unreached_stages_go_first(tmp_p
         fx.shift(days=1)
         fx.restart()
         second = await fx.mind.consolidate()
-        assert second['done'] == ['contradictions', 'digests', 'episodes']
+        assert second['done'] == ['contradictions', 'digests', 'pages', 'episodes']
         assert second['exhausted'] and requests == []
     finally:
         fx.store.close()

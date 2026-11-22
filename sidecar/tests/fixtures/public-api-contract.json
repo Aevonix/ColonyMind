@@ -2496,6 +2496,14 @@
           "type": "null|string:date-time",
           "required": false
         },
+        "chat": {
+          "type": "null|string[maxLength=512]",
+          "required": false
+        },
+        "chat_type": {
+          "type": "null|string[maxLength=64]",
+          "required": false
+        },
         "identity": {
           "type": "HostIdentity",
           "required": true

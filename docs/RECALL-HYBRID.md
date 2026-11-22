@@ -571,9 +571,14 @@ What follows from the filter being applied to what the lanes return:
   the chat. Sessions from before a host named its chats are not part of a
   group's history.
 - A host that names a group kind and no chat gets the current session only.
-- The filter covers what a turn is given automatically. A tool the agent calls
-  in the turn (`colonymind_memory_search`, a person's record) answers as in any
-  other turn, and so do the recall API and `colonymind recall`.
+- The filter covers what a turn is given automatically and what a read made
+  from the turn returns. `POST /v1/host/memory/search` takes the same
+  `chat_type` and `chat` and keeps a candidate by the same rule, and the pages
+  routes keep a page line by it. The Hermes plugin names the chat on every such
+  call of a group turn and refuses the reads that have no history of their own
+  to narrow ([adapter](HERMES-ADAPTER.md#owner-and-guest)). A request that names
+  no chat kind is not narrowed: the recall API as another client calls it and
+  `colonymind recall` answer as before.
 
 ## Recall latency
 

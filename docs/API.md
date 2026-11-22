@@ -212,7 +212,8 @@ work](WORK.md) for lineage, verification and erasure rules.
   characters the host puts inline; with `trace` (a credential that manages the instance), why recall kept or left
   out each candidate.
 - `POST /v1/host/memory/search`: recall of one person's memory, with an optional date `window` and `as_of` time;
-  with `trace`, why each candidate was kept or left out ([hybrid recall](RECALL-HYBRID.md)).
+  with `trace`, why each candidate was kept or left out ([hybrid recall](RECALL-HYBRID.md)). A search made from a
+  turn in a group chat names it (`chat_type`, `chat`) and reads that chat's own history only.
 
 ### Curated memory
 

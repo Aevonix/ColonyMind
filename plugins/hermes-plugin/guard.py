@@ -22,6 +22,7 @@ import contextvars
 from typing import Any, Mapping
 
 from .capture import DM_CHAT_TYPES, SessionMap
+from .capture import GROUP_WITHHELD, group_chat
 from .client import MIND_STATE_ROUTE, ColonyMindClient, Settings, SidecarUnavailable, final_answer
 from .standing import STANDING_FILE, StandingStore
 from .authority_diagnostics import ancestry_unreadable
@@ -688,6 +689,10 @@ class Guard:
             return self.unknown(tool, session_id, task_id)
         self._log_mind_decision(tool, run, platform, session_id, task_id, hand)
         self._remember_creator(tool, args, session_id, task_id, tool_call_id, turn_id, (run, platform))
+        if tool == "session_search" and group_chat():
+            # A turn in a group chat replies to everyone in it, the owner's turn included: the search reads other
+            # conversations, so the turn and the sessions it delegates to get none.
+            return final_answer(GROUP_WITHHELD, block=True)
         if hand and run != "guest":
             named = self.tripwire(tool, args, session_id, "hand", strict=True)
             if named:

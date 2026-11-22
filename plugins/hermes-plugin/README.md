@@ -74,6 +74,10 @@ retried; response hooks only enqueue observations.
   - `colonymind_secret` (owner only): use a sealed value by reference, without the model ever seeing it.
   - `colonymind_action`, only when the owner declared actions in `colonymind.yaml`: a fixed command with checked
     arguments.
+  - In a group chat the reply goes to everyone, so for every sender, the owner included, a tool reads that chat's
+    own history only: a memory search and a page are narrowed to it, `who` and `inspect` say who one named person
+    is, and `session_search`, the opinions and a rating are refused. Such a result says so in one line
+    (docs/HERMES-ADAPTER.md, Owner and guest).
 - **`/mind`** for the owner in chat: `status`, `log`, `why <id>`, `asks` (in words, never by code) and `off`. Every
   other change goes through the `colonymind` CLI.
 

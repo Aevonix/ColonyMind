@@ -192,6 +192,23 @@ cron origin is refused, including reads; it never enters the mind lane. A regist
 standing from the dispatcher's task/profile binding. Observed terminal and system roots record their explicit host
 standing; an unregistered parentless session remains unknown.
 
+A turn the gateway bound to a group chat (a chat kind other than `dm`, `direct` or `private`) replies to everyone in
+the chat, so its tools reach that chat's own history only. This holds for every sender, the owner included, and for
+the sessions the turn delegates to:
+
+- `colonymind_memory_search` and the pages (`colonymind_self like|dislike`, `colonymind_people boundary`) name the
+  chat, and the sidecar keeps a result only when every turn it cites took place in that chat, as the turn's recall
+  does (docs/RECALL-HYBRID.md, Group chats). A page line the call itself wrote is shown too.
+- `colonymind_people who|inspect` answer who the one named person is, as for a guest: no listing, no record, and no
+  candidates for a name that matches no single person.
+- `session_search`, `colonymind_self opinions`, `why <opinion number>` and `rate`, and
+  `colonymind_resolve_commitment` are refused: what they return is not read from the chat's history.
+- The mind's record (`state` beyond the switches, `log`, `why <id>`), the asks, `colonymind_secret` and
+  `colonymind_consult` are the owner's own direct chat's, as before.
+
+A result that was narrowed or refused says so in one line: "this is a group chat: what does not come from this
+chat's own history was withheld; the owner can ask you in a direct chat". A direct chat is unchanged.
+
 Unknown refusals emit a WARNING with fixed reason `standing_unknown`, tool name and a fixed session class. They
 never log session, contact or sender ids, arguments or exception text. Guest tools and explicit guest opt-ins retain
 their existing policy for established guests.
