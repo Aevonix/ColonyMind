@@ -234,6 +234,11 @@ class MemorySearchRequest(BaseModel):
     removes a quotation (docs/RECALL-HYBRID.md, Recall and time). ``as_of`` is
     the time relative dates and the current view count from, clamped to no
     later than now: not a view of what was believed then.
+
+    ``chat_type`` and ``chat`` name the chat of the turn that searches, as a
+    turn's context metadata does. A group chat's search reads that chat's own
+    history only (docs/RECALL-HYBRID.md, Group chats); a direct chat sends
+    neither.
     """
     model_config = ConfigDict(extra="forbid")
     identity: HostIdentity
@@ -245,6 +250,8 @@ class MemorySearchRequest(BaseModel):
     trace: bool = Field(default=False, strict=True)
     window: Optional[MemorySearchWindow] = None
     as_of: Optional[AwareDatetime] = None
+    chat_type: Optional[str] = Field(default=None, max_length=64)
+    chat: Optional[str] = Field(default=None, max_length=512)
 
     @field_validator('limit')
     @classmethod

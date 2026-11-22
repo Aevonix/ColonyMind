@@ -1361,7 +1361,9 @@ async def memory_search(body: MemorySearchRequest, request: Request) -> MemorySe
     searches their own canonical sources only. ``trace`` adds why each
     candidate was kept or left out (``_require_trace_authority``). ``window``
     and ``as_of`` name the search's own time (``MemorySearchRequest``); the
-    question's time is read once, here, and handed to the selection.
+    question's time is read once, here, and handed to the selection. A search
+    from a turn in a group chat (``chat_type``, ``chat``) reads that chat's own
+    history only, as the turn's recall does (``turns.group_chats``).
     """
     person = resolve_request_person(request, claimed_person_id=body.person_id)
     _require_person_authority(request, person)
@@ -1390,10 +1392,12 @@ async def memory_search(body: MemorySearchRequest, request: Request) -> MemorySe
         time_query = interpret_time_query(body.query, now=now, timezone_name=timezone_name,
                                           window=(body.window.start, body.window.end) if body.window else None)
         from colonymind.memory import curated
+        from colonymind.turns import group_chats
+        group = group_chats.of_turn({"chat_type": body.chat_type, "chat": body.chat})
         with curated.strict_read(ledger):
             collected = await collect_sources(ledger, query=body.query, contact_id=person,
                 session_id=body.session_id or "", vector_store=get_store(), embedding_pipeline=get_pipeline(),
-                trace=trace)
+                trace=trace, group=group)
             packet = await select_memory(collected, query=body.query, selector=_memory_context_selector(),
                 timezone_name=timezone_name, limit=body.limit, trace=trace, now=now, time_query=time_query)
         return MemorySearchResponse(**packet.public(), **({"trace": trace.report()} if trace else {}))

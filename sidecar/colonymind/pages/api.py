@@ -11,11 +11,15 @@ Interface (JSON; the plugin's ``colonymind_people`` and ``colonymind_self`` are 
   POST /{subject}/lines            {kind, text?, drop?, source?, contact_id?} -> {ok, added, dropped, lines, text}
 ``{subject}`` is ``self`` or a reference to a person, as ``/v1/mind/people`` reads one. ``contact_id`` is the
 viewer: the session's contact. ``text`` adds a line, ``drop`` removes one by its id, both change one.
+
+A call from a turn in a group chat names the chat as the turn's context does (``chat_type``, ``chat``, and its
+``session_id``: query parameters of the GET, body fields of the POST). It is shown a line only when every turn
+the line cites took place in that chat (``turns.group_chats``), and the line it wrote.
 """
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -37,6 +41,9 @@ class LineBody(BaseModel):
     drop: str = Field(default="", max_length=32)
     source: str = Field(default="", max_length=256)
     contact_id: Optional[str] = Field(default=None, max_length=256)
+    session_id: Optional[str] = Field(default=None, max_length=256)
+    chat_type: Optional[str] = Field(default=None, max_length=64)
+    chat: Optional[str] = Field(default=None, max_length=512)
 
 
 def _ledger() -> Any:
@@ -71,11 +78,27 @@ def _refused(code: str, message: str) -> HTTPException:
     return HTTPException(status_code=422, detail={"code": code, "message": message})
 
 
+def _lines(subject: str, chat_type: Optional[str], chat: Optional[str], session_id: Optional[str], *,
+           kinds: Optional[Sequence[str]] = None, written: Any = None) -> List[Dict[str, Any]]:
+    """The page's standing lines, in page order. A turn in a group chat is given the ones whose every cited turn
+    took place in that chat, and the line it wrote (``written``, a line id)."""
+    from colonymind.turns import group_chats
+    ledger = _ledger()
+    rows = store.lines(ledger, subject, kinds=kinds)
+    group = group_chats.of_turn({"chat_type": chat_type, "chat": chat})
+    if group is None:
+        return rows
+    inside = {row["id"] for row in group_chats.within(ledger, group, session_id, rows,
+                                                      turns=lambda row: row["sources"])}
+    return [row for row in rows if row["id"] in inside or row["id"] == written]
+
+
 @router.get("/{subject}")
-async def page(request: Request, subject: str, contact_id: Optional[str] = None) -> Dict[str, Any]:
+async def page(request: Request, subject: str, contact_id: Optional[str] = None, session_id: Optional[str] = None,
+               chat_type: Optional[str] = None, chat: Optional[str] = None) -> Dict[str, Any]:
     """One page, each line with its id and the turns it rests on."""
     who = await _subject(request, subject, contact_id)
-    return _shown(who, await asyncio.to_thread(store.lines, _ledger(), who))
+    return _shown(who, await asyncio.to_thread(_lines, who, chat_type, chat, session_id))
 
 
 @router.post("/{subject}/lines", dependencies=[Depends(refuse_hand_session)])
@@ -93,6 +116,7 @@ async def write(request: Request, subject: str, body: LineBody) -> Dict[str, Any
     ledger = _ledger()
     dropped = bool(drop) and await asyncio.to_thread(store.drop, ledger, who, drop, kinds=(body.kind,))
     line = await asyncio.to_thread(store.add, ledger, who, body.kind, text, [source]) if text else None
-    rows = await asyncio.to_thread(store.lines, ledger, who, kinds=kinds)
+    rows = await asyncio.to_thread(_lines, who, body.chat_type, body.chat, body.session_id, kinds=kinds,
+                                   written=line["id"] if line else None)
     return {"ok": bool(line or dropped), "added": line["id"] if line else None, "dropped": dropped,
             **_shown(who, rows)}

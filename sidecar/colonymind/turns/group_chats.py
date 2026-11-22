@@ -2,8 +2,9 @@
 
 A turn in a group chat names its chat when its context is assembled, and the session is then noted for that chat.
 The chat's sessions are the group's own history: a group turn's automatic recall reads nothing else, and the turn
-carries one line that says so. There is one memory. This is a filter at read time over the same sources; a turn in
-a direct chat is never narrowed.
+carries one line that says so. A memory search and a page read made from such a turn name the chat too and are
+narrowed the same way. There is one memory. This is a filter at read time over the same sources; a turn in a
+direct chat is never narrowed.
 """
 from __future__ import annotations
 
