@@ -168,6 +168,13 @@ DEFAULTS: dict[str, Any] = {
     # jobs queued a day or more before this release started drain at most this many an hour; new turns
     # are projected at once. 0 leaves that backlog pending.
     "projections": {"backlog_per_hour": 12},
+    # The recorder (``colonymind.recorder``): when its lines make an alert to the owner, and how long they are kept.
+    # A source that recorded on ``quiet_active_days`` of the 7 days before its last line and has recorded nothing
+    # for ``quiet_hours`` has gone quiet; a check whose last ``failing_runs`` runs failed keeps failing; a line of a
+    # kind in ``open_minutes`` that has no result after that many minutes is unfinished (a kind set to 0 is not
+    # watched). Lines older than ``keep_days`` are dropped.
+    "recorder": {"quiet_hours": 36, "quiet_active_days": 7, "failing_runs": 3,
+                 "open_minutes": {"event": 30, "check": 60, "card": 10080}, "keep_days": 180},
     # The per-turn context. ``status``: the owner's turn carries a status block generated from the running
     # mind (``colonymind.mind.status``): the autonomy level, quiet hours, used budgets, the breaker, the
     # faculties switched off and in-process health problems (on, like every faculty not shown harmful).

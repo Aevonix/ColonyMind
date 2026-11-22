@@ -30,6 +30,8 @@ commands; the [changelog](../CHANGELOG.md) says what each release changed.
   evidence.
 - [Hermes gates](HERMES-GATES.md): optional gates that skip a cron run with nothing new, triage inbound messages and
   screen tool results, measured in shadow before they act.
+- [The recorder](RECORDER.md): one line of labels and timings per event, card, check and error, the alerts to the
+  owner when something stops, and the daily line in the digest.
 - [Reminders from recalled deadlines](SOURCE-REMINDERS.md): a reminder scheduled from a remembered claim.
 - [People](RELATIONSHIPS.md): one person across every channel, permissions to reach out, check-in cadence.
 - [Contacts and appraisals](SOCIAL-STATE.md): identity links, appraisals and what the agent knows of each

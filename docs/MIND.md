@@ -1891,6 +1891,9 @@ labelled parts, in plain words:
   along, with their progress as a sentence of its own, but never make a digest
   on their own.
 
+The recorder adds one line of counts to the third part, and a day with recorded
+lines has a digest ([RECORDER.md](RECORDER.md#the-daily-line)).
+
 Nothing that already reached the owner is listed again: a question, a notice or
 an answer the owner asked for went out on its own. Every item is one or a few
 whole sentences. A text that does not fit its room keeps its leading whole
