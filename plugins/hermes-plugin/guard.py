@@ -101,6 +101,9 @@ MEDIA_TAG = re.compile(r"MEDIA:\s*(\S+)")
 GUEST_REFUSAL = "{tool} is not available in this conversation; answer in your final response"
 GUEST_FILE_REFUSAL = ("{tool} reaches only the files sent in this conversation; answer from the message and the "
                       "recalled context in your final response")
+# The question tool in a group chat's turn of someone who is not the owner: the gateway takes an answer only in the
+# asker's own session, so nobody in the chat can answer, and the turn would hold the chat until the question times out.
+GROUP_QUESTION = "a question tool call cannot be answered in a group chat; ask in your reply instead"
 # ``search_files`` targets that list file names and read no content (stock maps ``find`` to ``files``).
 NAME_SEARCHES = frozenset({"files", "find"})
 
@@ -693,6 +696,8 @@ class Guard:
             # A turn in a group chat replies to everyone in it, the owner's turn included: the search reads other
             # conversations, so the turn and the sessions it delegates to get none.
             return final_answer(GROUP_WITHHELD, block=True)
+        if tool == "clarify" and run == "guest" and group_chat():
+            return final_answer(GROUP_QUESTION, block=True)
         if hand and run != "guest":
             named = self.tripwire(tool, args, session_id, "hand", strict=True)
             if named:
