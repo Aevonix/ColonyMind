@@ -1603,6 +1603,9 @@ class Capture:
             return None  # the host's own subject on a turn the owner did not write: it has no contact to file under
         if info is not None and info.parent_session_id and info.platform.lower() == DELEGATED_PLATFORM:
             return self._branch(info, conversation_history, user_message, assistant_response)
+        where = str((info.platform if info is not None else platform) or "").lower()
+        if not (info is not None and info.sender_id) and where not in INTERNAL_PLATFORMS and group_chat():
+            return None  # a gateway turn in a group chat that names no sender is nobody's: never filed as the owner's
         raw = text_of(user_message)
         composed = info is not None and info.members and raw.strip() == info.user_message.strip()
         user = owner_input_text(session_id, turn_id or (info.turn_id if info else ""), raw,

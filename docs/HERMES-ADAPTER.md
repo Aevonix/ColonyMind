@@ -209,6 +209,14 @@ the sessions the turn delegates to:
 A result that was narrowed or refused says so in one line: "this is a group chat: what does not come from this
 chat's own history was withheld; the owner can ask you in a direct chat". A direct chat is unchanged.
 
+Two more rules hold in a group chat:
+
+- A turn there that names no sender is nobody's. It is not captured, so it is never filed as the owner's own turn.
+  A turn that names its sender is filed under that sender, as in a direct chat.
+- The question tool (`clarify`) is refused to a sender who is not the owner: the gateway takes an answer only in the
+  asker's own session, so nobody in the chat could answer and the turn would hold the chat until the question times
+  out. The refusal tells the model to ask in its reply. The owner's own question is unchanged.
+
 Unknown refusals emit a WARNING with fixed reason `standing_unknown`, tool name and a fixed session class. They
 never log session, contact or sender ids, arguments or exception text. Guest tools and explicit guest opt-ins retain
 their existing policy for established guests.

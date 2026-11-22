@@ -12,6 +12,7 @@ import types
 from types import SimpleNamespace
 
 from colonymind_hermes import capture, guard
+from colonymind_hermes.client import Settings
 from colonymind_hermes.tools import Tools
 from test_page_lines_tool import PAGE, Sessions
 from test_page_lines_tool import Sidecar as Pages
@@ -132,6 +133,50 @@ def test_session_search_is_refused_in_a_group_chat_to_the_owner_and_a_delegate(l
             "action": "block", "message": WITHHELD + " (retry: false)"}, session
     # The owner's other tools are as they were.
     assert gate.decide("terminal", {}, "chat-1") is None and gate.decide("terminal", {}, "child-1") is None
+
+
+def test_the_question_tool_is_refused_in_a_group_chat_to_all_but_the_owner(lane, monkeypatch):  # noqa: F811
+    gate, sessions = lane
+    sessions.observe(session_id="chat-1", platform="telegram", sender_id="owner-1")
+    sessions.observe(session_id="chat-2", platform="telegram", sender_id="casey")
+    sessions.observe(session_id="chat-3", platform="telegram", sender_id="")     # a turn the gateway names no sender for
+    ask = {"question": "Which day?"}
+    # A sidecar with no mind routes: it has no verdict of its own on a guest tool.
+    monkeypatch.setattr(gate.client, "post", lambda *a, **kw: SimpleNamespace(status_code=404, is_success=False),
+                        raising=False)
+    # In a direct chat a question waits for the one person who can answer it.
+    assert gate.decide("clarify", ask, "chat-2") is None
+    monkeypatch.setattr(guard, "group_chat", lambda: {"chat_type": "group", "chat": "telegram:-1007"})
+    for session in ("chat-2", "chat-3"):
+        assert gate.pre_tool_call("clarify", ask, session) == {
+            "action": "block", "message": guard.GROUP_QUESTION + " (retry: false)"}, session
+    assert gate.decide("clarify", ask, "chat-1") is None      # the owner's question is the owner's to answer
+
+
+def test_a_group_turn_that_names_no_sender_is_not_captured(tmp_path, monkeypatch):
+    settings = Settings("http://unreachable.invalid", tmp_path / "api.key", "test-key", tmp_path, tmp_path,
+                        tmp_path / "outbox.sqlite3")
+    client = SimpleNamespace(resolve_contact=lambda *a, **kw: {"contact_id": "guest-1"})
+    taken = capture.Capture(capture.SessionMap(settings, client), capture.TurnOutbox(settings.outbox_path), settings)
+    monkeypatch.delitem(sys.modules, "colonymind_hands_front", raising=False)
+    monkeypatch.delenv("HERMES_KANBAN_TASK", raising=False)
+
+    def filed(ident, sender, platform="telegram"):
+        values = {"session_id": "s-" + ident, "turn_id": ident, "platform": platform, "sender_id": sender,
+                  "user_message": "[Casey Park|casey]\nI have decided to sell the boat."}
+        taken.pre_llm_call(**values)
+        taken.post_llm_call(**values, assistant_response="Noted.")
+        return [(row["payload"]["platform"], row["payload"]["sender_id"])
+                for row in taken.outbox.rows() if row["turn_id"] == ident]
+
+    # Outside a group chat the gateway's senderless lane is as it was.
+    assert filed("t-1", "") == [("telegram", "")]
+    monkeypatch.setattr(capture, "group_chat", lambda: dict(GROUP))
+    # In a group chat a turn that names no sender is nobody's: it is not filed, so never under the owner.
+    assert filed("t-2", "") == []
+    # A turn that names its sender, and a lane that is no gateway chat, are as they were.
+    assert filed("t-3", "casey") == [("telegram", "casey")]
+    assert filed("t-4", "", "cron") == [("cron", "")]
 
 
 def test_the_turns_group_chat_is_the_one_the_gateway_bound(monkeypatch):
