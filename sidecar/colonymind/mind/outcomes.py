@@ -234,13 +234,27 @@ def evaluate_check(check: Any, *, commitments: Any = None, followups: Any = None
     return None
 
 
+_REPORT_LINE_LEAD = "Start your completion summary with a line of this form:"
+
+
+def _tells_the_form(field: str, body: str) -> bool:
+    """Whether a task body already tells its worker how to report ``field``: the instruction below, the placeholder
+    form (``finding: <...>``) or the field as a quoted key (``{"lesson_ops": [...]}``). A quoted earlier result
+    (``finding: the first step's answer``) is evidence, not an instruction."""
+    return (_REPORT_LINE_LEAD in body or f'"{field}"' in body
+            or bool(re.search(rf"(?im)(^|[\s\"'*_]){re.escape(field)}\s*[:=]\s*<", body)))
+
+
 def report_line(check: Any, body: str) -> str:
-    """What closes the body of a task whose done-check reads its report (``result_field``) when the body does not name
-    the field yet: the line the report must carry for the task to count as done. ``""`` for any other check."""
-    if evaluate_check(check, summary=body) is not False:
+    """What closes the body of a task whose done-check reads its report (``result_field``): the line the report must
+    carry for the task to count as done. ``""`` for any other check, and for a body that tells the form itself. A body
+    that only quotes the field (an earlier step's labelled result, a quoted message) is still told the line."""
+    if evaluate_check(check, summary="") is not False:
         return ""
-    field = (json.loads(check) if isinstance(check, str) else check)["field"]
-    return (f"\n\nStart your completion summary with a line of this form:\n{field}: <what you found or made>\n"
+    field = str((json.loads(check) if isinstance(check, str) else check)["field"])
+    if _tells_the_form(field, body):
+        return ""
+    return (f"\n\n{_REPORT_LINE_LEAD}\n{field}: <what you found or made>\n"
             "The task counts as done only with that line. If you could not get there, leave the line out and report "
             "what is missing.")
 
