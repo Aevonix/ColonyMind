@@ -735,6 +735,8 @@ def create_app() -> FastAPI:
     app.include_router(hands_router.router)
     from colonymind.api import mcp as mcp_endpoint   # the read-first MCP endpoint an issued credential reaches
     app.include_router(mcp_endpoint.router)
+    from colonymind.pages import api as pages_api   # the agent's pages on each person and on itself
+    app.include_router(pages_api.router)
 
     app.add_middleware(RequestLogTiming)
     return app

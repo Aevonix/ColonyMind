@@ -124,14 +124,17 @@ def add(ledger, subject: str, kind: str, text: Any, sources: Optional[Iterable[A
             "written_at": at}
 
 
-def drop(ledger, subject: str, line_id: Any) -> bool:
-    """Remove one line of a page by its id."""
+def drop(ledger, subject: str, line_id: Any, *, kinds: Optional[Sequence[str]] = None) -> bool:
+    """Remove one line of a page by its id (a line of ``kinds`` only, when given)."""
     try:
         line_id = int(str(line_id).strip().lstrip("#"))
     except ValueError:
         return False
+    sql, args = "DELETE FROM page_lines WHERE id=? AND subject=?", [line_id, subject]
+    if kinds is not None:
+        sql, args = sql + f" AND kind IN ({','.join('?' * len(kinds))})", [*args, *kinds]
     with closing(ledger._connect()) as conn, conn:
-        return conn.execute("DELETE FROM page_lines WHERE id=? AND subject=?", (line_id, subject)).rowcount > 0
+        return conn.execute(sql, args).rowcount > 0
 
 
 def rewrite(ledger, subject: str, kinds: Sequence[str], entries: Iterable[Mapping[str, Any]], *,

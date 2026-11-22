@@ -157,9 +157,17 @@ def reattribute_hooks(*, reconcile: bool = True) -> List[Any]:
         if callable(hook):
             hooks.append(hook)
     hooks.append(_reattribute_opinions)
+    hooks.append(_reattribute_pages)
     if reconcile:
         hooks.append(reconcile_merge)
     return hooks
+
+
+def _reattribute_pages(drop_id: str, keep_id: str) -> int:
+    """The agent's page on the dropped contact joins its page on the kept one."""
+    from colonymind.pages import store as pages
+    ledger = _ledger()
+    return pages.move(ledger, drop_id, keep_id) if ledger is not None else 0
 
 
 def _reattribute_opinions(drop_id: str, keep_id: str) -> int:
@@ -318,12 +326,16 @@ async def inspect(request: Request, reference: str, contact_id: Optional[str] = 
     digest, _ = await checked_digest(contact, store=store, ledger=source_ledger())
     row.update(digest=digest or None, first_seen_at=contact.first_seen_at, notes=contact.notes, tags=contact.tags,
                introduced_by=contact.introduced_by, import_source=contact.import_source)
+    from colonymind.pages.api import page_text     # the agent's page on this person, each line with its id
+    row["page"] = await page_text(contact.contact_id) or None
     pending = [p for p in await store.list_handle_proposals(limit=100) if p["contact_id"] == contact.contact_id]
     history = [{"action": a["action"], "at": a["created_at"], "by": a["performed_by"], "detail": _detail(a["detail"])}
                for a in await store.get_audit_log(contact.contact_id, limit=50) if a["action"] in PERMISSION_ACTIONS]
     text = [_line(row)]
     if digest:
         text.append(digest)
+    if row["page"]:
+        text.append(row["page"])
     text += [f"proposal {p['candidate_id']}: {p['gateway']}:{p['address']}" for p in pending]
     text += [f"{h['at']} {h['action']} by {h['by']}: {h['detail']}" for h in history[:5]]
     return {"contact": row, "proposals": pending, "permission_history": history, "text": "\n".join(text)}
