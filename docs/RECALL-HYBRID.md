@@ -529,6 +529,52 @@ lost 12 to 18 points of the probes' mean reciprocal rank on the transcript
 family. This is answer retention in the context, not a model-in-the-loop
 accuracy run.
 
+## Group chats
+
+A turn in a group chat recalls that chat's own history only, and is told so in
+one line. A host says which turns those are in the request's context metadata:
+`chat_type` names the kind of chat, and any kind other than a direct one (`dm`,
+`direct`, `private`) is a group chat; `chat` names the chat itself (the Hermes
+provider sends `platform:chat id`). A turn in a direct chat, and a turn that
+names no chat kind, is never narrowed: the owner's own turns are read as before.
+
+There is one memory and no store per chat. The narrowing is a filter at read
+time. When a group turn's context is assembled, its session is noted for its
+chat (`group_chat_sessions` in the source ledger's database: a chat key and a
+session id, no content), and the sessions noted for a chat are that group's
+history. Recall runs its lanes in the sender's scope as in any other turn and
+then keeps a candidate only when every source turn it names (its own, the ones
+a correction or a dependency visited, a conversation pair's, a media locator's)
+took place in the current session or in a session noted for the chat. A record
+that names no turn, such as a curated entry, is withheld. A page line is given
+by the same rule ([pages](SOCIAL-STATE.md#pages)).
+
+The turn's context is then the clock, the section "Recall narrowed"
+(`colonymind-recall-narrowed`: always whole, and sent on every group turn),
+the recalled memory and the pages. The section reads:
+
+```
+This turn is in a group chat. Recall read this group's own history only; the rest of your memory was withheld.
+```
+
+Every other section is withheld from a group turn, because none of them is
+read from the group's history: the status block, commitments, lessons, recorded
+views, observed work and the rest. A group turn is nobody's own turn for the
+learners, and the recall-exit count leaves it out: an empty recall there is no
+fault.
+
+What follows from the filter being applied to what the lanes return:
+
+- The lanes rank over the sender's whole history first, so a group turn can be
+  given fewer of the group's turns than a search of the group alone would find.
+- A session counts for a chat from the first of its turns whose context names
+  the chat. Sessions from before a host named its chats are not part of a
+  group's history.
+- A host that names a group kind and no chat gets the current session only.
+- The filter covers what a turn is given automatically. A tool the agent calls
+  in the turn (`colonymind_memory_search`, a person's record) answers as in any
+  other turn, and so do the recall API and `colonymind recall`.
+
 ## Recall latency
 
 A host waits a bounded time for `/context/assemble` and goes on without a later
@@ -728,6 +774,54 @@ lanes where they are fused (the `LANES` of `collect_sources` in
 the image keyword lane where recall reads it (`select_memory`). A lane whose
 hits join anywhere without recording them is invisible to the trace. A selector
 other than the built-in one is traced only if it accepts a `trace` argument.
+
+## The instance's own question set
+
+An instance can measure recall on its own history. `colonymind recall-questions`
+builds a set of questions that history answers, scores recall against it and
+prints one result line:
+
+```
+$ colonymind recall-questions
+recall questions: 31 of 40 recalled
+```
+
+The set is private data. It is one file in the state directory, beside the
+source ledger (`recall-questions.jsonl`, mode 0600, one question per line: the
+question, the expected answer and the turns that hold it), and it is nowhere
+else: the package holds no questions, and the command prints counts only.
+
+**Building.** The set is built the first time the command runs, and again with
+`--new`, which replaces it. A build reads a spread of the history: at most 120
+conversation turns at even steps from the first to the newest, leaving out a
+turn erased in part or holding a forgotten message. The instance's model is
+shown them one person's turns at a time (at most 10 turns a call and 12 calls;
+`context.task` `recall_questions`, `workload: background`) and writes, for a
+turn that states something that would still matter weeks later, a question that
+person could ask, the answer in a few words and the turns that state it. A
+question is kept when it has an answer and names turns it was shown; a set
+holds at most 40. A build with no model is refused (503 `no_model`), and a
+build whose model call fails writes nothing (503 `recall_questions_failed`).
+
+**Scoring.** Each question is asked as the person whose turns hold its answer,
+through the recall a turn runs: every lane, a turn's packet size and character
+budget, the instance's default time zone, and no session of its own. A question
+counts as recalled when the packet names one of its turns; the expected answer
+is kept for a reader and is not compared. A score moves no learner. To see why
+one question was missed, trace it (`colonymind recall "<question>" --as
+<person> --explain`, above).
+
+**Keeping it comparable.** The set stays as built, so one release's score
+compares with the next; `--new` starts a new series. A question leaves the file
+when a turn it names is erased, forgotten or no longer attributed to its
+person: at every run, and in the nightly pass
+([consolidation](CONSOLIDATION.md)).
+
+The command asks the running sidecar (`POST /v1/mind/recall-questions`, body
+`{"new": false}`, answer `{"questions", "recalled", "built"}`; the owner's side
+of the API) and waits up to 16 minutes for it. Each run writes one `check` line
+to the recorder: source `recall.questions`, result `done` with the detail
+`recalled-<n>-of-<m>`, or `failed` with the error class.
 
 ## Superseded values
 

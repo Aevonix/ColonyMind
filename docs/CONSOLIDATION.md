@@ -3,7 +3,7 @@
 Sleep-time compute for the mind (architecture 3.1, 4.1, 4.2, 4.8; build plans M8 and M9). Once per
 night crossed, the sidecar consolidates what the time since the last run left in its stores: the
 self-narrative delta, the lessons verified results taught, contradictions turned into questions,
-per-contact digests and episode summaries. It runs inside the token budget, writes only to stores
+per-contact digests, the agent's pages and episode summaries. It runs inside the token budget, writes only to stores
 that already exist, and its whole record is one audit row.
 
 Code: `sidecar/colonymind/mind/consolidate.py` (`Consolidation`); the schedule is in
@@ -235,6 +235,22 @@ into one owner ask; the night records a refusal in `mind_state["wishes.refused"]
    `GET /v1/host/health` counts the withheld digests (`recall.digests_withheld`). A template digest
    stored without its claims (sources the marker `["template"]`) cannot be checked: the store
    migration withholds it, and the next tick renders it again with its claims, the mind on or off.
+
+After the digests in the plain order, **the pages** (at most 7 calls, `P/pages/night.py`): the agent's page
+on itself and its page on each person ([pages](SOCIAL-STATE.md#pages)) are written again. The stage first
+removes every page line whose source turn was erased or forgotten (`page_lines_removed`). A page is due
+when its person has a turn newer than the page's last rewrite: the agent's own page first, then at most
+six people, the page written longest ago first; the people not reached wait for a later night. One call
+per page: the model sees the page as it stands and the newest conversation (at most 200 turns within
+6,000 characters, each turn under a short id) and returns the lines as they should stand now, at most
+twelve. A line that cites no turn it was shown is dropped and counted in `rejected_lines`. A person's
+page is written from that person's conversation, in the language and script of their own statements (the
+digest's rule); the agent's own page from what the agent itself said, to anyone. The agent's boundaries
+with a person and the lines it wrote itself are kept as they are. A call with no answer leaves its page
+as it is, due again the next night. With `mind.faculties.people` off only the agent's own page is
+written. The night's record counts `pages`, and each run of the stage writes one `check` line to the
+recorder (source `night.pages`, detail `pages-<n>`; `failed` when the stage raised).
+
 5. **Episode summaries** (at most 8 calls). Sessions with at least 3 person-scoped turns since the
    last finished episodes stage (at least the last 24 hours, at most 7 days), oldest first by the first
    turn in that window newer than their newest surviving summary (or their first turn in the window
@@ -296,6 +312,7 @@ cannot finish leaves that work incomplete; it does not silently count as a compl
 | Lessons | 1 | 1,200 |
 | Contradictions | <= 8 decisions, and a summary only for a statement too long to quote | 40 per decision |
 | Per-contact digests | <= 6 | 300 |
+| Pages | <= 7: the agent's own page and at most 6 people | 600 |
 | Episode summaries | <= 8 | 250 |
 
 The night may spend at most `mind.budgets.learn_share x mind.budgets.llm_tokens_per_day` tokens
@@ -312,7 +329,7 @@ whole cap, and the router's error carries what was reported), so the shared day 
 (clamped to 10 minutes) and the whole run is bounded by 15 minutes; a stage that fails is recorded
 in the row's `context.errors` and the next stage still runs. Calls are labelled by `context.task`
 (`mind_consolidate_narrative`, `mind_lessons`, `mind_claim_relation`, `mind_plain_summary`, `mind_consolidate_digest`,
-`mind_consolidate_episode`) and carry
+`mind_consolidate_page`, `mind_consolidate_episode`) and carry
 `workload: background`, which the router keeps in its call record (`routing_status`
 `recent_calls`) and never sends. The overhead row's background tokens come from the audit rows'
 `cost_tokens` (`colonymind mind stats`: `mind_tokens`): the paired harness observes requests on the
@@ -328,6 +345,8 @@ wire, where the label is not.
 | `mind.db` `concerns` | kind `question`, `dedup_key reach_out:contradiction:*`, a typed message candidate to the owner |
 | `initiatives` (the audit log) | one `note/consolidation` row per run (`cost_tokens`, `context` = the run's record: counts, calls, tokens, rejected lines, errors); the owner question is the `message` row (type `contradiction`) the tick forms from the concern |
 | ledger `turn_sources` | `mind:episode:<session>:<date>:episode_summary`, or `mind:episode:<session>:<date>:<digest>:episode_summary` when that id is forgotten, under the episode's contact; `mind:lesson:<id>:<event>` under the owner (session `mind`, `scope='session'`) |
+| ledger `page_lines`, `page_rewrites` | the night's lines of each page written again (`writer` = `night`), each with its source turns, and the moment of each page's last rewrite ([pages](SOCIAL-STATE.md#pages)) |
+| `<instance>/recall-questions.jsonl` | nothing is added; a question whose source turn was erased or forgotten is removed ([the instance's own question set](RECALL-HYBRID.md#the-instances-own-question-set)) |
 | `mind.db` `mind_state` | `lessons.scanned` (the newest owner turn the lesson stage read); `skills.generation` |
 | `initiatives` | `lesson_use` notes' scored results (`result_metadata.use`), `lessons_seen` on the rows read, `lesson_activated` / `lesson_retired` notes |
 | `<instance>/skills` | with `faculties.skills` on, the promoted lessons' `SKILL.md` and ColonyMind's manifest |

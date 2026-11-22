@@ -565,7 +565,11 @@ sections, never an owner-only one. A kanban worker's prefetch names its task
 the sidecar adds no turn lesson and logs no lesson use for it. A scheduled job's
 prefetch (Hermes builds its agent with platform `cron`) says so
 (`context.metadata.run: cron`): a job's prompt is not the owner's turn, so the
-sidecar leaves the owner's status block out of it. Hermes waits
+sidecar leaves the owner's status block out of it. A turn the gateway bound to a
+group chat names its chat (`context.metadata.chat_type`, the chat kind, and
+`context.metadata.chat`, `platform:chat id`): the sidecar then recalls that
+chat's own history only and says so in one line, "Recall narrowed"
+(docs/RECALL-HYBRID.md, Group chats). A direct chat sends neither. Hermes waits
 for the whole prefetch, so each one has one deadline from its start (Hermes'
 external prefetch bound less the provider's 0.5 s margin): the participant's
 resolution, the assembly and the Current Time refresh all end by it, each
@@ -646,7 +650,8 @@ provider keeps a fingerprint of each context section it showed, per session, and
 a section unchanged since the session's last shown turn is one line in the new
 turn's context: `unchanged since your last turn: <section>`. Only the new turn
 changes; earlier turns are never touched, so the cached prompt prefix holds.
-Current Time is always sent. A prefetch counts as shown only once its turn
+Current Time is always sent, and so is a group turn's "Recall narrowed" line.
+A prefetch counts as shown only once its turn
 completed (`sync_turn`, called whoever writes the turn), only when Hermes waited
 for it (its 8 s external prefetch bound) and only when it went inline whole
 (under Hermes' spill cap). The fingerprints reset on every session switch
@@ -655,6 +660,8 @@ gateway's detached compaction evicts the live agent, whose provider starts
 empty.
 
 The recall-exit counter observes memory context actually submitted to the model.
+A turn in a group chat is not counted: it recalls that chat's own history only,
+and an empty recall there is no fault.
 In the instance's `colonymind.yaml`, `context.recall_alarm_turns` (default 2)
 sets the consecutive owner-turn threshold for `RECALL_ALARM`.
 `context.recall_alarm_target` optionally names a stock Hermes send target;
