@@ -31,6 +31,10 @@ Then the wish stage (``faculties.wishes``, ``P/mind/wishes.py``): at most one ca
 name one capability the agent lacks, citing the verified failures of one class; a valid wish is a
 concern the tick forms into one owner ask.
 
+After the digests, the pages stage (``P/pages/night.py``): the page on each person and on the agent
+itself is written again where there was new conversation, every line citing the turns it rests on;
+the agent's own page and at most six people a night.
+
 Every input query excludes the mind's own rows (``SELF_TURN_SQL``): the
 autobiography and the episode summaries are the agent's record, not the
 person's conversation. Claims are read one witness per value (the newest), the
@@ -69,7 +73,7 @@ from colonymind.util.temporal import now_utc, parse_utc_text as _utc
 
 logger = logging.getLogger(__name__)
 
-NIGHT_TASKS = ("narrative", "lessons", "work", "wishes", "contradictions", "digests", "episodes")
+NIGHT_TASKS = ("narrative", "lessons", "work", "wishes", "contradictions", "digests", "pages", "episodes")
 TASK_NARRATIVE = "mind_consolidate_narrative"
 TASK_DIGEST = "mind_consolidate_digest"
 TASK_EPISODE = "mind_consolidate_episode"
@@ -133,10 +137,11 @@ RELATION_SCHEMA = {
                "properties": {"relation": {"type": "string", "enum": [*RELATIONS, "unsure"]}}},
 }
 STAGES = {"narrative": "narrative_delta", "lessons": "lessons_stage", "work": "work_stage", "wishes": "wishes_stage",
-          "contradictions": "contradictions", "digests": "digests", "episodes": "episodes"}
+          "contradictions": "contradictions", "digests": "digests", "pages": "pages_stage", "episodes": "episodes"}
 # The faculty flag each stage belongs to: a night with one of them off runs only the other's stages.
 STAGE_FACULTY = {"narrative": "consolidation", "lessons": "lessons", "work": "work_records", "wishes": "wishes",
-                 "contradictions": "consolidation", "digests": "consolidation", "episodes": "consolidation"}
+                 "contradictions": "consolidation", "digests": "consolidation", "pages": "consolidation",
+                 "episodes": "consolidation"}
 
 NARRATIVE_SYSTEM = (
     "You maintain one section of an agent's self-narrative, 'recent: the last 7 days'. You are given the "
@@ -996,6 +1001,13 @@ class Consolidation:
             return
         from colonymind.work.night import WorkNight
         await WorkNight(self.ledger, self.owner_id).run(night, now, call=self._call)
+
+    async def pages_stage(self, night: Night, now: datetime) -> None:
+        """The pages on each person and on the agent itself (``pages.night``), in the night's budget."""
+        if self.ledger is None:
+            return
+        from colonymind.pages.night import rewrite_pages
+        await rewrite_pages(self.ledger, night, call=self._call, people=self.faculties.get("people", True))
 
     # -- stage 3: contradictions ---------------------------------------------------------------
 

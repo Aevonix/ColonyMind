@@ -57,7 +57,7 @@ async def test_legacy_marker_does_not_enter_disabled_stages_or_create_a_cycle(fx
     c = stages(fx, monkeypatch, entered)
     c.faculties['lessons'] = c.faculties['work_records'] = False
     await c.run(force=True)
-    assert entered == ['narrative', 'wishes', 'contradictions', 'digests', 'episodes']
+    assert entered == ['narrative', 'wishes', 'contradictions', 'digests', 'pages', 'episodes']
     assert c.mind_state.get(STAGE_PREFIX + 'lessons') is None
     assert c.mind_state.get(STAGE_PREFIX + 'work') is None
     assert c.mind_state.get('consolidation.cycle') is None
@@ -65,7 +65,7 @@ async def test_legacy_marker_does_not_enter_disabled_stages_or_create_a_cycle(fx
     fx.restart()
     entered.clear()
     await stages(fx, monkeypatch, entered).run(force=True)
-    assert entered == ['lessons', 'work', 'narrative', 'wishes', 'contradictions', 'digests', 'episodes']
+    assert entered == ['lessons', 'work', 'narrative', 'wishes', 'contradictions', 'digests', 'pages', 'episodes']
     fx.shift(days=1)
     fx.restart()
     entered.clear()
