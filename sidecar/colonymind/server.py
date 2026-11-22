@@ -730,6 +730,8 @@ def create_app() -> FastAPI:
     app.include_router(curated_memory.router)
     from colonymind.api.routers import instinct as instinct_router   # the Hermes gates' external points
     app.include_router(instinct_router.router)
+    from colonymind.api.routers import recorder as recorder_router   # the recorder for callers in another process
+    app.include_router(recorder_router.router)
     from colonymind.api.routers import hands as hands_router
     app.include_router(hands_router.runtime_router)
     app.include_router(hands_router.router)

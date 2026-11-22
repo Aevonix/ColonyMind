@@ -24,57 +24,53 @@ Labels
     chooser   one of ``CHOOSERS``
     result    one of ``RESULTS``
     detail    one short code label (an error class, a rule name). Never text.
+    marks     later labels added by ``mark``. ``MARKS`` lists the ones in use.
 
 A value outside its set is recorded as ``other``. Adding a label is one entry
 in the tuple below.
+
+The lines are one table in the instance's state directory (``store``). A
+call that cannot store its line drops it and leaves an ``error`` line for the
+next call that can. ``watch`` tells the owner when something stops, adds the
+daily line to the digest and prunes old lines. Each alert it sends is itself
+a line of kind ``alert``, open while its condition holds.
 """
 
 from __future__ import annotations
 
 import re
-import threading
 import time
 import uuid
 
-KINDS = ("event", "card", "check", "error")
+from colonymind import get_state_dir
+from colonymind.recorder.store import INSERT, Store, new_line, store_at
+
+KINDS = ("event", "card", "check", "error", "alert")
 CHOICES = ("ignore", "remember", "react", "reply", "act", "tell_owner", "ask_owner")
 CHOOSERS = ("rule", "instinct", "model", "owner")
 RESULTS = ("sent", "reacted", "silent", "failed", "done", "blocked", "pending")
+MARKS = ("owner_acted", "owner_declined", "owner_said_should_have", "owner_said_no_need")
 
 _LABEL = re.compile(r"^[a-z][a-z0-9_.:\-]{0,63}$")
-_LOCK = threading.Lock()
-_LINES: dict[str, dict] = {}
-_KEEP = 2000
+_DETAIL = re.compile(r"^[A-Za-z][A-Za-z0-9_.:\-]{0,63}$")  # an error class is written with capitals
 
 
-def _label(value: str, allowed: tuple[str, ...] | None = None) -> str:
+def _label(value: str, allowed: tuple[str, ...] | None = None, pattern: re.Pattern[str] = _LABEL) -> str:
     text = str(value or "")
     if allowed is not None:
         return text if text in allowed else ("" if not text else "other")
-    return text if _LABEL.match(text) else ("" if not text else "other")
+    return text if pattern.match(text) else ("" if not text else "other")
+
+
+def _store() -> Store:
+    return store_at(get_state_dir())
 
 
 def begin(kind: str, source: str, ref: str = "") -> str:
     """Open a line and return its id. Never raises."""
     line_id = uuid.uuid4().hex
     try:
-        line = {
-            "id": line_id,
-            "kind": _label(kind, KINDS),
-            "source": _label(source),
-            "ref": _label(ref),
-            "choice": "",
-            "chooser": "",
-            "result": "",
-            "detail": "",
-            "marks": [],
-            "began_at": time.time(),
-            "took_ms": None,
-        }
-        with _LOCK:
-            _LINES[line_id] = line
-            while len(_LINES) > _KEEP:
-                _LINES.pop(next(iter(_LINES)))
+        _store().write(INSERT, new_line(_label(kind, KINDS), _label(source), ref=_label(ref), line_id=line_id))
     except Exception:  # noqa: BLE001 - recording never fails the caller
         pass
     return line_id
@@ -83,15 +79,12 @@ def begin(kind: str, source: str, ref: str = "") -> str:
 def finish(line_id: str, *, result: str, choice: str = "", chooser: str = "", detail: str = "") -> None:
     """Close a line opened by ``begin``. Unknown ids are ignored. Never raises."""
     try:
-        with _LOCK:
-            line = _LINES.get(line_id)
-            if line is None:
-                return
-            line["result"] = _label(result, RESULTS)
-            line["choice"] = _label(choice, CHOICES)
-            line["chooser"] = _label(chooser, CHOOSERS)
-            line["detail"] = _label(detail)
-            line["took_ms"] = int((time.time() - line["began_at"]) * 1000)
+        _store().write(
+            "UPDATE lines SET result = ?, choice = ?, chooser = ?, detail = ?, "
+            "took_ms = CAST((? - began_at) * 1000 AS INTEGER) WHERE id = ?",
+            (_label(result, RESULTS), _label(choice, CHOICES), _label(chooser, CHOOSERS),
+             _label(detail, pattern=_DETAIL), time.time(), str(line_id or "")),
+        )
     except Exception:  # noqa: BLE001
         pass
 
@@ -108,45 +101,41 @@ def once(
     took_ms: int | None = None,
 ) -> str:
     """Record something settled in one step and return the line id. Never raises."""
-    line_id = begin(kind, source, ref)
-    finish(line_id, result=result, choice=choice, chooser=chooser, detail=detail)
-    if took_ms is not None:
+    line_id = uuid.uuid4().hex
+    try:
         try:
-            with _LOCK:
-                if line_id in _LINES:
-                    _LINES[line_id]["took_ms"] = int(took_ms)
-        except Exception:  # noqa: BLE001
-            pass
+            took = 0 if took_ms is None else int(took_ms)
+        except (TypeError, ValueError, OverflowError):
+            took = 0
+        _store().write(INSERT, new_line(
+            _label(kind, KINDS), _label(source), ref=_label(ref), choice=_label(choice, CHOICES),
+            chooser=_label(chooser, CHOOSERS), result=_label(result, RESULTS),
+            detail=_label(detail, pattern=_DETAIL), took_ms=took, line_id=line_id))
+    except Exception:  # noqa: BLE001
+        pass
     return line_id
 
 
 def mark(ref: str, label: str) -> int:
     """Add one later label to every line with this ``ref``. Returns how many. Never raises."""
-    count = 0
     try:
         key, tag = _label(ref), _label(label)
         if not key or not tag:
             return 0
-        with _LOCK:
-            for line in _LINES.values():
-                if line["ref"] == key:
-                    line["marks"].append(tag)
-                    count += 1
+        return _store().write(
+            "UPDATE lines SET marks = CASE WHEN marks = '' THEN ? ELSE marks || ' ' || ? END WHERE ref = ?",
+            (tag, tag, key))
     except Exception:  # noqa: BLE001
-        pass
-    return count
+        return 0
 
 
 def recent(limit: int = 50, *, kind: str = "", source: str = "") -> list[dict]:
     """Newest lines first, as plain dicts. Never raises."""
     try:
-        with _LOCK:
-            rows = [dict(line, marks=list(line["marks"])) for line in _LINES.values()]
-        rows.reverse()
-        if kind:
-            rows = [row for row in rows if row["kind"] == kind]
-        if source:
-            rows = [row for row in rows if row["source"] == source]
-        return rows[: max(0, int(limit))]
+        where = " AND ".join(f"{name} = ?" for name, value in (("kind", kind), ("source", source)) if value)
+        rows = _store().read(
+            f"SELECT * FROM lines {'WHERE ' + where if where else ''} ORDER BY rowid DESC LIMIT ?",
+            (*(value for value in (kind, source) if value), max(0, int(limit))))
+        return [dict(row, marks=row["marks"].split()) for row in rows]
     except Exception:  # noqa: BLE001
         return []

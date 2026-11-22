@@ -909,6 +909,8 @@ class Outbox:
             done.append(f"Found: {await self._shown(f'{topic}: {text}', room - 7, what=f'A finding about {topic}')}")
         if work:
             done.append(work)
+        from colonymind.recorder import watch as recorder_watch
+        done.extend(recorder_watch.digest_lines(self, since, now))   # the recorder's daily line
         for topic, text in (offers or [])[:6]:
             done.append(f"Offer: {await self._shown(f'{topic}: {text}', room - 7, what=f'An offer about {topic}')}")
         for topic, text in held or []:

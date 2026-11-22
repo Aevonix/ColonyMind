@@ -685,6 +685,8 @@ class Mind:
                                        "model_calls": 0}
             # Store upkeep, not initiative: it runs with the mind off too.
             summary["vector_compaction"] = self._vector_compaction(now)
+            from colonymind.recorder import watch as recorder_watch
+            recorder_watch.upkeep(self, now)   # the recorder's alerts to the owner and its daily pruning
             # Bounded source/result upkeep and one tick-owned synthesis task.
             # This never holds the tick lock across connector or model I/O.
             await self.ideas.tick(now, schedule=False)
