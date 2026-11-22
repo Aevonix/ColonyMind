@@ -185,6 +185,7 @@ def test_the_mail_check_wakes_only_for_new_mail_and_never_carries_it(world, stor
     assert not [word for word in PRIVATE if word in output + json.dumps(world["recorded"])]
 
     found = json.loads(run(world, shlex.split(line["read"])).stdout)
+    assert set(found) == {"check", "content_trust", "items"}
     assert found["check"] == "mail" and found["content_trust"] == "untrusted"
     assert [(item["sender"], item["subject"], item["text"]) for item in found["items"]] == [PRIVATE]
 
@@ -239,6 +240,7 @@ def test_the_github_check_only_reads_and_takes_its_token_from_the_variable_the_s
 
     found = json.loads(run(world, shlex.split(line["read"]), **token).stdout)
     assert found["content_trust"] == "untrusted"
+    assert found["problem"] == "httperror"    # a repository that does not answer is a problem, not nothing
     assert [(item["repository"], item["type"], item["number"], item["title"]) for item in found["items"]] == [
         ("team/one", "IssuesEvent", 11, "Private title")]
 

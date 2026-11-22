@@ -14,7 +14,8 @@ read. With ``until`` the look stops at that earlier marker.
 
 Run by the scheduler, the script prints ``{"wakeAgent": false}`` when nothing is new and otherwise
 ``{"wakeAgent": true, "check": <name>, "new": <count>, "read": <command>}``. That line never holds
-anything read from the source. ``<script> read`` prints what the last waking run found, as data.
+anything read from the source. ``<script> read`` prints what the last waking run found, as data, with
+the ``problem`` label when part of the source cannot be read at that moment.
 
 Standard library only. Python 3.9 or newer.
 """
@@ -133,9 +134,12 @@ def _gate(name, look):
 
 def _read(name, look):
     state = load_state(name)
-    found = look(state.get("previous"), load_settings(), state.get("marker"))[1]
-    text = json.dumps({"check": name, "content_trust": "untrusted", "items": found}, ensure_ascii=False, indent=1)
-    sys.stdout.buffer.write(text.encode("utf-8") + b"\n")
+    _, found, *problem = look(state.get("previous"), load_settings(), state.get("marker"))
+    answer = {"check": name, "content_trust": "untrusted", "items": found}
+    if problem and problem[0]:
+        answer["problem"] = problem[0]
+    text = json.dumps(answer, ensure_ascii=False, indent=1)
+    sys.stdout.buffer.write(text.encode("utf-8", "backslashreplace") + b"\n")
     return 0
 
 

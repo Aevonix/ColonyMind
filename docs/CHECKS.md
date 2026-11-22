@@ -31,6 +31,10 @@ Both forms use the scheduler's own wake gate: a job's script runs first, and whe
 is `{"wakeAgent": false}` the run ends without a model call. Otherwise the script's output is put in
 front of the job's prompt.
 
+The cron wake gate of [Hermes gates](HERMES-GATES.md) is something else: an optional Instinct question
+put in front of a job's script. A check does not use it. A check's script answers the scheduler itself,
+from its marker, and asks no model.
+
 The script's output is one line: `{"wakeAgent": true, "check": "<name>", "new": <count>, "read":
 "<command>"}`, or with `"notes": "<file>"` for a check without a connector. It never holds anything
 read from the source: no sender, subject, title or text. The woken model runs the `read` command to
@@ -41,7 +45,7 @@ get what was found, so that content reaches it as a tool result and never as par
 | job | script | what is new | settings |
 |---|---|---|---|
 | `check-mail` | `check_mail.py` | mail accepted by the [agent mailbox](agent-mailbox.md) since the last look, through `GET /v1/agent-mail/new` of the local engine; at most 20 messages a run, the rest on the next | `engine_url` |
-| `check-github` | `check_github.py` | events of each listed repository newer than the last one seen, read with GET requests only | `github.repositories`, `github.token_env`, `github.api_url` |
+| `check-github` | `check_github.py` | events of each listed repository newer than the last one seen, among its 30 newest, read with GET requests only | `github.repositories`, `github.token_env`, `github.api_url` |
 | `check-projects` | `check_projects.py` | whatever changed since the model's notes | the "Where to look" line of the job's prompt |
 | `check-calendar` | `check_calendar.py` | whatever changed since the model's notes | the "Where to look" line of the job's prompt |
 
@@ -66,8 +70,9 @@ stores a credential.
 
 ## Setting up
 
-1. Copy the `.py` files of `checks/` into the scheduler's scripts folder (`scripts/` in the Hermes
-   home). A job's script must sit inside that folder.
+1. Copy the files of `checks/` into the scheduler's scripts folder (`scripts/` in the Hermes home).
+   A job's script must sit inside that folder, and the job entries and the instruction page stay
+   beside the scripts, where the agent finds them.
 2. Put `checks.json` beside them when a default does not fit, and list the repositories to watch.
 3. For `check-github`, set a read-only token in the environment of the process that runs the
    scheduler, under the name `github.token_env` gives. The scheduler removes some names from a
@@ -82,6 +87,8 @@ stores a credential.
 
 A woken run needs the terminal (to run the `read` command), the file tools (for a notes file) and
 the board. They come from the job's `enabled_toolsets`, else from the scheduler's toolset setting.
+The `read` command is the script itself, so the terminal has to run where the scheduler runs, as the
+same user, with the token's variable in its environment.
 
 ## What the agent changes itself
 
@@ -97,7 +104,8 @@ toolsets of scheduled runs.
 
 A script keeps `check-state/<name>.json` beside the scripts: the marker of its last look and the
 marker before its last waking run. The marker moves when the script reports, so one finding wakes
-the model once. `read` prints what the last waking run found, fetched again from the source.
+the model once. `read` prints what the last waking run found, fetched again from the source, and
+names a `problem` when part of the source does not answer at that moment.
 
 A look that fails (the source does not answer, answers with an error, or the settings cannot be
 read) leaves the marker where it was, wakes nobody and is recorded as failed; the next run looks
@@ -120,8 +128,9 @@ The engine's guard gives a scheduled run the standing of whoever created or last
 ([the mind](MIND.md), [the Hermes adapter](HERMES-ADAPTER.md)):
 
 - created with the scheduling tool in the owner's chat: the owner's job; its runs are not gated;
-- created or changed by the agent in its own work: the run counts as the agent's own work, so its
-  effects are classified, it writes no file, and a command waits unless the owner approved the task;
+- created or changed by the agent in its own work: the run counts as the agent's own work. Its
+  effects are classified like those of any such run and it writes no file, so a check of this kind
+  keeps no notes file;
 - no recorded creator (a job made with the scheduler's command line): every tool call of the woken
   run is refused.
 
@@ -132,5 +141,5 @@ three cases.
 
 The scripts use the standard library only and need Python 3.9 or newer. The scheduler runs a job's
 `.py` script with the job's `interpreter` when one is set, else with the Python that runs the
-scheduler itself (on a managed install, the Python of its dependency environment). A shebang line
-is not read.
+scheduler itself (3.11 or newer; on a managed install, the Python of its dependency environment). A
+shebang line is not read.
