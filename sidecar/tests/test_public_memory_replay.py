@@ -219,6 +219,7 @@ def fixture_conversation(records):
 NIGHT = {'mind_claim_relation': {'relation': 'replaces'}, 'mind_consolidate_narrative': {'lines': []},
          'mind_consolidate_digest': {'digest': 'The owner works in Room 9 on the second floor.', 'sources': []},
          'mind_consolidate_episode': {'summary': 'The owner said where their office is.'},
+         'mind_consolidate_page': {'lines': []},
          'mind_plain_summary': {'sentence': 'The office moved to Room 9.'}}
 
 
