@@ -410,6 +410,7 @@ owner asked about other people.
 | `set_permission {contact_id, permission}` | owner | `POST /v1/mind/people/{who}/permission {may_contact: never\|ask\|auto}` |
 | `set_cadence {contact_id, minutes}` | owner | `POST /v1/mind/people/{who}/cadence {minutes}` (0 clears) |
 | `merge {contact_id, drop}` | owner | `POST /v1/mind/people/merge {keep, drop}`: `drop` folds into `contact_id`; handles, sources, comms and affect follow the person |
+| `boundary {contact_id, text?, drop?}` | everyone (a guest: the page about themselves) | `GET /v1/mind/pages/{who}` shows the agent's page on the person, each line with its id; with `text` or `drop`, `POST /v1/mind/pages/{who}/lines {kind: boundary, text, drop, source}` adds a boundary that names the turn it was written in, or removes one by its line id |
 
 A guest sees who someone is (`contact_id`, `display_name`, `trust_tier`) and
 nothing else: the plugin names the guest as the viewer (`contact_id`) on its
@@ -433,6 +434,15 @@ digits, so `why` on any other id is still the owner's record); `withdraw` and
 `POST /v1/mind/opinions/{id}/withdraw|reconsider` from the owner's own interactive
 session only, never a guest, a kanban worker or a cron run (docs/OPINIONS.md). The
 guard treats the tool as read-only.
+
+`colonymind_self like|dislike` are the agent's own tastes, kept on its page about
+itself (docs/SOCIAL-STATE.md, Pages): with `taste` a line is added that names the
+turn it was written in, with `id` a line is removed, and with neither the page is
+shown (`GET /v1/mind/pages/self`, `POST /v1/mind/pages/self/lines`). These and
+`colonymind_people boundary` are the agent's own lines, not the owner's records,
+so they are the one change a session that is not the owner's own may make: a
+guest's session reaches the agent's own page and the page about that guest, and
+no other page.
 
 ## Secrets
 

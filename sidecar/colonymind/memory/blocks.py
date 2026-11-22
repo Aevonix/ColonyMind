@@ -58,9 +58,11 @@ RANK: Tuple[str, ...] = (
     "colonymind-open-questions",
     "colonymind-corrections",        # corrections to earlier context (owner-critical)
     "colonymind-standing-lessons",
+    "colonymind-page-person",        # the agent's page on the turn's person, its boundaries first (pages.turn)
     "colonymind-memory",             # this turn's recall
     "colonymind-lessons",
     "colonymind-stances",            # recorded views
+    "colonymind-page-self",          # the agent's page on itself
     "colonymind-appraisals",
     "colonymind-owner-preferences",  # the owner's profile
     "colonymind-self-perspective",
@@ -85,6 +87,7 @@ LIMITS: Dict[str, int] = {
     "colonymind-appraisals": 3000,
     "colonymind-person": 600,            # contacts.digest.MAX_CHARS
     "colonymind-relationship": 500,
+    "colonymind-page-person": 2000,      # a page past it keeps its first lines: the boundaries, then the oldest
 }
 DEFAULT_LIMIT = 1500
 DEFAULT_BUDGET = 9000

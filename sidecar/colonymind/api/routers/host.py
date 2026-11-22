@@ -3023,6 +3023,14 @@ async def _assembled_lanes(
         except Exception as exc:
             logger.debug("context_assemble person digest failed: %s", exc)
 
+    # --- The agent's pages: on this turn's person, and on itself (colonymind.pages) ---
+    try:
+        from colonymind.pages import turn as page_turn
+        sections.extend(ContextSection(**row) for row in await producers.read(
+            page_turn.sections, contact_id, people=faculty_on("people"), default=[]))
+    except Exception as exc:
+        logger.debug("context_assemble pages failed: %s", exc)
+
     # --- Owner's stated preferences (explicit directives the owner gave me) ---
     if _exact_person_allowed and _preference_learner is not None\
             and contact_id:
