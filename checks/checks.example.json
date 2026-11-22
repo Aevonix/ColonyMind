@@ -1,0 +1,8 @@
+{
+  "engine_url": "http://127.0.0.1:7777",
+  "github": {
+    "repositories": ["example-owner/example-repository"],
+    "token_env": "COLONYMIND_CHECK_GITHUB_TOKEN",
+    "api_url": "https://api.github.com"
+  }
+}

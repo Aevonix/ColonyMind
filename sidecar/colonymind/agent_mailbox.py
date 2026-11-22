@@ -409,3 +409,32 @@ class MailboxStore:
             conn.execute("DELETE FROM messages WHERE mailbox_id=? AND thread_id=?", parameters)
             conn.execute("INSERT OR IGNORE INTO deleted_threads (mailbox_id, thread_id) VALUES (?, ?)", parameters)
             return {"thread_id": thread_id, "deleted": True, **self._counts(conn, mailbox_id)}
+
+    def new_since(self, marker=None, *, limit=20):
+        """Mail of every mailbox accepted after ``marker``, oldest first. Changes nothing, read state included.
+
+        ``marker`` is the value an earlier answer returned, and the answer's ``marker`` is where the next
+        look starts. Without a marker the answer holds no mail and says where the mailbox stands now;
+        0 starts from everything retained.
+        """
+        if not 1 <= limit <= 100:
+            raise MailboxError("invalid_limit")
+        with self._transaction() as conn:
+            row = conn.execute("SELECT seq FROM sqlite_sequence WHERE name='messages'").fetchone()
+            latest = row[0] if row else 0
+            if marker is None:
+                return {"marker": latest, "count": 0, "has_more": False, "messages": []}
+            if marker > latest:
+                marker = 0  # a marker this store never issued: look at everything it retains
+            rows = conn.execute(
+                "SELECT sequence, mailbox_id, message_id, thread_id, sender, recipients, subject, text, "
+                "occurred_at, in_reply_to, received_at FROM messages WHERE sequence>? "
+                "ORDER BY sequence LIMIT ?", (marker, limit + 1)).fetchall()
+            messages = []
+            for row in rows[:limit]:
+                message = {key: row[key] for key in sorted(row.keys())}
+                message["recipients"] = json.loads(message["recipients"])
+                message["content_trust"] = "untrusted"
+                messages.append(message)
+            return {"marker": messages[-1]["sequence"] if messages else marker, "count": len(messages),
+                    "has_more": len(rows) > limit, "messages": messages}

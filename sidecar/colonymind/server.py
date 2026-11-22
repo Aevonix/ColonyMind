@@ -705,6 +705,8 @@ def create_app() -> FastAPI:
     app.include_router(devices_router.router)
     from colonymind.api.routers.agent_mailbox import router as agent_mailbox_router
     app.include_router(agent_mailbox_router)
+    from colonymind.api.routers.agent_mailbox import agent_router as agent_mailbox_agent_router
+    app.include_router(agent_mailbox_agent_router)
     from colonymind.api.routers import work as work_router
     app.include_router(work_router.router)
     from colonymind.mind.factory import mind_routers

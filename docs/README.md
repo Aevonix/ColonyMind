@@ -40,6 +40,8 @@ commands; the [changelog](../CHANGELOG.md) says what each release changed.
 - [Nightly consolidation](CONSOLIDATION.md): the self-narrative, lessons, contradictions, digests and episode
   summaries.
 - [Feeds](FEEDS.md): topic briefings built from a spec file.
+- [Checks](CHECKS.md): mail, repositories and other sources watched as scheduled jobs that wake the model only for
+  something new.
 - [Agent mailbox](agent-mailbox.md): receive-only identity, inbox/thread contract and
   [provider provisioning proposal](agent-mailbox-provisioning.md).
 - [The public API](API.md): the routes a client can rely on, and each release's `openapi.json`.

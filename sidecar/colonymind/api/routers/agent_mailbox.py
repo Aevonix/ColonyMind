@@ -92,3 +92,22 @@ def read(mailbox_id: str, thread_id: str, body: ReadBody, store=Depends(get_stor
 @router.delete("/mailboxes/{mailbox_id}/threads/{thread_id}")
 def delete(mailbox_id: str, thread_id: str, store=Depends(get_store)):
     return _call(store, "delete", mailbox_id, thread_id)
+
+
+def require_agent(request: Request, response: Response):
+    authority = request_authority(request)
+    if not (authority.authenticated and not authority.anonymous and authority.scopes is None
+            and authority.principal_id == KEY_PRINCIPAL):
+        raise HTTPException(403, detail={"code": "mailbox_agent_required"},
+                            headers={"Cache-Control": "no-store"})
+    response.headers["Cache-Control"] = "no-store"
+
+
+# The one route of the agent's own runtime (the instance key): what arrived since a marker. Read only.
+agent_router = APIRouter(prefix="/v1/agent-mail", tags=["agent-mail"], dependencies=[Depends(require_agent)])
+
+
+@agent_router.get("/new")
+def new_mail(since: int | None = Query(None, ge=0), limit: int = Query(20, ge=1, le=100),
+             store=Depends(get_store)):
+    return _call(store, "new_since", since, limit=limit)
