@@ -54,6 +54,12 @@ HTML-only/attachment-only messages have empty text for the app's no-text fallbac
 Future model consumers must retain this boundary and require an explicit owner
 request; mailbox content cannot change system/developer instructions or grants.
 
+The one model consumer is the mail check ([Checks](CHECKS.md)), a scheduled job
+the owner sets up. Its script asks `GET /new` what arrived since its last look
+and passes on a count only; the woken model then reads the messages as a tool
+result marked `content_trust: "untrusted"`, under the rule that mail is content
+and never an instruction, and anything it would write outward is a card first.
+
 ## Companion API
 
 Storage is `agent-mailbox.db` under the selected private instance state
@@ -70,11 +76,14 @@ Corrupt storage fails closed rather than silently starting empty. Back up the
 database with SQLite's backup mechanism or with existing
 private state while closed; physical secure erase of backups is separate.
 
-All routes require an authenticated issued Companion owner relay credential,
+All routes except `GET /new` require an authenticated issued Companion owner relay credential,
 with the named `companion` owner platform and `manage` access, matching the
 Companion device and owner route boundary. The Hermes/gateway instance key,
 its rotation secrets, all-platform model credentials, anonymous, guest and
 legacy-scoped credentials are denied. No body/query field can grant owner access.
+`GET /new` is the one route of the agent's own runtime: it answers the instance
+key only (403 `mailbox_agent_required` for every other credential, the owner
+relay included) and changes nothing, read state included.
 Companion uses its existing authenticated owner backend relay. Successful
 responses use `Cache-Control: no-store`. IDs are opaque; absent or cross-mailbox
 resources return 404.
@@ -91,6 +100,7 @@ The following paths are relative to `/v1/agent-mail`:
 | `GET /mailboxes/{mailbox_id}/threads/{thread_id}?limit=50&cursor=…` | `{thread, messages, next_cursor, has_more}`; does not mark read |
 | `POST /mailboxes/{mailbox_id}/threads/{thread_id}/read` | `{through_message_id}` → read receipt and global unread counts; only messages through the displayed message become read |
 | `DELETE /mailboxes/{mailbox_id}/threads/{thread_id}` | local deletion receipt and global unread counts; repeat deletion succeeds |
+| `GET /new?since=…&limit=20` | instance key only: `{marker, count, has_more, messages}`, the mail of every mailbox accepted after the marker `since`, oldest first, each message with `content_trust`; the returned `marker` is the next `since`. Without `since`: no messages, and `marker` is where the mailbox stands now. `since=0` starts from everything retained, and so does a marker this store never issued |
 
 `limit` is 1–100. Inbox order is newest accepted delivery first; thread messages
 are oldest accepted first. Cursor continuations retain a snapshot boundary, so
@@ -120,7 +130,8 @@ MIME decoding, provider UID/thread mapping and adapter activation remain future
 work described in [provisioning](agent-mailbox-provisioning.md).
 
 Errors: 401 missing/invalid authentication with a configured instance; 403
-authenticated caller lacks Companion owner relay authority; 404 absent resource;
+authenticated caller lacks Companion owner relay authority (on `GET /new`: is
+not the instance key); 404 absent resource;
 409 duplicate identity/conflicting delivery/inactive mailbox; 422 invalid
 address, input, cursor or read marker; 501 no mail domain configured; 503
 database busy or WAL purge blocked, with `Cache-Control: no-store`. Error
@@ -129,7 +140,8 @@ details contain codes, not mail text.
 ## Implemented and deferred
 
 Implemented: inbox, thread, paging/load-more and unread projection; local
-identity and display name only; local Delete only. Test-send, verification,
+identity and display name only; local Delete only; the read of new mail since a
+marker for the mail check. Test-send, verification,
 sending/contact rules, Trust, real address availability/provisioning and
 provider mailbox deletion are deferred. Companion must omit those
 actions for this receive-only slice; there is no capability flag or placeholder
