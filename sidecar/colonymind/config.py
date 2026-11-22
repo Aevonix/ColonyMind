@@ -174,8 +174,8 @@ DEFAULTS: dict[str, Any] = {
     # The text blocks every turn carries (colonymind/memory/blocks.py): a hard limit per block, one global
     # budget admits fresh state first, a marker for anything held back and a fossil guard. Host allowances
     # can shorten the character budget. The owner-adjustable 20-record default matches the independent
-    # rerank submission bound, preserving verified-cutoff recall; unverified recall still falls back to five.
-    "context": {"status": True, "budget_chars": 9000, "recall_items": 20, "fossil_days": 7, "limits": {},
+    # rerank submission bound; a turn whose rerank is missed still falls back to five.
+    "context": {"status": True, "budget_chars": 16000, "recall_items": 20, "fossil_days": 7, "limits": {},
                 "recall_notice_replacements": [], "recall_alarm_turns": 2},
     # Who each API credential may write as (``colonymind.api.credentials``, docs/CREDENTIALS.md): the
     # instance key (api.key, the Hermes adapter's) writes the owner's turns from these platforms only.
@@ -768,7 +768,7 @@ def _validate_context(value: Any) -> dict[str, Any]:
     if isinstance(alarm_turns, bool) or not isinstance(alarm_turns, int) or alarm_turns < 1:
         raise ConfigError("context.recall_alarm_turns must be a positive whole number of turns")
     result["recall_alarm_turns"] = alarm_turns
-    budget = value.get("budget_chars", 9000)
+    budget = value.get("budget_chars", 16000)
     if isinstance(budget, bool) or not isinstance(budget, int) or budget < 1000:
         raise ConfigError("context.budget_chars must be a whole number of characters, at least 1000")
     days = value.get("fossil_days", 7)

@@ -353,10 +353,10 @@ of what was said, while claims retain their distinct interpretation and
 uncertainty.
 
 A context packet holds at most `context.recall_items` records (owner-adjustable default 20),
-including after a verified reranker cutoff. The default matches the independent
-20-candidate rerank bound, preserving today's verified-cutoff recall. Passing candidates are packed in
+whether or not a verified reranker cutoff chose them. The default matches the independent
+20-candidate rerank bound. Candidates are packed in
 rank order within the character budget, with the existing skip and shorten
-rules. An unverified cutoff or missed rerank also keeps the five-record fallback
+rules. A missed rerank keeps the five-record fallback
 ceiling; `COLONYMIND_RECALL_FALLBACK_LIMIT` can shorten it. Exact media locators
 share the record and character caps. Explicit searches keep their requested
 limit (five by default, up to 20).
@@ -402,8 +402,13 @@ whether the host still shows them verbatim is not known across its agent
 rebuilds and compactions, and leaving them out on a wrong guess loses the only
 verbatim evidence for turns the host has summarised away.
 
-The default combined rendered budget is 4,000 characters, adjustable through
-`COLONYMIND_RECALL_CONTEXT_MAX_CHARS` up to 24,000; zero suppresses this packet.
+An explicit search's combined rendered budget is 4,000 characters. A turn's packet
+takes what the context budget has past the 6,000 characters the other sections
+keep: `context.budget_chars` (default 16,000), or the host's inline allowance when
+that is smaller, less 6,000, and never less than 4,000. That is 10,000 characters
+at the defaults and 4,000 under an allowance of 10,000 or less.
+`COLONYMIND_RECALL_CONTEXT_MAX_CHARS` names one budget for both, up to 24,000; zero
+suppresses this packet.
 When the host names its inline allowance, a turn's packet also stays within that
 allowance less the items kept whole beside it (see Per-turn context selection
 below). This is a character limit, not an asserted token count. Shortened excerpts carry
@@ -425,7 +430,7 @@ The memory packet is one lane of the per-turn context, and it arrives judged:
 recall retrieved wide (lexical, vector and claim candidates), the calibrated
 reranker scored each passage against the incoming message with its whole
 ranking text, and the packet was fitted into its own budget
-(`COLONYMIND_RECALL_CONTEXT_MAX_CHARS`, default 4,000). It is injected as recall
+(above: 10,000 characters at the defaults). It is injected as recall
 selected it: never judged again, cut or charged to the selection budget. With
 selection on (`COLONYMIND_CONTEXT_SELECTION`, default `on`), `/context/assemble`
 pools the items of every other lane it assembled (pending commitments, recorded

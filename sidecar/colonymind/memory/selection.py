@@ -202,8 +202,8 @@ class RecallSelector:
         the fused order, what the reranker did and what the packer kept.
 
         ``limit`` is the most records an explicit search holds. None requests a context packet, bounded by
-        ``context.recall_items`` even after a verified cutoff, and by ``max_chars``. An unverified or missed
-        rerank also keeps the existing fallback bound (``recall_stats.fallback_limit``)."""
+        ``context.recall_items`` and by ``max_chars``, whether or not a verified cutoff chose its records. A
+        missed rerank keeps its smaller bound (``recall_stats.fallback_limit``)."""
         from .recall import fuse_candidates, pack_memory_context
         beliefs = [dict(row, kind="belief") for row in beliefs]
         # Semantic retrieval can return the same words from many turns. Collapse
@@ -274,7 +274,7 @@ class RecallSelector:
         context_limit = int(blocks.settings()["recall_items"])
         packet_limit = min(MEMORY_PACKET_LIMIT, context_limit) if limit is None else (
             min(limit, context_limit) if turn_budget.current() is not None else limit)
-        ranked, missed, cut = await self._reranked(
+        ranked, missed, _ = await self._reranked(
             query, candidates, packet_limit, confidence_weighting=False,
             candidate_limit=RERANK_SUBMISSION_LIMIT if limit is None else max(1, 4 * limit),
             last=repeats_request, trace=trace)
@@ -313,15 +313,16 @@ class RecallSelector:
         ranked.sort(key=repeats_request)
         from . import recall_stats
         if not missed or mode != 'on':
-            # A verified cutoff changes relevance admission, never the turn's hard record cap.
-            # Exact media locators share the same cap and character budget.
-            fitted_limit = context_limit if limit is None and cut else packet_limit
+            # A context packet holds up to ``context.recall_items`` records within its character budget. A verified
+            # cutoff changes relevance admission, never that cap. Exact media locators share the cap and the budget.
+            fitted_limit = context_limit if limit is None else packet_limit
             _offer(locators + ranked, fitted_limit, max_chars)
             selected, content = pack_memory_context(locators + ranked, limit=fitted_limit,
                                                     max_chars=max_chars, trace=trace)
             return selected, content
-        # A missed rerank skipped the calibrated cutoff: the fallback's fused order, up to the packet's own limit
-        # until a deployment calibrates a smaller bound (``recall_stats.fallback_limit``), and counted.
+        # A missed rerank skipped the calibrated cutoff: the fallback's fused order, up to ``MEMORY_PACKET_LIMIT`` in
+        # a turn (an explicit search's own limit) until a deployment calibrates a smaller bound
+        # (``recall_stats.fallback_limit``), and counted.
         _offer(locators + ranked, recall_stats.fallback_limit(packet_limit), max_chars)
         selected, content = pack_memory_context(locators + ranked, limit=recall_stats.fallback_limit(packet_limit),
                                                 max_chars=max_chars, trace=trace)

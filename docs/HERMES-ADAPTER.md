@@ -688,9 +688,11 @@ architecture 4.1). Against a sidecar that fits nothing (1.10) the provider
 holds whole sections back itself, fresh state last, and names each one.
 Current sidecars always fit context. `context.budget_chars` caps the full assembled
 sections even when the host offers more room or will collapse unchanged sections.
-`context.recall_items` caps recalled records (owner-adjustable default 20), including after a
-verified reranker cutoff. This matches the independent 20-candidate rerank bound;
-unverified or missed reranking keeps its five-record fallback. `COLONYMIND_CONTEXT_HOST_WAIT_MS` caps the whole assembly
+`context.recall_items` caps recalled records (owner-adjustable default 20), whether or not a
+verified reranker cutoff chose them. This matches the independent 20-candidate rerank bound;
+missed reranking keeps its five-record fallback. The default `context.budget_chars` is 16,000: a host whose inline
+cap is smaller keeps the context within its own allowance, so raise `hooks.output_spill.max_chars` to 16,256 or more
+to let a turn's recall use the room. `COLONYMIND_CONTEXT_HOST_WAIT_MS` caps the whole assembly
 (default 7,500 ms); `wait_ms` can shorten it. An expired assembly returns no sections. Synchronous producers use a
 dedicated 16-worker pool. Healthy concurrent reads wait for a free worker within the turn deadline; work is never
 queued in the executor. When abandoned reads fill the pool, a producer is skipped and counted in

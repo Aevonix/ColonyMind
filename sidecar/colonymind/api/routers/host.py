@@ -2763,6 +2763,7 @@ async def _assembled_lanes(
     async def _recalled_memory(recall_request=None) -> ContextSection | None:
         nonlocal recall_semantic
         from colonymind.memory.search import collect_sources, select_memory
+        from colonymind.memory.search import turn_recall_chars
         from colonymind.memory.trace import NULL_TRACE, RecallTrace
         recall_trace = trace if trace is not None else (RecallTrace() if recall_request is not None else NULL_TRACE)
         try:
@@ -2795,7 +2796,8 @@ async def _assembled_lanes(
                 packet = await select_memory(collected, query=query_text, selector=_memory_context_selector(),
                     timezone_name=resolve_communication_timezone(
                         contact_tz, body.context.timezone or ("UTC" if _canonical_only else None)),
-                    current_work_available=current_work_available, limit=None, trace=recall_trace)
+                    current_work_available=current_work_available, limit=None, trace=recall_trace,
+                    max_chars=turn_recall_chars(body.inline_chars))
             if recall_request is not None:
                 turn_budget.defer_write(recall_request.driver.record_trace, recall_request.turn_id, recall_trace.report())
             if packet.content:

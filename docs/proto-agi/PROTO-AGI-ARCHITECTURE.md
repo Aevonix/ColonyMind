@@ -1398,7 +1398,7 @@ mind:
     owner_gate: true    # one gate every unprompted owner message passes (docs/OWNER-GATE.md)
 context:                # the status block (docs/MIND.md) and resident blocks (section 4.1)
   status: true
-  budget_chars: 9000    # ceiling; a host allowance can shorten it
+  budget_chars: 16000   # ceiling; a host allowance can shorten it
   recall_items: 20      # owner-adjustable; matches the independent rerank candidate bound
   fossil_days: 7
   limits: {}            # per-block overrides, {section id: characters}

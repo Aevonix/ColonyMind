@@ -342,7 +342,7 @@ async def test_the_route_fits_the_hosts_budget_and_reports_it(context_app):
 async def test_the_block_fit_uses_the_inline_allowance_the_host_names(context_app, monkeypatch):
     """The host's inline allowance can shorten the configured ceiling, never widen it."""
     app, host = context_app
-    recall = lines("memory", 150)                  # 13,650 characters: over the default budget, inside the host's
+    recall = lines("memory", 200)                  # 18,200 characters: over the default budget, inside the host's
 
     async def recalled(body, *, viewer_person_id, request=None, superseded=None):
         from colonymind.api.schemas.host import ContextSection
@@ -394,7 +394,7 @@ async def test_the_recipient_packet_is_never_cut_mid_text(context_app):
 def test_the_config_validates_the_context_section():
     from colonymind.config import ConfigError, DEFAULTS, _merge, validate
     from colonymind.memory.selection import RERANK_SUBMISSION_LIMIT
-    assert DEFAULTS["context"] == {"status": True, "budget_chars": 9000, "recall_items": 20, "fossil_days": 7,
+    assert DEFAULTS["context"] == {"status": True, "budget_chars": 16000, "recall_items": 20, "fossil_days": 7,
                                    "limits": {}, "recall_notice_replacements": [], "recall_alarm_turns": 2}
     assert DEFAULTS["context"]["recall_items"] == RERANK_SUBMISSION_LIMIT == 20
     assert validate(_merge(DEFAULTS, {"context": {"recall_items": 30}}))["context"]["recall_items"] == 30

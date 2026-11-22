@@ -193,15 +193,15 @@ async def test_projected_assertions_are_spread_by_the_conversation_they_come_fro
 @pytest.mark.parametrize("mode", ["missed", "shadow", "off"])
 async def test_without_a_scored_rerank_the_candidates_keep_their_fused_order(monkeypatch, mode):
     # The spread chooses what the reranker reads, nothing else: a rerank that missed, ran in shadow or is off
-    # selects from the fused order as before.
+    # selects from the fused order: up to context.recall_items records, five after a missed rerank.
     rows = candidates(["crowded"] * 24 + ["b", "c"])
     selector = calibrated(monkeypatch, Scores())
     if mode == "missed":
         selector._rerank_fn = failing
     else:
         monkeypatch.setenv("COLONYMIND_RECALL_RERANK", mode)
-    selected, _ = await selector.select_context(QUERY, [], rows, limit=None)
-    assert [row["id"] for row in selected] == [f"q-{i}" for i in range(5)]
+    selected, _ = await selector.select_context(QUERY, [], rows, limit=None, max_chars=24000)
+    assert [row["id"] for row in selected] == [f"q-{i}" for i in range(5 if mode == "missed" else 20)]
 
 
 # --- Mandatory record cap after a verified cutoff --------------------------------------------
@@ -221,7 +221,7 @@ async def test_a_limit_the_caller_names_still_bounds_the_packet(monkeypatch):
 
 
 @pytest.mark.parametrize("case", ["mismatch", "no_cutoff", "shadow"])
-async def test_with_the_cutoff_unverified_five_are_selected(monkeypatch, case):
+async def test_with_the_cutoff_unverified_a_turns_packet_keeps_the_same_record_cap(monkeypatch, case):
     reranker = Scores()
     selector = calibrated(monkeypatch, reranker)
     if case == "mismatch":
@@ -231,6 +231,9 @@ async def test_with_the_cutoff_unverified_five_are_selected(monkeypatch, case):
     else:
         monkeypatch.setenv("COLONYMIND_RECALL_RERANK", "shadow")
     selected, _ = await selector.select_context(QUERY, [], candidates(["s"] * 7), limit=None, max_chars=4000)
+    assert len(selected) == 7 > recall.MEMORY_PACKET_LIMIT
+    # An explicit search still holds five unless it names another limit.
+    selected, _ = await selector.select_context(QUERY, [], candidates(["s"] * 7), max_chars=4000)
     assert len(selected) == recall.MEMORY_PACKET_LIMIT == 5
 
 
