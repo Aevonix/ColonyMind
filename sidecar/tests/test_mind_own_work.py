@@ -11,6 +11,7 @@ import pytest
 
 from colonymind import recorder
 from colonymind.api.routers import mind as mind_router
+from colonymind.mind import outcomes
 from colonymind.mind.ideas import COPY_VERSION, MARKER, digest
 from colonymind.mind.rank import Candidate
 from colonymind.secrets.vault import Vault
@@ -152,6 +153,18 @@ async def test_a_task_is_told_the_line_its_done_check_reads(fx):
     assert named.context["body"] == "Find out about topic 2; report finding: <text>."
     [item] = [item for item in fx.mind.dispatch() if item["id"] == row.id]
     assert item["body"] == row.context["body"]
+
+
+def test_a_body_that_quotes_a_labelled_result_is_still_told_the_line():
+    quoted = "Study the next part.\n\nEvidence:\n- Step 1 is done. finding: a hive needs a queen and a dry box."
+    line = outcomes.report_line(FINDING, quoted)
+    assert line.endswith("report what is missing.") and "\nfinding: <" in line
+    assert outcomes.report_line(FINDING, quoted + line) == ""
+    # A body that tells the form itself keeps its own wording.
+    assert outcomes.report_line(FINDING, quoted + "\n\nReport finding: <the answer>.") == ""
+    assert outcomes.report_line({"kind": "result_field", "field": "lesson_ops"},
+                                'End your report with one JSON object {"lesson_ops": [...]}.') == ""
+    assert outcomes.report_line({"kind": "steps_done", "count": 2}, quoted) == ""
 
 
 async def test_a_done_report_whose_check_does_not_pass_settles_failed_with_a_label(fx):
