@@ -147,15 +147,17 @@ async def test_a_reflector_cannot_supersede_or_retire_an_active_lesson(fx):
 
 async def test_a_reflector_report_without_operations_admits_nothing_and_says_so(fx):
     row = await reflector(fx)
-    report(fx, row, None, prose="I looked at the attempts and found nothing to change.")
+    done = report(fx, row, None, prose="I looked at the attempts and found nothing to change.")
+    # The report lacks the field the task's check reads: the task is not done and no reflection is applied.
+    assert done.status == "failed" and done.verified == "check"
+    assert done.failed_reason == "check failed: I looked at the attempts and found nothing to change."
     assert fx.mind.lessons.all(include_closed=True) == []
-    ops = fx.store.get(row.id).result_metadata["lesson_ops"]
-    assert ops["applied"] == [] and ops["rejected"] == [] and ops["missing"] is True
+    assert "lesson_ops" not in fx.store.get(row.id).result_metadata
     from contextlib import closing
     with closing(fx.ledger._connect()) as conn:
         texts = [row_["messages_json"] for row_ in conn.execute(
-            "SELECT messages_json FROM turn_sources WHERE turn_id=?", (f"mind:{row.id}:lesson_ops",))]
-    assert texts and "returned no lesson operations" in texts[0]
+            "SELECT messages_json FROM turn_sources WHERE turn_id=?", (f"mind:{row.id}:result",))]
+    assert texts and "found nothing to change" in texts[0]
 
 
 async def test_a_candidate_from_a_reflector_activates_after_a_verified_win_in_its_class(fx):

@@ -437,7 +437,8 @@ async def test_a_repeated_or_empty_report_is_never_sent_as_a_finding(make):
     await say(fx, "Great find, thanks.", "t-w", "owner-2")
     repeat = empty = None
     for week, summary in enumerate([report("QX-41", "tidal energy"),
-                                    "Nothing new on tidal energy this week; no new studies or updates were found."]):
+                                    "finding: Nothing new on tidal energy this week; no new studies or updates were "
+                                    "found."]):
         fx.shift(timedelta(days=8))
         fx.owner_spoke()
         done = await fx.research("tidal energy", summary)

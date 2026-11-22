@@ -212,7 +212,7 @@ async def test_a_yes_grants_exactly_the_typed_effects(tmp_path, monkeypatch, nam
     await fx.mind.tick(force=True)
     goal = fx.store.get(wish_of(fx.store.get(row.id))["goal_id"])
     assert [step["kind"] for step in plan_of(goal)] == record["steps"]
-    for summary in ("finding: the harbour publishes the tables as CSV", "Drafted.",
+    for summary in ("finding: the harbour publishes the tables as CSV", 'Drafted.\n\n{"lesson_ops": []}',
                     "request: add a CSV reader for the harbour tables"):
         [step] = [step for step in steps_of(fx, goal) if step.outcome is None]
         report(fx, step, summary)

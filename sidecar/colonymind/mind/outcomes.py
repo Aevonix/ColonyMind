@@ -58,6 +58,13 @@ WITHDRAWN = "withdrawn"
 # owner asked for in reply to an outreach is research too (architecture 4.10).
 FINDING_TYPES = frozenset({"research", "question", "mastery_investigation", "goal_step", "outreach_followup"})
 FINDING_CHARS = 800
+# What a task the body reported came to is kept as an entry of its own, attributed to that task (``result``): the
+# report as the body sent it, for a later turn to recall.
+RESULT_CHARS = 4000
+# The label of work reported done whose success check did not pass: it settles as failed under this label.
+CHECK_NOT_PASSED = "check_not_passed"
+# The label of a failed task whose run was stopped at its runtime limit.
+ELAPSED = "elapsed"
 OWNER_EVIDENCE = ("appraisal:", "turn:", "claim:")   # evidence read from what the owner said
 VERIFIERS = frozenset({"owner", "check", "hermes_failure", "none"})
 # What a body report may claim (architecture 4.8): a Hermes failure with a reason. ``owner`` and
@@ -227,6 +234,17 @@ def evaluate_check(check: Any, *, commitments: Any = None, followups: Any = None
     return None
 
 
+def report_line(check: Any, body: str) -> str:
+    """What closes the body of a task whose done-check reads its report (``result_field``) when the body does not name
+    the field yet: the line the report must carry for the task to count as done. ``""`` for any other check."""
+    if evaluate_check(check, summary=body) is not False:
+        return ""
+    field = (json.loads(check) if isinstance(check, str) else check)["field"]
+    return (f"\n\nStart your completion summary with a line of this form:\n{field}: <what you found or made>\n"
+            "The task counts as done only with that line. If you could not get there, leave the line out and report "
+            "what is missing.")
+
+
 def invalidation_reason(condition: Any, *, commitments: Any = None, followups: Any = None) -> Optional[str]:
     """Why an intention's ``invalidates_if`` condition holds now, or None while it does not.
 
@@ -392,12 +410,23 @@ class Outcomes:
         now = self.clock()
         check_result = evaluate_check(row.success_check, commitments=self.commitments, followups=self.followups,
                                       summary=summary, result=result) if row.success_check else None
+        # The success check decides (docs/MIND.md, Verification). The owner's word stands whatever the check
+        # says, and a check the mind ran itself (a goal closed over its finished steps) is the check that passed.
+        # Any other report of done whose check did not pass settles as failed under ``CHECK_NOT_PASSED``.
+        vouched = by != "body" and verified in {"owner", "check"}
+        if vouched and verified == "check" and outcome == "done" and row.success_check:
+            check_result = True
+        unmet = outcome == "done" and check_result is False and not vouched
+        if unmet:
+            outcome = "failed"
         reason = _reason(summary, error)
         # The mind's own callers name their verifier (an owner switch, a goal it closed); a body report
         # may claim only a Hermes failure, which it is only with a reason.
         claimed = verified in VERIFIERS and (by != "body" or (
             verified in BODY_VERIFIERS and outcome == "failed" and bool(reason)))
-        if claimed:
+        if unmet:
+            verifier = "check"
+        elif claimed:
             verifier = verified
         elif outcome == "failed" and reason:
             verifier = "hermes_failure"
@@ -417,9 +446,16 @@ class Outcomes:
         if error:
             metadata["error"] = str(error)[:500]
         counted = True
-        if outcome == "failed":
+        label = {}
+        if unmet:
+            # The work ran and reported; what it reported is kept as the evidence the check read. Not a wrong act.
+            counted, label = False, {"label": CHECK_NOT_PASSED}
+            metadata["breaker"] = {"counted": False, "reason": "check not passed"}
+            reason = f"check failed: {reason or 'done'}"[:2000]
+        elif outcome == "failed":
             counted, why = self._breaker_count(row, run=run, error=error, summary=summary, result=result)
             metadata["breaker"] = {"counted": counted, **({"reason": why} if why else {})}
+            label = {"label": ELAPSED} if timed_out(run, error) else {}
         stamps = {"done": {"completed_at": now},
                   "failed": {"failed_at": now, "failed_reason": reason or outcome},
                   "expired": {"cancelled_at": now, "cancelled_reason": "expired"},
@@ -440,7 +476,7 @@ class Outcomes:
         settle_guard = {"guard": guard} if guard is not None else {}
         updated = self.store.transition(
             row.id, status, action=f"outcome_{outcome}", at=now,
-            details={**dict(details or {}), "by": by, "verified": verifier, "check": check_result},
+            details={**dict(details or {}), "by": by, "verified": verifier, "check": check_result, **label},
             outcome=outcome, verified=verifier, result=summary or error or row.result, result_metadata=metadata,
             verdict=verdict, **settle_guard, **stamps, **updates)
         self._resolve_expectation(updated, outcome, check_result)
@@ -448,13 +484,19 @@ class Outcomes:
             self._feedback(updated, verdict)
         if outcome == "failed" and counted and self.authority is not None and updated is not None:
             self._breaker(updated)
-        if self.autobiography is not None and updated is not None:
+        lineage = self._lineage(updated) if updated is not None else None
+        # ``lineage`` None: the sources this work was made from are no longer current, so nothing made from them
+        # is written into memory.
+        if self.autobiography is not None and updated is not None and lineage is not None:
             self.autobiography.record(updated.id, f"outcome_{outcome}", self._narrate(updated, check_result),
-                                      outcome=outcome, verified=verifier)
+                                      outcome=outcome, verified=verifier, lineage=lineage)
             if outcome == "done" and updated.type in FINDING_TYPES and str(summary or "").strip():
                 self.autobiography.record(updated.id, "finding", self._finding(updated, summary),
                                           topic=self._topic(updated), verified=verifier,
                                           audience=self.finding_audience(updated))
+            elif by == "body" and updated.kind == "task" and str(summary or "").strip():
+                self.autobiography.record(updated.id, "result", self._result(updated, summary),
+                                          outcome=outcome, verified=verifier, lineage=lineage)
         if callable(self.on_settled) and updated is not None:
             try:
                 self.on_settled(updated, outcome, check_result)
@@ -592,6 +634,18 @@ class Outcomes:
         return f"What I learned about {cls._topic(row)}: {text}"
 
     @staticmethod
+    def _result(row: StoredInitiative, summary: str) -> str:
+        text = " ".join(str(summary).split())[:RESULT_CHARS]
+        return f"What my task '{Autobiography.name(row)}' came to ({row.outcome}): {text}"
+
+    def _lineage(self, row: StoredInitiative) -> Optional[Sequence[str]]:
+        """The source turns the memory entries of ``row`` are bound to, so erasing one erases them: those of an
+        idea that started by itself (``mind.ideas.Ideas.lineage``; None once they are no longer current), none for
+        any other work."""
+        engine = getattr(self.store, "_ideas", None)
+        return engine.lineage(row) if engine is not None else ()
+
+    @staticmethod
     def _narrate(row: StoredInitiative, check_result: Optional[bool]) -> str:
         what = {"task": "task", "message": "message", "goal": "goal", "note": "note"}.get(row.kind or "", "intention")
         text = f"My {what} '{Autobiography.name(row)}' ended {row.outcome}"
@@ -610,6 +664,7 @@ class Outcomes:
         return text
 
 
-__all__ = ["Autobiography", "BODY_VERIFIERS", "FINDING_TYPES", "IMPLICIT_VERDICT", "OPERATORS", "OWNER_ANSWER_PATHS",
+__all__ = ["Autobiography", "BODY_VERIFIERS", "CHECK_NOT_PASSED", "ELAPSED", "FINDING_TYPES", "IMPLICIT_VERDICT",
+           "OPERATORS", "OWNER_ANSWER_PATHS",
            "Outcomes", "STATUS_TO_OUTCOME", "TERMINAL_OUTCOMES", "VERDICTS", "VERIFIERS", "WITHDRAWN", "evaluate_check",
-           "hermes_reason", "invalidation_reason", "owner_answer"]
+           "hermes_reason", "invalidation_reason", "owner_answer", "report_line"]

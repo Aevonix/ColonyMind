@@ -111,9 +111,22 @@ def instant(value):
 
 
 def marked(row):
-    return bool(row and getattr(row, "kind", None) == "task" and row.type == "grounded_offer" and row.decision == "ask"
+    return bool(row and getattr(row, "kind", None) == "task" and row.type == "grounded_offer"
+                and row.decision in ("ask", "act")
                 and isinstance(row.context, dict) and isinstance(row.context.get("idea"), dict)
                 and row.context["idea"].get("generator") == MARKER)
+
+
+def started(row):
+    """An idea the mind started by itself (``Ideas.start``): its work is a task of the agent's own on the board."""
+    return marked(row) and row.decision == "act"
+
+
+# The build state a started idea's card shows, read from its row's status.
+STARTED_STATES = {"approved": "accepted", "dispatched": "working", "done": "done", "failed": "failed",
+                  "uncertain": "failed"}
+# The done-check of a started idea: its report names its result (``outcomes.evaluate_check``).
+RESULT_CHECK = {"kind": "result_field", "field": "result"}
 
 
 class Ideas:
@@ -306,7 +319,7 @@ class Ideas:
         if not marked(row) or row.entity_id != self.owner:
             return False
         idea = row.context["idea"]
-        accepted = accepted and bool((idea.get("execution") or {}).get("taskId"))
+        accepted = started(row) or (accepted and bool((idea.get("execution") or {}).get("taskId")))
         if idea.get("owner") != self.owner or row.status in {"cancelled", "expired", "dropped"}:
             return False
         now = now or self.mind.clock()
@@ -324,13 +337,15 @@ class Ideas:
         return [r for r in self.store.intentions(types=["grounded_offer"], recipient=self.owner, limit=500) if marked(r)]
 
     def catalog(self):
-        return sorted([r for r in self.rows() if not r.context["idea"].get("execution") and self.valid(r)],
-                      key=lambda r: (-r.priority, r.id))[:MAX_CARDS]
+        return sorted([r for r in self.rows() if not r.context["idea"].get("execution") and not started(r)
+                       and self.valid(r)], key=lambda r: (-r.priority, r.id))[:MAX_CARDS]
 
     def card(self, row):
         payload = self.open(row.context["idea"]["private"])
         execution = row.context["idea"].get("execution") or {}
         state = execution.get("status") if execution.get("taskId") else None
+        if started(row):
+            state = STARTED_STATES.get(row.status)
         artwork = presentation(payload["family"], state)
         # Items show their icon and copy only: no labels, badges, action or "deliverable" type.
         items = [{**{k: v for k, v in item.items() if k != "type"},
@@ -344,7 +359,54 @@ class Ideas:
                 **({"buildStatus": BUILD_STATUS.get(state), "build_status": BUILD_STATUS.get(state), "buildState": state}
                    if state is not None else {}),
                 **({k: execution[k] for k in ("executionId", "taskId") if k in execution} if execution.get("taskId") else {}),
-                **({"result": self.open(execution["result_ref"])} if execution.get("result_ref") else {})}
+                **({"result": self.open(execution["result_ref"])} if execution.get("result_ref") else {}),
+                # A started idea's result is what its task reported.
+                **({"result": {"packet": row.result}} if started(row) and row.status == "done" and row.result else {})}
+
+    def start(self, row, now):
+        """Decide a passive card by the mind's authority (``Authority.decide``, on the worker's toolsets): work the
+        level lets act starts as a task of the agent's own, queued for the board by the mind's decision path, with
+        a done-check and the idea's own deadline as the window it must be picked up in. Any other verdict leaves the
+        card passive, with the verdict's reason, for the owner's Build."""
+        authority = getattr(self.mind, "authority", None)
+        if authority is None:
+            return None
+        try:
+            payload = self.open(row.context["idea"]["private"])
+        except Exception:
+            return None
+        copy = payload["content"]
+        verdict = authority.decide(kind="task", recipient=row.entity_id, type=row.type, now=now,
+                                   text=f"{copy.get('title', '')}\n{copy.get('summary', '')}",
+                                   toolsets=self.mind.policy.worker_toolsets)
+        if verdict.decision != "act":
+            reason = f"Passive card ({verdict.reason}); only an owner Build starts work"
+            if row.decision_reason != reason:
+                self.store.update(row.id, decision_reason=reason)
+            return None
+        self.store.update(row.id, description=FAMILIES[payload["family"]][0], success_check=RESULT_CHECK)
+        updated = self.mind._apply_decision(self.store.get(row.id), verdict, now, reconsidered=False)
+        return self.store.update(updated.id, expires_at=row.expires_at) if updated is not None else None
+
+    def brief(self, row):
+        """The body of a started idea's board task; None while its sources are not current (nothing is handed out)."""
+        from .ideas_build import task_brief
+        try:
+            return task_brief(self.open(row.context["idea"]["private"])) if self.valid(row) else None
+        except Exception:
+            return None
+
+    def lineage(self, row):
+        """The ledger sources a started idea's memory entries are bound to, so erasing one erases them: () for any
+        other row, None once the idea's sources are no longer current."""
+        if not started(row):
+            return ()
+        try:
+            if not self.valid(row):
+                return None
+            return [s["ref"]["source_id"] for s in self.open(row.context["idea"]["private"])["sources"] if s.get("ref")]
+        except Exception:
+            return None
 
     def validate_offer(self, offer, sources, now, *, copy_counts=None):
         if not isinstance(offer, dict) or offer.get("family") not in FAMILIES:
@@ -677,6 +739,16 @@ class Ideas:
                     retired = True
                 elif not self.valid(row, now=now):
                     self.store.transition(row.id, "expired", action="idea_expired", at=now)
+                elif schedule:
+                    # New work, so only on the tick that forms work (the mind on, the body alive).
+                    try:
+                        self.start(row, now)
+                    except Exception as error:
+                        logger.warning("idea %s not started (%s)", row.id, type(error).__name__)
+            elif row.status == "approved" and started(row) and not self.valid(row, now=now):
+                # A started idea the board has not taken yet lapses with its sources, as a passive card does.
+                self.mind.outcomes.record(row.id, status="expired", summary="the idea's sources are no longer current",
+                                          by="mind", implicit_verdict=False)
         if retired:
             self.trigger(now)
         if self.queue is not None:
