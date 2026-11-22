@@ -51,7 +51,7 @@ def test_a_line_holds_labels_only(state):
     recorder.once("event", "whatsapp", result="sent", ref="+1 555 0100", detail="Hello there, how are you?",
                   choice="shout", chooser="someone")
     line = recorder.recent(1)[0]
-    assert (line["ref"], line["detail"], line["choice"], line["chooser"]) == ("other", "other", "other", "other")
+    assert (line["ref"], line["detail"], line["choice"], line["chooser"]) == ("", "other", "other", "other")
     recorder.once("check", "Check.Mail", result="failed", detail="TimeoutError")
     line = recorder.recent(1)[0]
     assert (line["source"], line["detail"]) == ("other", "TimeoutError")     # an error class is a label

@@ -27,7 +27,9 @@ Labels
     marks     later labels added by ``mark``. ``MARKS`` lists the ones in use.
 
 A value outside its set is recorded as ``other``. Adding a label is one entry
-in the tuple below.
+in the tuple below. A ``ref`` is the one exception: it has the form
+``<store>:<row key>``, and one that does not is left empty, so that lines
+never share a ref by accident and ``mark`` reaches only the lines it names.
 
 The lines are one table in the instance's state directory (``store``). A
 call that cannot store its line drops it and leaves an ``error`` line for the
@@ -53,6 +55,7 @@ MARKS = ("owner_acted", "owner_declined", "owner_said_should_have", "owner_said_
 
 _LABEL = re.compile(r"^[a-z][a-z0-9_.:\-]{0,63}$")
 _DETAIL = re.compile(r"^[A-Za-z][A-Za-z0-9_.:\-]{0,63}$")  # an error class is written with capitals
+_REF = re.compile(r"^[a-z][a-z0-9_]{0,31}:[A-Za-z0-9][A-Za-z0-9_.:\-]{0,119}$")  # a row key may be a digest or a code
 
 
 def _label(value: str, allowed: tuple[str, ...] | None = None, pattern: re.Pattern[str] = _LABEL) -> str:
@@ -60,6 +63,11 @@ def _label(value: str, allowed: tuple[str, ...] | None = None, pattern: re.Patte
     if allowed is not None:
         return text if text in allowed else ("" if not text else "other")
     return text if pattern.match(text) else ("" if not text else "other")
+
+
+def _ref(value: str) -> str:
+    text = str(value or "")
+    return text if _REF.match(text) else ""
 
 
 def _store() -> Store:
@@ -70,7 +78,7 @@ def begin(kind: str, source: str, ref: str = "") -> str:
     """Open a line and return its id. Never raises."""
     line_id = uuid.uuid4().hex
     try:
-        _store().write(INSERT, new_line(_label(kind, KINDS), _label(source), ref=_label(ref), line_id=line_id))
+        _store().write(INSERT, new_line(_label(kind, KINDS), _label(source), ref=_ref(ref), line_id=line_id))
     except Exception:  # noqa: BLE001 - recording never fails the caller
         pass
     return line_id
@@ -108,7 +116,7 @@ def once(
         except (TypeError, ValueError, OverflowError):
             took = 0
         _store().write(INSERT, new_line(
-            _label(kind, KINDS), _label(source), ref=_label(ref), choice=_label(choice, CHOICES),
+            _label(kind, KINDS), _label(source), ref=_ref(ref), choice=_label(choice, CHOICES),
             chooser=_label(chooser, CHOOSERS), result=_label(result, RESULTS),
             detail=_label(detail, pattern=_DETAIL), took_ms=took, line_id=line_id))
     except Exception:  # noqa: BLE001
@@ -119,7 +127,7 @@ def once(
 def mark(ref: str, label: str) -> int:
     """Add one later label to every line with this ``ref``. Returns how many. Never raises."""
     try:
-        key, tag = _label(ref), _label(label)
+        key, tag = _ref(ref), _label(label)
         if not key or not tag:
             return 0
         return _store().write(
