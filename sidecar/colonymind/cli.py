@@ -543,6 +543,11 @@ def main() -> None:
         from colonymind.recall_cli import run as run_recall_command
         sys.exit(run_recall_command(args))
 
+    elif args.command == "recall-questions":
+        _load_dotenv()
+        from colonymind.recall_cli import run_questions as run_recall_questions_command
+        sys.exit(run_recall_questions_command(args))
+
     elif args.command == "memory" and getattr(args, "memory_command", None) == "reextract":
         _load_dotenv()
         from colonymind.beliefs.reextract_cli import run as run_reextract_command

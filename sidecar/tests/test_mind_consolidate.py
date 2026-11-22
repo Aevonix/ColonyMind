@@ -1328,7 +1328,7 @@ async def test_the_whole_night_is_bounded_and_a_failing_stage_does_not_stop_the_
         fx.turn(f"c-{index}", CONTACT, "sms-p02", f"Question {index}?", "Answer.")
     night = await fx.mind.consolidate()
     assert night["errors"] == ["contradictions: RuntimeError"] and night["counts"]["episodes"] == 1
-    assert night["done"] == ["digests", "episodes", "narrative"]
+    assert night["done"] == ["digests", "pages", "episodes", "narrative"]
 
 
 # ---------------------------------------------------------------------------

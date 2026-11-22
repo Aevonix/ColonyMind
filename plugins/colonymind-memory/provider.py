@@ -144,7 +144,7 @@ def _send_recall_notice(target: str, message: str) -> None:
 
 # A section the session's last shown turn carried, unchanged, is this one line; Current Time is always fresh.
 UNCHANGED_LINE = "unchanged since your last turn: {title}"
-_ALWAYS_SENT = frozenset({"Current Time", "Standing lessons", "Recent conversation elsewhere"})
+_ALWAYS_SENT = frozenset({"Current Time", "Standing lessons", "Recent conversation elsewhere", "Recall narrowed"})
 # Hermes waits this long for an external prefetch and drops a later answer (``agent.memory_manager``, 0.21.3),
 # and spills one longer than its inline cap to a file (``tools.hook_output_spill``): either way the turn may not
 # have carried the sections whole, so such a prefetch is never counted as shown.
@@ -832,6 +832,20 @@ class ColonyMindMemoryProvider(_MemoryProviderABC):
             chat_type = ""
         return chat_type == "dm" or (not chat_type and bool(chat) and chat == sender)
 
+    @staticmethod
+    def _group_chat() -> dict[str, str]:
+        """The turn's chat when the gateway bound a group chat for it (a chat kind that is not a direct one): its
+        kind and ``platform:chat id``. The sidecar then recalls that chat's own history only. Else nothing."""
+        try:
+            from gateway.session_context import get_session_env
+            kind, platform, chat = ((get_session_env(name, "") or "").strip() for name in (
+                "HERMES_SESSION_CHAT_TYPE", "HERMES_SESSION_PLATFORM", "HERMES_SESSION_CHAT_ID"))
+        except Exception:
+            return {}
+        if kind.lower() in {"", "dm", "direct", "private"}:
+            return {}
+        return {"chat_type": kind.lower(), **({"chat": f"{platform.lower()}:{chat}"} if chat else {})}
+
     def initialize(self, session_id: str, **kwargs) -> None:
         home = str(Path(kwargs.get("hermes_home") or self._hermes_home).expanduser().resolve())
         if home != self._hermes_home:
@@ -1396,6 +1410,7 @@ class ColonyMindMemoryProvider(_MemoryProviderABC):
             metadata["kanban_task"] = task
         if str(self._platform or "").strip().lower() == "cron":
             metadata["run"] = "cron"
+        metadata.update(self._group_chat())
         allowance = self._inline_allowance()
         # What is left of Hermes' wait for this prefetch (less the margin): the sidecar's recall spends only that,
         # and the call ends by then in all (``_request_within``), however its answer arrives.

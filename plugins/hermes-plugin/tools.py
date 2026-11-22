@@ -68,7 +68,7 @@ DEVICE_SCHEMA = {
 VERDICTS = ("actioned", "dismissed", "ignored", "useful", "not_useful", "wrong")
 # Turns nobody typed: stock cron runs its agents with ``platform="cron"`` and no sender.
 AUTOMATED_PLATFORMS = frozenset({"cron"})
-PEOPLE_OPERATIONS = ("who", "inspect", "propose_link", "merge", "set_permission", "set_cadence")
+PEOPLE_OPERATIONS = ("who", "inspect", "propose_link", "merge", "set_permission", "set_cadence", "boundary")
 OWNER_PEOPLE_OPERATIONS = frozenset({"merge", "set_permission", "set_cadence"})
 # A person as the model sees it: who they are to everyone; permission, cadence and handles to the owner.
 PUBLIC_PERSON = ("contact_id", "display_name", "trust_tier")
@@ -82,7 +82,7 @@ OWNER_PERSON = PUBLIC_PERSON + ("may_contact", "cadence_minutes", "last_interact
 # they confirm with their own yes, and ``revoke`` narrows at once (docs/MIND.md, "Standing grants"). No operation
 # answers an ask: ``asks`` lists them in words and ``show`` puts one in front of the owner as its own message.
 SELF_OPERATIONS = ("state", "log", "why", "rate", "asks", "show", "opinions", "withdraw", "reconsider", "grant",
-                   "revoke")
+                   "revoke", "like", "dislike")
 # The operations a model may remember from before: an ask is answered in the owner's own message, never a tool call.
 ANSWER_OPERATIONS = frozenset({"yes", "no"})
 SELF_SCHEMA = {
@@ -91,7 +91,8 @@ SELF_SCHEMA = {
                    "results and session search hold that): state (level, working_on, narrative, grants), log "
                    "(read-only; cite ids of actions, not notes; an action of your mind that is not there did not "
                    "happen), why <id or opinion number>, rate <id> <verdict>, "
-                   "opinions [query]; owner only: asks, show <n> (sends ask n to the owner after your reply; they "
+                   "opinions [query], like|dislike [taste] (your own tastes; id drops one); "
+                   "owner only: asks, show <n> (sends ask n to the owner after your reply; they "
                    "answer in their own words), withdraw|reconsider <opinion> <reason>, grant <grant> <reason: the "
                    "owner's words> (active on the owner's yes), revoke <id>. What a turn says is recorded after it, "
                    "with no tool call.",
@@ -100,7 +101,7 @@ SELF_SCHEMA = {
         "id": {"type": "string"}, "verdict": {"type": "string", "enum": list(VERDICTS)},
         "limit": {"type": "integer"}, "since_hours": {"type": "number"},
         "kind": {"type": "string"}, "recipient": {"type": "string"}, "query": {"type": "string"},
-        "reason": {"type": "string"},
+        "reason": {"type": "string"}, "taste": {"type": "string"},
         "grant": {"type": "object", "description": "{id, class, scope, tools: actions or structured tools} and "
                                                    "limits: match, max_amount, currency, per_day, per_month_amount, "
                                                    "expires"}},
@@ -108,11 +109,12 @@ SELF_SCHEMA = {
 PEOPLE_SCHEMA = {
     "name": "colonymind_people",
     "description": "contact_id: a name, handle or id. propose_link: handle (gateway:address) is contact_id; owner "
-                   "confirms. Owner only: set_permission, set_cadence (minutes, 0 clears), merge (drop into "
+                   "confirms. boundary [text]: how you treat contact_id, kept on your page about them (drop: line id "
+                   "to remove). Owner only: set_permission, set_cadence (minutes, 0 clears), merge (drop into "
                    "contact_id).",
     "parameters": {"type": "object", "properties": {
         "operation": {"type": "string", "enum": list(PEOPLE_OPERATIONS)}, "contact_id": {"type": "string"},
-        "drop": {"type": "string"}, "handle": {"type": "string"},
+        "drop": {"type": "string"}, "handle": {"type": "string"}, "text": {"type": "string"},
         "permission": {"type": "string", "enum": ["never", "ask", "auto"]}, "minutes": {"type": "integer"}},
         "required": ["operation"]}}
 # With mind.faculties.people false (the full-people ablation) the tool keeps its pre-M5 surface.
@@ -454,7 +456,21 @@ class Tools:
             except ValueError:
                 return response.text
             return _json(_without_code(filed)) if isinstance(filed, dict) else response.text
+        if operation in {"like", "dislike"}:     # the agent's own tastes, on its page about itself
+            return self._page_line("self", operation, args.get("taste"), args.get("id"), session_id)
         return _error(f"unknown operation: operation is one of {', '.join(SELF_OPERATIONS)}")
+
+    def _page_line(self, subject: str, kind: str, text: Any, drop: Any, session_id: str) -> str:
+        """One of the agent's own lines on a page (``/v1/mind/pages``): ``text`` adds a line that names this
+        turn, ``drop`` removes one by its id, both change one; with neither the page is shown, each line with its
+        id. The sidecar decides which pages this session's person may open."""
+        text, drop, info = str(text or "").strip(), str(drop or "").strip(), self.sessions.get(session_id)
+        seen = {} if self._owner(session_id) else {"contact_id": self.sessions.contact_id(session_id) or ""}
+        path = "/v1/mind/pages/" + quote(subject, safe="")
+        if not text and not drop:
+            return self._people("GET", path, None, params=seen)
+        return self._people("POST", path + "/lines", None, json={
+            "kind": kind, "text": text[:2000], "drop": drop[:32], "source": getattr(info, "turn_id", "") or "", **seen})
 
     def _asks(self, operation: str, args: dict[str, Any], session_id: str) -> str:
         """The owner's open asks in words (``asks``, the owner's own sessions only), or one of them put in front of
@@ -567,6 +583,8 @@ class Tools:
         if operation in {"who", "inspect"}:
             params = {"q": who[:256], "limit": 10, **seen} if operation == "who" else seen
             return self._people("GET", "/v1/mind/people" if operation == "who" else path, owner, params=params)
+        if operation == "boundary":     # the agent's own boundaries with this person, on its page about them
+            return self._page_line(who, "boundary", args.get("text"), args.get("drop"), session_id)
         if operation == "propose_link":
             gateway, _, address = str(args.get("handle") or "").partition(":")
             if not gateway.strip() or not address.strip():

@@ -13,9 +13,24 @@ from . import producers, recall_exit
 
 logger = logging.getLogger(__name__)
 
-# The packet rides in the user turn and Hermes replays it as history on every later turn, so the
-# default budget is what a few excerpts need, not the 6,000 characters the first cut allowed.
+# Recall's own character budget when the environment names none (``COLONYMIND_RECALL_CONTEXT_MAX_CHARS``). The
+# packet rides in the user turn and the host replays it as history on every later turn. An explicit search keeps
+# DEFAULT_RECALL_CHARS. A turn's recall takes what the context budget has past REST_CHARS, the room the other
+# sections keep, and never less than DEFAULT_RECALL_CHARS (``turn_recall_chars``).
 DEFAULT_RECALL_CHARS = 4000
+REST_CHARS = 6000
+
+
+def turn_recall_chars(inline_chars: int | None = None) -> int | None:
+    """The character budget of a turn's recall: the context budget (``context.budget_chars``, or the host's inline
+    allowance when that is smaller) less ``REST_CHARS``, never less than ``DEFAULT_RECALL_CHARS``. None when the
+    environment names the budget."""
+    if os.environ.get('COLONYMIND_RECALL_CONTEXT_MAX_CHARS', '').strip():
+        return None
+    from . import blocks
+    ceiling = int(blocks.settings()["budget_chars"])
+    allowance = ceiling if inline_chars is None else min(int(inline_chars), ceiling)
+    return max(DEFAULT_RECALL_CHARS, allowance - REST_CHARS)
 
 
 #: The reciprocal-rank fusion constant: a hit at rank r in a lane adds 1 / (RRF_K + r).
@@ -26,7 +41,8 @@ RRF_K = 60
 class CollectedSources:
     """What the lanes found. ``hits`` is every lane fused; ``lexical_hits`` the keyword lanes fused, the evidence
     recall has without a semantic index; ``semantic`` the vector lane's state (``ready``, ``unavailable``,
-    ``failed``); ``lanes`` each lane's own hits, best first (a timed lane's once selection has run it)."""
+    ``failed``); ``lanes`` each lane's own hits, best first (a timed lane's once selection has run it); ``group``
+    the group chat of a turn in one (``turns.group_chats``), whose own history is all that turn recalls."""
     ledger: Any
     contact_id: str
     session_id: str
@@ -38,6 +54,7 @@ class CollectedSources:
     lanes: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     curated_recall: Any = field(default=None, repr=False, compare=False)
     curated_protection: Any = field(default=None, repr=False, compare=False)
+    group: str | None = None
 
 
 @dataclass(frozen=True)
@@ -160,19 +177,22 @@ class MemoryPacket:
 
 async def collect_sources(ledger, *, query: str, contact_id: str, session_id: str,
                           vector_store=None, embedding_pipeline=None, trace=NULL_TRACE,
-                          recall_request=None) -> CollectedSources:
+                          recall_request=None, group: str | None = None) -> CollectedSources:
     """Read exact scoped sources; optional semantic failure keeps lexical evidence.
 
     Every lane of ``LANES`` searches at once, and the lanes are fused here; each lane's ranks go to ``trace``
     (``memory.trace``) where it is fused: a lane fused anywhere else would be invisible to a recall trace. A timed
     lane runs later, in ``select_memory``, where the question's time is read, and is fused and traced there.
+    ``group`` names the group chat of a turn in one: selection then keeps that chat's own history only.
     """
     from colonymind.memory.live_recall import LIVE
     from . import curated
     with curated.strict_read(ledger), LIVE.running():  # background indexing leaves the model endpoint to a live recall
-        return await _collect_sources(ledger, query=query, contact_id=contact_id, session_id=session_id,
-                                      vector_store=vector_store, embedding_pipeline=embedding_pipeline, trace=trace,
-                                      recall_request=recall_request)
+        collected = await _collect_sources(
+            ledger, query=query, contact_id=contact_id, session_id=session_id, vector_store=vector_store,
+            embedding_pipeline=embedding_pipeline, trace=trace, recall_request=recall_request)
+        collected.group = group
+        return collected
 
 
 async def _collect_sources(ledger, *, query, contact_id, session_id, vector_store, embedding_pipeline, trace,
@@ -260,11 +280,12 @@ async def _timed_lanes(collected: CollectedSources, *, query: str, time_query, t
 
 async def select_memory(collected: CollectedSources, *, query: str, selector,
                         timezone_name=None, current_work_available=False, limit=MEMORY_PACKET_LIMIT,
-                        now=None, trace=NULL_TRACE, time_query=None) -> MemoryPacket:
+                        now=None, trace=NULL_TRACE, time_query=None, max_chars=None) -> MemoryPacket:
     """Apply the existing projections, corrections, ranking and shared budget once.
 
     The caller supplies an authenticated audience. All source candidates come
-    from the canonical ledger.
+    from the canonical ledger. ``max_chars`` is the packet's character budget
+    (None: the environment's, else ``DEFAULT_RECALL_CHARS``).
     ``now`` pins the time query; the recall benchmark replays fixtures at
     their recorded date. ``time_query`` is the question's time when the
     caller read it already (an explicit search's own window or ``as_of``);
@@ -291,7 +312,7 @@ async def select_memory(collected: CollectedSources, *, query: str, selector,
             collected.curated_recall = scope
             return await _select_memory(collected, query=query, selector=selector, timezone_name=timezone_name,
                                         current_work_available=current_work_available, limit=limit, now=now,
-                                        trace=trace, time_query=time_query)
+                                        trace=trace, time_query=time_query, max_chars=max_chars)
     from colonymind.memory import curated
     return await curated.strict_withdrawal_fenced_read(collected.ledger, read, empty=MemoryPacket([], "", [], collected.watermark, {}, []))
 
@@ -353,11 +374,17 @@ def _prepare_memory(collected, *, query, time_query, current_work_available, now
     if ledger is not None:
         from .curated import strict_candidates as candidates
         beliefs, quotations = candidates(ledger, collected.contact_id, query, beliefs, quotations)
+    if collected.group is not None:
+        # A turn in a group chat recalls that chat's own history only: a candidate stays when every turn it
+        # names took place there, so a curated entry and anything else with no turn of its own is withheld.
+        from colonymind.turns import group_chats
+        beliefs, quotations = (group_chats.within(ledger, collected.group, collected.session_id, rows)
+                               for rows in (beliefs, quotations))
     return beliefs, quotations
 
 
 async def _select_memory(collected, *, query, selector, timezone_name, current_work_available, limit,
-                         now, trace, time_query) -> MemoryPacket:
+                         now, trace, time_query, max_chars=None) -> MemoryPacket:
     from colonymind.beliefs.source_time import interpret_time_query, filter_unstructured
     from colonymind.util import temporal
     ledger = collected.ledger
@@ -367,10 +394,11 @@ async def _select_memory(collected, *, query, selector, timezone_name, current_w
     if time_query is None:
         time_query = interpret_time_query(query, now=now, timezone_name=timezone_name)
     await _timed_lanes(collected, query=query, time_query=time_query, trace=trace)
-    try:
-        max_chars = int(os.environ.get('COLONYMIND_RECALL_CONTEXT_MAX_CHARS', str(DEFAULT_RECALL_CHARS)))
-    except (TypeError, ValueError):
-        max_chars = DEFAULT_RECALL_CHARS
+    if max_chars is None:
+        try:
+            max_chars = int(os.environ.get('COLONYMIND_RECALL_CONTEXT_MAX_CHARS', str(DEFAULT_RECALL_CHARS)))
+        except (TypeError, ValueError):
+            max_chars = DEFAULT_RECALL_CHARS
     max_chars = max(0, min(max_chars, 24000))
     trace.recall(collected, limit=limit, max_chars=max_chars)
     beliefs, quotations = await producers.read(_prepare_memory, collected, query=query,

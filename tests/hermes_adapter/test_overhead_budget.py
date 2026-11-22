@@ -19,10 +19,11 @@ from colonymind_hermes.tools import FORGET_SCHEMA, PEOPLE_SCHEMA, SEARCH_SCHEMA,
 from colonymind_memory.provider import _COLONYMIND_TOOL_SCHEMAS, _SYSTEM_PROMPT
 
 PLUGIN_SCHEMAS = (SELF_SCHEMA, PEOPLE_SCHEMA, SEARCH_SCHEMA, FORGET_SCHEMA, REMINDER_SCHEMA)
-TOOL_BUDGET_CHARS = 3_806       # 6 tools (M7's opinions ride colonymind_self); the first cut sent 12 tools in
+TOOL_BUDGET_CHARS = 4_058       # 6 tools (M7's opinions ride colonymind_self); the first cut sent 12 tools in
                                 # 6,700 characters. 3,400 until colonymind_self said its record holds only what
                                 # the mind did on its own and carried the owner's standing grants (3,395 before,
-                                # 3,762 after: about 100 tokens); 3,790 once asks and show replaced yes and no
+                                # 3,762 after: about 100 tokens); 3,790 once asks and show replaced yes and no;
+                                # 4,042 with the agent's own page lines (boundary, like, dislike: about 70 tokens)
 SYSTEM_BUDGET_CHARS = 800       # provider block + plugin section, measured 725 (764 once the notes said the owner
                                 # answers asks in their own words); the first cut sent 1,004
 # The same system text at its largest, which a real install's owner session sends once the agent has a history:

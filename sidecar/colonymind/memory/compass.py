@@ -75,6 +75,8 @@ PINNED_SECTIONS = frozenset({
     "colonymind-self-perspective",   # Owner priority corrections
     "colonymind-corrections",        # Corrections to earlier context
     "colonymind-status",             # Your status: the agent's posture this turn (colonymind.mind.status)
+    "colonymind-page-person",        # Your page on this person: the agent's boundaries with them (pages.turn)
+    "colonymind-recall-narrowed",    # Recall narrowed: a group turn read the group's own history only
 })
 # The recalled memory: judged by recall against this message and fitted into its own budget
 # (COLONYMIND_RECALL_CONTEXT_MAX_CHARS). Kept as recall selected it, outside this budget: the judge's

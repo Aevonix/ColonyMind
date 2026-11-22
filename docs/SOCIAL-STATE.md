@@ -58,10 +58,13 @@ mood or current head. A fresh appraisal cannot duplicate that incident's exact
 normalized topic. Unsupported resolution and omitted decisions fail extraction;
 unchanged or uncertain decisions leave the incident intact.
 Contact response delay, flattery and claimed authority do not establish character
-or trust. Single-turn behavior profiling is rejected. Formal personality results
-can be retained as attributed self-reports; ordinary conversation is not a Big
-Five assessment. Historical numeric personality/closeness records remain readable
-for migration but no longer determine active approach guidance.
+or trust, and the appraisal extractor never turns one incident into a reading of
+a person. Describing a person is the work of the agent's page on them (Pages,
+below): how they are, what they care about and how to treat them, in plain lines
+that each cite the turns they rest on. Formal personality results can be retained
+as attributed self-reports; ordinary conversation is not a Big Five assessment,
+and a page carries no score. Historical numeric personality/closeness records
+remain readable for migration but no longer determine active approach guidance.
 
 Owner corrections remain explicit historical corrections. Relevant hints can
 change verbosity or suggest another method for a repeatedly failing task. These
@@ -89,3 +92,60 @@ including useful preference recall and rejection of tested junk cases. They do
 not establish general psychological validity, universal inference quality,
 subjective experience or sustained autonomous improvement. A deployment must
 observe its own ordinary-use outcomes before making those claims.
+
+## Pages
+
+The agent keeps one page on each person it talks with and one on itself
+(`sidecar/colonymind/pages/`). A page is a short list of lines of a few kinds:
+
+| Page | Kind of line | Written by |
+|---|---|---|
+| A person's | `boundary`: how the agent treats them | the agent, through `colonymind_people boundary` |
+| A person's | `about`: how they are, what they care about, how to treat them | the nightly pass |
+| The agent's own | `about`: how the agent is and what it cares about | the nightly pass |
+| The agent's own | `like`, `dislike`: the agent's own tastes | the agent, through `colonymind_self like` and `dislike`, and the nightly pass where the agent stated one |
+
+Every line names the source turns it rests on, and a line with no source is not
+written. The lines live in the source ledger's database (`page_lines`), beside
+the turns they cite: there is one memory, and erasure reaches a page. A line
+stops being read once a turn it cites is forgotten, or erased after the line was
+written, and the nightly pass then removes it. Merging two records of one person
+joins their pages. A page line grants no permission: `may_contact`, the cadence
+and the trust tier stay the owner's.
+
+**The nightly rewrite** is one stage of the nightly pass
+([consolidation](CONSOLIDATION.md)). A page is written again when its person has
+a turn newer than the page's last rewrite: the agent's own page and at most six
+people a night, the page written longest ago first. The model is shown the page
+as it stands and the newest conversation, each turn with an id, and returns the
+lines as they should stand now, at most twelve. A line that cites no turn it
+was shown is dropped. A person's page is written from that person's conversation
+with the agent. The agent's own page is written from what the agent itself said,
+to anyone, and names nobody else. The agent's boundaries, and the tastes it
+wrote itself, are the agent's to change: the night keeps them as they are.
+
+**The agent's own lines.** `colonymind_people boundary` adds a boundary to the
+page on a person (`text`) or removes one by its line id (`drop`), and with
+neither shows the page. `colonymind_self like` and `dislike` do the same for the
+agent's tastes (`taste`, `id`). A written line cites the turn it was written in;
+without a turn id it is refused. These are the agent's own lines, not the
+owner's records, so a session that is not the owner's own may set them too: it
+reaches the agent's own page and the page about its own person, and no other.
+
+**In a turn.** A turn with a person carries the agent's page on that person as
+the section "Your page on this person", kept whole, and the agent's page on
+itself as "Your page on yourself", whose lines are chosen against the turn's
+message like every other optional item. Both count toward the context budget
+(`context.budget_chars`); a person's page longer than 2,000 characters keeps its
+first lines, the boundaries before the rest. With `mind.faculties.people` off a
+turn carries no page on its person and the night rewrites the agent's own page
+only. A turn in a group chat is given a page line only when every turn the line
+cites took place in that chat ([recall](RECALL-HYBRID.md#group-chats)).
+
+**Reading them.** The owner reads every page: `colonymind_people inspect` shows
+a person's page with the person's record, each line with its id and its source
+turns, and `GET /v1/mind/pages/{who}` returns one page (`self` for the agent's
+own). Any other viewer reads the agent's own page and the page about
+themselves, the two a turn with them carries. The routes are in the owner's area
+of the API (`/v1/mind/`): the plugin calls them with the instance's credential
+and names the session's person as the viewer.

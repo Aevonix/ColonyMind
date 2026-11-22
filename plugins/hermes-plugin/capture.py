@@ -1454,7 +1454,9 @@ class Capture:
         begin(info.session_id, info.turn_id, owner=local_owner, platform=info.platform,
             excluded=bool(not inbound or internal or kwargs.get("internal_notification") or kwargs.get("replay") or kwargs.get("rewind")
                       or kwargs.get("is_replay") or kwargs.get("is_rewind")
-                      or os.environ.get("HERMES_KANBAN_TASK") or info.platform in {"cron", "subagent", "worker"}))
+                      or os.environ.get("HERMES_KANBAN_TASK") or info.platform in {"cron", "subagent", "worker"}
+                      # A group chat's turn recalls that chat's own history only; an empty recall there is no fault.
+                      or getattr(info, "chat_type", "") not in {"", "dm", "direct", "private"}))
 
     def branch_reaction(self, *, session_id: str = "", turn_id: str = "", user_message: Any = None,
                         **_: Any) -> None:

@@ -18,8 +18,8 @@ RERANK_QUERY_CHARS = 2000
 CANDIDATE_FORMAT = "grounded-quotation-bundles-v2-corrections-first-rerank-cut-%d-%d" % (
     RERANK_DOCUMENT_CHARS, RERANK_QUERY_CHARS)
 
-# Default context record cap, also the fallback ceiling when the cutoff is unverified or reranking misses.
-# ``context.recall_items`` bounds context packets even after a verified cutoff. Explicit searches name a limit.
+# The record cap of a search that names none, the candidate count past which a turn's recall is reranked, and the most
+# a missed rerank puts in a turn's packet. A turn's packet holds up to ``context.recall_items`` records.
 MEMORY_PACKET_LIMIT = 5
 
 _WORDS = re.compile(r"[^\W_]+(?:[-.][^\W_]+)*", re.UNICODE)

@@ -115,7 +115,7 @@ async def night(fx):
 
 
 def test_the_night_has_a_lesson_stage():
-    assert NIGHT_TASKS == ("narrative", "lessons", "work", "wishes", "contradictions", "digests", "episodes")
+    assert NIGHT_TASKS == ("narrative", "lessons", "work", "wishes", "contradictions", "digests", "pages", "episodes")
 
 
 @pytest.mark.parametrize("operation", ["add", "supersede", "retire"])

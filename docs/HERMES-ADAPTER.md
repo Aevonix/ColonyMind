@@ -410,6 +410,7 @@ owner asked about other people.
 | `set_permission {contact_id, permission}` | owner | `POST /v1/mind/people/{who}/permission {may_contact: never\|ask\|auto}` |
 | `set_cadence {contact_id, minutes}` | owner | `POST /v1/mind/people/{who}/cadence {minutes}` (0 clears) |
 | `merge {contact_id, drop}` | owner | `POST /v1/mind/people/merge {keep, drop}`: `drop` folds into `contact_id`; handles, sources, comms and affect follow the person |
+| `boundary {contact_id, text?, drop?}` | everyone (a guest: the page about themselves) | `GET /v1/mind/pages/{who}` shows the agent's page on the person, each line with its id; with `text` or `drop`, `POST /v1/mind/pages/{who}/lines {kind: boundary, text, drop, source}` adds a boundary that names the turn it was written in, or removes one by its line id |
 
 A guest sees who someone is (`contact_id`, `display_name`, `trust_tier`) and
 nothing else: the plugin names the guest as the viewer (`contact_id`) on its
@@ -433,6 +434,15 @@ digits, so `why` on any other id is still the owner's record); `withdraw` and
 `POST /v1/mind/opinions/{id}/withdraw|reconsider` from the owner's own interactive
 session only, never a guest, a kanban worker or a cron run (docs/OPINIONS.md). The
 guard treats the tool as read-only.
+
+`colonymind_self like|dislike` are the agent's own tastes, kept on its page about
+itself (docs/SOCIAL-STATE.md, Pages): with `taste` a line is added that names the
+turn it was written in, with `id` a line is removed, and with neither the page is
+shown (`GET /v1/mind/pages/self`, `POST /v1/mind/pages/self/lines`). These and
+`colonymind_people boundary` are the agent's own lines, not the owner's records,
+so they are the one change a session that is not the owner's own may make: a
+guest's session reaches the agent's own page and the page about that guest, and
+no other page.
 
 ## Secrets
 
@@ -555,7 +565,11 @@ sections, never an owner-only one. A kanban worker's prefetch names its task
 the sidecar adds no turn lesson and logs no lesson use for it. A scheduled job's
 prefetch (Hermes builds its agent with platform `cron`) says so
 (`context.metadata.run: cron`): a job's prompt is not the owner's turn, so the
-sidecar leaves the owner's status block out of it. Hermes waits
+sidecar leaves the owner's status block out of it. A turn the gateway bound to a
+group chat names its chat (`context.metadata.chat_type`, the chat kind, and
+`context.metadata.chat`, `platform:chat id`): the sidecar then recalls that
+chat's own history only and says so in one line, "Recall narrowed"
+(docs/RECALL-HYBRID.md, Group chats). A direct chat sends neither. Hermes waits
 for the whole prefetch, so each one has one deadline from its start (Hermes'
 external prefetch bound less the provider's 0.5 s margin): the participant's
 resolution, the assembly and the Current Time refresh all end by it, each
@@ -636,7 +650,8 @@ provider keeps a fingerprint of each context section it showed, per session, and
 a section unchanged since the session's last shown turn is one line in the new
 turn's context: `unchanged since your last turn: <section>`. Only the new turn
 changes; earlier turns are never touched, so the cached prompt prefix holds.
-Current Time is always sent. A prefetch counts as shown only once its turn
+Current Time is always sent, and so is a group turn's "Recall narrowed" line.
+A prefetch counts as shown only once its turn
 completed (`sync_turn`, called whoever writes the turn), only when Hermes waited
 for it (its 8 s external prefetch bound) and only when it went inline whole
 (under Hermes' spill cap). The fingerprints reset on every session switch
@@ -645,6 +660,8 @@ gateway's detached compaction evicts the live agent, whose provider starts
 empty.
 
 The recall-exit counter observes memory context actually submitted to the model.
+A turn in a group chat is not counted: it recalls that chat's own history only,
+and an empty recall there is no fault.
 In the instance's `colonymind.yaml`, `context.recall_alarm_turns` (default 2)
 sets the consecutive owner-turn threshold for `RECALL_ALARM`.
 `context.recall_alarm_target` optionally names a stock Hermes send target;
@@ -678,9 +695,11 @@ architecture 4.1). Against a sidecar that fits nothing (1.10) the provider
 holds whole sections back itself, fresh state last, and names each one.
 Current sidecars always fit context. `context.budget_chars` caps the full assembled
 sections even when the host offers more room or will collapse unchanged sections.
-`context.recall_items` caps recalled records (owner-adjustable default 20), including after a
-verified reranker cutoff. This matches the independent 20-candidate rerank bound;
-unverified or missed reranking keeps its five-record fallback. `COLONYMIND_CONTEXT_HOST_WAIT_MS` caps the whole assembly
+`context.recall_items` caps recalled records (owner-adjustable default 20), whether or not a
+verified reranker cutoff chose them. This matches the independent 20-candidate rerank bound;
+missed reranking keeps its five-record fallback. The default `context.budget_chars` is 16,000: a host whose inline
+cap is smaller keeps the context within its own allowance, so raise `hooks.output_spill.max_chars` to 16,256 or more
+to let a turn's recall use the room. `COLONYMIND_CONTEXT_HOST_WAIT_MS` caps the whole assembly
 (default 7,500 ms); `wait_ms` can shorten it. An expired assembly returns no sections. Synchronous producers use a
 dedicated 16-worker pool. Healthy concurrent reads wait for a free worker within the turn deadline; work is never
 queued in the executor. When abandoned reads fill the pool, a producer is skipped and counted in

@@ -59,7 +59,7 @@ def test_the_consolidate_help_names_the_stages_that_run():
     from colonymind.mind.consolidate import NIGHT_TASKS
     source = (PACKAGE / "mind" / "cli.py").read_text()
     assert "dedupe" not in source and set(NIGHT_TASKS) == {"narrative", "lessons", "work", "wishes",
-                                                           "contradictions", "digests", "episodes"}
+                                                           "contradictions", "digests", "pages", "episodes"}
     assert "lessons" in source.split('"consolidate", help=', 1)[1].split(")", 1)[0]
 
 def test_no_retired_route_is_served():
