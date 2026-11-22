@@ -19,6 +19,11 @@ error the model would try again with other arguments; an argument it can correct
 ``colonymind_action`` runs one of the owner's declared actions (``mind.actions``: a fixed command, run without a
 shell, whose only free words are checked arguments); it is offered only when the owner declared one, runs for the
 owner's lanes and a mind run the guard let through, and never for a guest.
+
+A turn in a group chat (``capture.group_chat``) replies to everyone in the chat, the owner's turn included, so a
+tool's read in it reaches that chat's own history only, as the turn's recall does: a memory search and a page name
+the chat and the sidecar narrows them, the owner's read of a person is who the person is, and a read with no
+history of its own (opinions, a rating's entry) is refused. Each such result carries ``GROUP_WITHHELD``.
 """
 
 from __future__ import annotations
@@ -34,6 +39,7 @@ from urllib.parse import quote
 from .answers import Answers
 from .body import mind_state
 from .capture import SessionMap, branch_owner, branch_sender, branches_enabled, session_env
+from .capture import GROUP_WITHHELD, group_chat
 from .client import ColonyMindClient, Settings, SidecarUnavailable, acting, final_answer
 from .commands import ROUTES_MISSING
 from .guard import ACTION_TIMEOUT, action_argv, action_problem, action_values
@@ -229,6 +235,19 @@ def _noted(answer: str) -> str:
     return _json({**value, "note": RECORDED} if isinstance(value, dict) else {"result": value, "note": RECORDED})
 
 
+def _narrowed(answer: str) -> str:
+    """A served read of a turn in a group chat, with the line that says what was withheld; a refusal is left as
+    it is."""
+    try:
+        value = json.loads(answer)
+    except (ValueError, RecursionError):
+        value = answer
+    if isinstance(value, dict) and ("error" in value or value.get("unavailable") is True):
+        return answer
+    return _json({**value, "narrowed": GROUP_WITHHELD} if isinstance(value, dict) else
+                 {"result": value, "narrowed": GROUP_WITHHELD})
+
+
 # What the model reads of a change the sidecar filed as an ask (a standing grant, a widening people change): its
 # code is never the model's to show, since the owner answers the ask's own message in their own words.
 ASKED = "not changed yet: the owner is asked as its own message and their own yes applies it; do not ask them for a code"
@@ -420,6 +439,8 @@ class Tools:
                 return _error(f"id and verdict ({'|'.join(VERDICTS)}) are required")
             if not self._owner(session_id):
                 return final_answer("only the owner can rate an intention")
+            if group_chat():     # the answer is the record's entry
+                return final_answer(GROUP_WITHHELD)
             return self._mind("POST", "/v1/mind/rate", json={"id": str(args["id"]), "verdict": args["verdict"]})
         if operation in {"grant", "revoke"}:
             # A standing grant is the owner's alone, never a guest's, a worker's or a cron run's: ``grant`` files
@@ -463,14 +484,21 @@ class Tools:
     def _page_line(self, subject: str, kind: str, text: Any, drop: Any, session_id: str) -> str:
         """One of the agent's own lines on a page (``/v1/mind/pages``): ``text`` adds a line that names this
         turn, ``drop`` removes one by its id, both change one; with neither the page is shown, each line with its
-        id. The sidecar decides which pages this session's person may open."""
+        id. The sidecar decides which pages this session's person may open. A turn in a group chat names its
+        chat and session, and is shown the lines that rest on that chat's own history and the line it wrote."""
         text, drop, info = str(text or "").strip(), str(drop or "").strip(), self.sessions.get(session_id)
         seen = {} if self._owner(session_id) else {"contact_id": self.sessions.contact_id(session_id) or ""}
+        group = group_chat()
+        if group:
+            seen = {**seen, "session_id": session_id, **group}
         path = "/v1/mind/pages/" + quote(subject, safe="")
         if not text and not drop:
-            return self._people("GET", path, None, params=seen)
-        return self._people("POST", path + "/lines", None, json={
-            "kind": kind, "text": text[:2000], "drop": drop[:32], "source": getattr(info, "turn_id", "") or "", **seen})
+            answer = self._people("GET", path, None, params=seen)
+        else:
+            answer = self._people("POST", path + "/lines", None, json={
+                "kind": kind, "text": text[:2000], "drop": drop[:32], "source": getattr(info, "turn_id", "") or "",
+                **seen})
+        return _narrowed(answer) if group else answer
 
     def _asks(self, operation: str, args: dict[str, Any], session_id: str) -> str:
         """The owner's open asks in words (``asks``, the owner's own sessions only), or one of them put in front of
@@ -509,8 +537,11 @@ class Tools:
     def _opinions(self, operation: str, args: dict[str, Any], session_id: str) -> str:
         """The agent's recorded opinions. Reads pass the session's participant, so the sidecar shows a guest,
         a worker or a cron run only the views meant for them; withdraw and reconsider need the owner's own
-        interactive session and the owner's reason (the sidecar checks again)."""
+        interactive session and the owner's reason (the sidecar checks again). A turn in a group chat reads
+        none: an opinion is formed across conversations, not from that chat's own history."""
         viewer, number = self.sessions.contact_id(session_id) or "", _opinion(args.get("id"))
+        if operation in {"opinions", "why"} and group_chat():
+            return final_answer(GROUP_WITHHELD)
         if operation == "opinions":
             return self._mind("GET", "/v1/mind/opinions", params={
                 "contact_id": viewer, "limit": 10, "q": str(args.get("query") or "").strip()[:1000]})
@@ -581,8 +612,14 @@ class Tools:
         path, seen = "/v1/mind/people/" + quote(who, safe=""), {} if owner else {"contact_id": viewer}
         change = {"viewer": viewer or self.settings.owner_contact_id() or None, "by": "owner"}
         if operation in {"who", "inspect"}:
+            # A turn in a group chat, the owner's included, reads a person as a participant who is not the owner
+            # does: who the one named person is, with no listing and no record.
+            held = bool(group_chat())
+            seen = {"contact_id": ""} if held else seen
             params = {"q": who[:256], "limit": 10, **seen} if operation == "who" else seen
-            return self._people("GET", "/v1/mind/people" if operation == "who" else path, owner, params=params)
+            answer = self._people("GET", "/v1/mind/people" if operation == "who" else path, owner and not held,
+                                  params=params)
+            return _narrowed(answer) if held else answer
         if operation == "boundary":     # the agent's own boundaries with this person, on its page about them
             return self._page_line(who, "boundary", args.get("text"), args.get("drop"), session_id)
         if operation == "propose_link":
@@ -624,6 +661,9 @@ class Tools:
             value = {}
         if not response.is_success:
             detail = value.get("detail") if isinstance(value, dict) else None
+            if isinstance(detail, dict) and detail.get("candidates") and group_chat():
+                # The people a name could mean come from the contact list, which a turn in a group chat is not shown.
+                return final_answer(f"no single contact matches; {GROUP_WITHHELD}")
             return final_answer(str(detail.get("message") or detail.get("code")) if isinstance(detail, dict) else
                                 ROUTES_MISSING if response.status_code == 404 else
                                 f"sidecar HTTP {response.status_code}")
@@ -658,10 +698,11 @@ class Tools:
         timed, problem = search_time(args)     # a search that can run: a time the sidecar would refuse is corrected
         if problem:
             return _error(problem)
+        group = group_chat()     # a turn in a group chat searches that chat's own history only, and is told so
         try:
             response = self.client.post("/v1/host/memory/search", timeout=10, json={
                 "identity": {"host_id": "hermes"}, "person_id": contact, "session_id": session_id,
-                "query": query[:4096], "limit": max(1, min(int(args.get("limit") or 5), 20)), **timed})
+                "query": query[:4096], "limit": max(1, min(int(args.get("limit") or 5), 20)), **timed, **group})
         except SidecarUnavailable:
             return final_answer("memory search is unavailable")
         if not response.is_success:
@@ -670,10 +711,11 @@ class Tools:
         retrieval = value.get("retrieval") if isinstance(value.get("retrieval"), dict) else {}
         degraded = "failed" in retrieval.values()   # e.g. semantic recall down: only exact words were matched
         if not value.get("count") and not degraded:
-            return final_answer("nothing retained matches; for a participant with no history there is nothing to "
+            return final_answer(f"nothing retained matches; {GROUP_WITHHELD}" if group else
+                                "nothing retained matches; for a participant with no history there is nothing to "
                                 "find, so answer from the message and the recalled context")
         found = {"content": value.get("content", ""), "count": value.get("count", 0),
-                 "source_refs": value.get("source_refs", [])}
+                 "source_refs": value.get("source_refs", []), **({"narrowed": GROUP_WITHHELD} if group else {})}
         return _json({**found, "note": "part of the search failed, so only exact words were matched; other words "
                                        "may find more"} if degraded else found)
 

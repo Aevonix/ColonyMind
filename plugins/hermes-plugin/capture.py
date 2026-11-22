@@ -359,6 +359,28 @@ def session_env() -> tuple[str, str, str, str]:
     return bound  # type: ignore[return-value]
 
 
+# The one line a tool's result carries when a turn in a group chat was not given everything the tool reads.
+GROUP_WITHHELD = ("this is a group chat: what does not come from this chat's own history was withheld; the owner "
+                  "can ask you in a direct chat")
+
+
+def group_chat() -> dict[str, str]:
+    """The turn's chat when the gateway bound a group chat for it (a chat kind that is not a direct one): its kind
+    and ``platform:chat id``, as the memory provider names it for the turn's context. Else nothing.
+
+    The turn's recall reads that chat's own history only, and its reply goes to everyone in the chat, so a tool's
+    read in the turn names the same chat and is narrowed the same way, or is refused (``GROUP_WITHHELD``)."""
+    try:
+        from gateway.session_context import get_session_env
+        kind, platform, chat = (str(get_session_env(name, "") or "").strip() for name in (
+            "HERMES_SESSION_CHAT_TYPE", "HERMES_SESSION_PLATFORM", "HERMES_SESSION_CHAT_ID"))
+    except Exception:
+        return {}
+    if not kind or kind.lower() in DM_CHAT_TYPES:
+        return {}
+    return {"chat_type": kind.lower(), **({"chat": f"{platform.lower()}:{chat}"} if chat else {})}
+
+
 def text_of(content: Any) -> str:
     """Plain text of a message content value (string or content blocks)."""
     if isinstance(content, str):

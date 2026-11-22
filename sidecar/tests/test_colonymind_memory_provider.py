@@ -1583,3 +1583,23 @@ def test_a_group_chats_turn_names_its_chat_and_a_direct_chats_turn_does_not(prov
     monkeypatch.setitem(sys.modules, "gateway.session_context", None)
     assert provider._group_chat() == {}
     assert "Recall narrowed" in provider_mod._ALWAYS_SENT
+
+
+def test_a_commitment_is_not_settled_from_the_owners_turn_in_a_group_chat(provider_mod, monkeypatch):
+    """The owner's turn in a group chat is given that chat's own history only, and a settled commitment answers
+    with its own text: the settle is refused there with the one line, and goes through in the owner's direct chat."""
+    set_turn = _install_session_context(monkeypatch)
+    fake = _FakeHttpx(routes={_RESOLVE: {"contact_id": "cid-base"},
+                              ("PATCH", "/v1/host/commitments/c-01"): {"id": "c-01", "status": "done"}})
+    provider = _make_provider(provider_mod, fake, monkeypatch)
+    settle = {"commitment_id": "c-01", "action": "fulfilled"}
+    set_turn(platform="telegram", sender="owner-1", chat="-1007", chat_type="group")
+    assert provider._lane() == ("owner", "cid-base")
+    assert json.loads(provider.handle_tool_call("colonymind_resolve_commitment", settle)) == {
+        "unavailable": True, "retry": False,
+        "reason": "this is a group chat: what does not come from this chat's own history was withheld; the owner "
+                  "can ask you in a direct chat"}
+    assert not [r for r in fake.requests if r["method"] == "PATCH"]
+    set_turn(platform="telegram", sender="owner-1", chat="owner-1", chat_type="dm")
+    assert json.loads(provider.handle_tool_call("colonymind_resolve_commitment", settle))["ok"] is True
+    assert len([r for r in fake.requests if r["method"] == "PATCH"]) == 1

@@ -477,6 +477,10 @@ _LANE_REFUSALS = {
                   "assembled context",
     "guest": "the direct ColonyMind tools are owner-only; a guest turn answers from the assembled context",
 }
+# A turn in a group chat lists no pending commitment (it is given that chat's own history only) and a settled one
+# answers with its own text, so a settle there is refused with the line the general plugin's tools carry.
+_GROUP_WITHHELD = ("this is a group chat: what does not come from this chat's own history was withheld; the owner "
+                   "can ask you in a direct chat")
 
 
 def _terminal(reason: str) -> str:
@@ -1647,6 +1651,8 @@ class ColonyMindMemoryProvider(_MemoryProviderABC):
             lane, _bound = self._lane()
             if lane != "owner":
                 return _terminal(_LANE_REFUSALS[lane])
+            if self._group_chat():
+                return _terminal(_GROUP_WITHHELD)
         handler = getattr(self, f"_tool_{tool_name}", None)
         if handler is None:
             return _terminal(f"unknown ColonyMind tool: {tool_name}")
