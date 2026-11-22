@@ -70,6 +70,20 @@ async def test_an_owner_correction_is_stored_against_the_decision(app):
     assert {"owner_said_should_have", "owner_said_no_need"} <= set(recorder.MARKS)
 
 
+async def test_a_mark_reaches_only_the_lines_of_its_own_ref(app):
+    """The keys callers really send: a 64-character digest, a code in capitals. One that is no ref joins nothing."""
+    digest, code, loose = "ingress:" + "0a" * 32, "ask:ASK-AB12CD34", "Not a ref"
+    async with client(app) as http:
+        for ref in (digest, code, loose, loose):
+            await http.post("/v1/recorder/once", json={"kind": "event", "source": "whatsapp", "result": "silent",
+                                                         "ref": ref})
+        counts = [(await http.post("/v1/recorder/mark", json={"ref": ref, "label": "owner_acted"})).json()["count"]
+                  for ref in (digest, code, loose, "other")]
+    assert counts == [1, 1, 0, 0]
+    assert sorted((line["ref"], line["marks"]) for line in recorder.recent()) == [
+        ("", []), ("", []), (code, ["owner_acted"]), (digest, ["owner_acted"])]
+
+
 async def test_bad_input_answers_200(app):
     bodies = (b"", b"not json", b"[1, 2]", b'"text"', b"{}", json.dumps({
         "id": 7, "kind": ["event"], "source": None, "ref": {"a": 1}, "result": 3.5, "choice": True, "chooser": [],

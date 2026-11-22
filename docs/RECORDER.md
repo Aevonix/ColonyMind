@@ -30,9 +30,12 @@ a message, a turn, a task or a check fails.
 | `took_ms` | milliseconds from `begin` to `finish`, or what `once` was told |
 
 `kind`, `choice`, `chooser` and `result` are closed sets (the tuples `KINDS`, `CHOICES`, `CHOOSERS` and `RESULTS`);
-a value outside its set is recorded as `other`, and a new label is one entry in its tuple. `source`, `ref`, `detail`
+a value outside its set is recorded as `other`, and a new label is one entry in its tuple. `source`, `detail`
 and a mark are labels of one shape: a lowercase letter, then lowercase letters, digits and `_ . : -`, 64 characters
-at most (a `detail` may hold capitals too, so an error class is kept as it is written).
+at most (a `detail` may hold capitals too, so an error class is kept as it is written). A `ref` is
+`<store>:<row key>`: a lowercase store name, a colon, then a key of letters, digits and `_ . : -`, 120 characters at
+most, so a digest or a code in capitals is kept whole. A `ref` of another shape is left empty, never `other`: lines
+do not come to share a ref, and a mark reaches only the lines its `ref` names.
 
 Where a fact already lives in another store (the row of an inbound message, a decision in the decision log, an
 entry of the event journal), the line carries its `ref` and copies nothing.
