@@ -5,6 +5,9 @@ It asks the running sidecar's memory search as the instance key, which is the ow
 diagnostic, for any person the key may search. Without ``--explain`` it prints the packet the search returns; with
 it, the trace, one line per candidate: where it was found, its place in the fused order, what the reranker made of it
 and whether it is in the packet or why not.
+
+``colonymind recall-questions`` scores recall against the instance's own question set and prints one result line
+(docs/RECALL-HYBRID.md, The instance's own question set).
 """
 from __future__ import annotations
 
@@ -48,6 +51,29 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
     parser.add_argument("--explain", action="store_true",
                         help="For each candidate: where it was found, how it ranked, why it is in the packet or not")
     parser.add_argument("--json", action="store_true", help="Print the sidecar's answer as JSON")
+    questions = sub.add_parser("recall-questions", help="Score recall against the instance's own question set, "
+                                                        "built from its history when there is none: one result line")
+    questions.add_argument("--new", action="store_true", help="Build the set again from the history first")
+
+
+def run_questions(args: argparse.Namespace) -> int:
+    """``colonymind recall-questions``: the running sidecar scores recall against the instance's question set
+    (``memory.question_set``), and this prints the one result line."""
+    from colonymind.mind.cli import Sidecar
+    try:
+        value = Sidecar(getattr(args, "instance", None)).call(
+            "POST", "/v1/mind/recall-questions", json_body={"new": bool(args.new)}, timeout=960)
+    except SystemExit as exc:
+        if exc.code and not isinstance(exc.code, int):
+            print(f"colonymind recall-questions: {exc.code}", file=sys.stderr)
+            return 1
+        raise
+    if not value.get("questions"):
+        print("recall questions: none (the history gave no question to ask)")
+        return 1
+    built = f" (set built: {value['built']} questions)" if value.get("built") else ""
+    print(f"recall questions: {value.get('recalled', 0)} of {value['questions']} recalled{built}")
+    return 0
 
 
 def run(args: argparse.Namespace) -> int:
@@ -318,4 +344,4 @@ def _cutoff_digest(value: Any) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
 
 
-__all__ = ["add_parser", "explain", "refit_query_adapter_cutoff", "run"]
+__all__ = ["add_parser", "explain", "refit_query_adapter_cutoff", "run", "run_questions"]

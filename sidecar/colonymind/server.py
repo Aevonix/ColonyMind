@@ -737,6 +737,8 @@ def create_app() -> FastAPI:
     app.include_router(mcp_endpoint.router)
     from colonymind.pages import api as pages_api   # the agent's pages on each person and on itself
     app.include_router(pages_api.router)
+    from colonymind.memory import question_set   # the instance's own question set, and recall scored against it
+    app.include_router(question_set.router)
 
     app.add_middleware(RequestLogTiming)
     return app

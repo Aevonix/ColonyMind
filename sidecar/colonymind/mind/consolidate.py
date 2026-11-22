@@ -452,6 +452,13 @@ class Consolidation:
                     learning.prune(conn)
             except Exception as error:
                 logger.warning("learning log not pruned (%s)", type(error).__name__)
+            # A question of the instance's own question set leaves its file once a turn it names is erased,
+            # forgotten or gone (``memory.question_set``).
+            try:
+                from colonymind.memory import question_set
+                question_set.load(self.ledger)
+            except Exception as error:
+                logger.warning("question set not read (%s)", type(error).__name__)
         def last_entered(name):
             marker = self.mind_state.get(STAGE_PREFIX + name) or {}
             return _utc(marker.get("updated_at")) or datetime.min.replace(tzinfo=timezone.utc)
