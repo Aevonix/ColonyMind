@@ -604,3 +604,97 @@ emit(grant=call("colonymind_self", {"operation": "grant", "grant": %r, "reason":
     assert "only the owner" in refused(worker["grant"]) and "only the owner" in refused(worker["revoke"])
     assert len(sidecar.calls("/v1/mind/grants", "POST")) == 2
     assert json.dumps(result["asked"])
+
+
+# ``tool_call`` is the core's wrapper for deferred tools. A ``calls`` text the core cannot read (an entry inside an
+# entry): the shape the owner was shown as an ask before a mind run's wrapper was sent back to the worker.
+UNREADABLE_CALLS = '[{"arguments": {}, {"name": "session_search"}}]'
+
+
+def test_a_wrapper_the_core_cannot_read_goes_back_to_be_written_again(home, sidecar):
+    """Nothing the owner can decide: the worker is told to write the call again, and the sidecar is never asked."""
+    sidecar.mind_routes = True
+    sidecar.guard_verdict = HELD
+    result = probe(WORKER_CODE + '''
+emit(wrapper=check("tool_call", {"calls": %r}))
+''' % UNREADABLE_CALLS, home, env=worker_env(home))
+    verdict = result["wrapper"]
+    assert verdict["action"] == "block" and "write the call again" in verdict["message"], verdict
+    assert "by its own name" in verdict["message"] and "list of {name, arguments}" in verdict["message"]
+    assert sidecar.calls("/v1/mind/guard", "POST") == []
+
+
+def test_a_readable_wrapper_of_reads_passes_as_the_reads_do(home, sidecar):
+    """``calls`` as a list, as JSON text, and the single form: a read is let through as its direct call is."""
+    sidecar.mind_routes = True
+    sidecar.guard_verdict = HELD
+    result = probe(WORKER_CODE + '''
+import json
+emit(listed=check("tool_call", {"calls": [{"name": "session_search", "arguments": {"query": "the plan"}}]}),
+     text=check("tool_call", {"calls": json.dumps([{"name": "colonymind_memory_search", "arguments": {"query": "x"}}])}),
+     single=check("tool_call", {"name": "kanban_list"}))
+''', home, env=worker_env(home))
+    assert all(verdict["action"] is None for verdict in result.values()), result
+    assert sidecar.calls("/v1/mind/guard", "POST") == []
+
+
+def test_a_wrapper_never_carries_a_call_the_guard_would_judge(home, sidecar):
+    """An entry whose direct call goes to the sidecar never runs through the wrapper and never becomes an ask under
+    the wrapper's name: the worker is told to call the tool directly, where it is judged as that tool. A connector
+    tool passes at the wrapper, because the core then brings it to the hook under its own name."""
+    home.write_mind(deny={"tools": [], "text": [], "commands": []})
+    sidecar.mind_routes = True
+    sidecar.guard_verdict = HELD
+    rm = "r" + "m -rf"
+    result = probe(WORKER_CODE + '''
+delete = {"name": "terminal", "arguments": {"command": "%(rm)s ../shared"}}
+read = {"name": "session_search", "arguments": {"query": "the plan"}}
+emit(alone=check("tool_call", {"calls": [delete]}), after_a_read=check("tool_call", {"calls": [read, delete]}),
+     connector=check("tool_call", {"calls": [{"name": "connectors__mail__send", "arguments": {"subject": "note"}}]}))
+''' % {"rm": rm}, home, env=worker_env(home))
+    for name in ("alone", "after_a_read"):
+        verdict = result[name]
+        assert verdict["action"] == "block" and "call terminal directly" in verdict["message"], (name, verdict)
+    assert result["connector"]["action"] is None
+    assert sidecar.calls("/v1/mind/guard", "POST") == []
+
+
+def test_a_direct_call_is_judged_and_held_under_its_own_name(home, sidecar):
+    """As before the wrapper rule: the delete called directly, and a connector tool under its own name (what the core
+    makes of a wrapper of connector tools), reach the sidecar with their own effect and its hold is the answer."""
+    home.write_mind(deny={"tools": [], "text": [], "commands": []})
+    sidecar.mind_routes = True
+    sidecar.guard_verdict = HELD
+    rm = "r" + "m -rf"
+    result = probe(WORKER_CODE + '''
+emit(delete=check("terminal", {"command": "%(rm)s ../shared"}),
+     connector=check("connectors__mail__send", {"subject": "note"}))
+''' % {"rm": rm}, home, env=worker_env(home))
+    for name in ("delete", "connector"):
+        assert result[name]["action"] == "block" and "ask K7F" in result[name]["message"], (name, result[name])
+    sent = {call["json"]["tool"]: call["json"]["effect"] for call in sidecar.calls("/v1/mind/guard", "POST")}
+    assert set(sent) == {"terminal", "connectors__mail__send"}
+    assert sent["terminal"]["cls"] == "irreversible_deletion" and sent["terminal"]["tool"] == "terminal"
+    assert sent["connectors__mail__send"]["cls"] == "unbounded"
+    assert sent["connectors__mail__send"]["tool"] == "connectors__mail__send"
+
+
+def test_the_owners_own_wrapper_is_never_gated(home, sidecar):
+    sidecar.mind_routes = True
+    sidecar.guard_verdict = HELD
+    rm = "r" + "m -rf"
+    result = probe(WORKER_CODE + '''
+from hermes_cli.lifecycle import invoke_hook
+invoke_hook("pre_llm_call", session_id="owner-1", task_id="t", turn_id="turn", user_message="clean up",
+            conversation_history=[], is_first_turn=True, model="m", platform="telegram", parent_session_id="",
+            sender_id="1001")
+from hermes_cli.plugins import get_pre_tool_call_directive
+def owner_check(tool, args):
+    action, message = get_pre_tool_call_directive(tool, args, session_id="owner-1", task_id="t", tool_call_id="c",
+                                                  turn_id="turn", api_request_id="r")
+    return {"action": action, "message": message}
+emit(unreadable=owner_check("tool_call", {"calls": %(calls)r}),
+     delete=owner_check("tool_call", {"calls": [{"name": "terminal", "arguments": {"command": "%(rm)s /srv/old"}}]}))
+''' % {"rm": rm, "calls": UNREADABLE_CALLS}, home)
+    assert all(verdict["action"] is None for verdict in result.values()), result
+    assert sidecar.calls("/v1/mind/guard", "POST") == []

@@ -493,6 +493,52 @@ def forgery_signals(tool: str, args: Mapping[str, Any]) -> list[str]:
                                    ("standing_store", STANDING_FILE in text)) if hit]
 
 
+# The core's wrapper for deferred tools: ``tool_call {calls: [{name, arguments}]}``. The core unwraps it before this
+# hook, so a call still named ``tool_call`` here is one the core could not resolve (it answers with its own error and
+# nothing runs) or one of connector tools only, whose entries the core then brings to this hook one by one under
+# their own names. The wrapper is no call of its own: a mind run's wrapper is never judged, held or filed under its
+# name.
+WRAPPER_TOOL = "tool_call"
+WRAPPER_NEVER = frozenset({"tool_search", "tool_describe", WRAPPER_TOOL})   # what the core refuses inside a wrapper
+CONNECTOR_PREFIX = "connectors__"
+WRAPPER_UNREADABLE = ("this tool_call could not be read and nothing ran: write the call again, either calling the "
+                      "tool by its own name or giving calls as a list of {name, arguments}")
+WRAPPER_DIRECT = "call {tool} directly, by its own name: nothing ran through tool_call"
+
+
+def wrapped_calls(args: Mapping[str, Any]) -> list[tuple[str, dict[str, Any]]] | None:
+    """The calls a ``tool_call`` wrapper carries as (name, arguments), read as the core reads them (stock
+    ``normalize_tool_call_entries``): ``calls`` as a list, as one entry or as JSON text, or with no ``calls`` the
+    single ``{name, arguments}`` form; an entry's arguments as a mapping, as JSON text or absent. None for a wrapper
+    the core refuses to read."""
+    calls = args.get("calls")
+    if calls is None:
+        calls = [{"name": args.get("name"), "arguments": args.get("arguments")}]
+    try:
+        if isinstance(calls, str):
+            calls = json.loads(calls)
+        if isinstance(calls, Mapping):
+            calls = [calls]
+        if not isinstance(calls, list) or not calls:
+            return None
+        entries: list[tuple[str, dict[str, Any]]] = []
+        for entry in calls:
+            name = str(entry.get("name") or "").strip() if isinstance(entry, Mapping) else ""
+            if not name or name in WRAPPER_NEVER:
+                return None
+            arguments = entry.get("arguments")
+            if arguments is None or (isinstance(arguments, str) and not arguments.strip()):
+                arguments = {}
+            if isinstance(arguments, str):
+                arguments = json.loads(arguments)
+            if not isinstance(arguments, Mapping):
+                return None
+            entries.append((name, dict(arguments)))
+        return entries
+    except ValueError:   # JSON text that does not parse
+        return None
+
+
 def parse_deliver(value: Any) -> list[tuple[str, str]]:
     """``deliver`` targets as (platform, chat_id); 'origin' and 'local' are literal."""
     if isinstance(value, (list, tuple)):
@@ -731,6 +777,8 @@ class Guard:
             answer = self._guest_message(args, session_id)
             if answer is not None:
                 return final_answer(answer, block=True)
+        if mind and tool == WRAPPER_TOOL:
+            return self._wrapper(args, session_id)
         try:
             verdict = self._rules(tool, args, session_id, mind, task_id=task_id, tool_call_id=tool_call_id)
         except Exception as error:  # fails closed, and still answers a contact's turn finally
@@ -746,6 +794,24 @@ class Guard:
                                 f"{tool} is not available in this conversation; answer in your final response",
                                 block=True)
         return verdict
+
+    def _wrapper(self, args: Mapping[str, Any], session_id: str) -> dict[str, str] | None:
+        """A mind run's ``tool_call`` wrapper gets no verdict of its own and never reaches the sidecar. One the core
+        cannot read goes back to be written again. One that reads passes only when no entry waits on a verdict here:
+        a connector tool (the core brings each such entry to this hook under its own name, where it is judged) or a
+        read that a direct call is let through with. For any other entry the wrapper goes back to be called
+        directly, where the call is judged, and held, as that tool."""
+        entries = wrapped_calls(args)
+        if entries is None:
+            return block(WRAPPER_UNREADABLE)
+        for name, arguments in entries:
+            if name.startswith(CONNECTOR_PREFIX):
+                continue
+            if name in READ_ONLY_TOOLS and not (name == "session_search" and group_chat()) \
+                    and not self.tripwire(name, arguments, session_id, "mind", strict=True):
+                continue
+            return block(WRAPPER_DIRECT.format(tool=name[:80]))
+        return None
 
     def _rules(self, tool: str, args: Mapping[str, Any], session_id: str, mind: bool, *, task_id: str = "",
                tool_call_id: str = "") -> dict[str, str] | None:

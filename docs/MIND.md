@@ -1353,6 +1353,16 @@ read as the worker's own and no standing grant covers a shell, code, browser
 or delegation call. An amount is only ever a declared tool's or action's
 checked number argument; a command's text never states one.
 
+The core's `tool_call` wrapper for deferred tools is no call of its own, and
+a mind run's wrapper is never sent for a verdict. One whose `calls` the core
+cannot read goes back to the worker to be written again. One that reads
+passes only when every entry is a read (let through as its direct call is) or
+a connector tool (the core brings each to the guard under its own name, where
+it is judged); for any other entry the worker is told to call the tool
+directly, so the call is judged, and held, under the tool's own name. An ask
+formed under the wrapper's name before this, still waiting for the owner, is
+withdrawn by the mind at the next tick.
+
 The verdict at execution, in order: the off switch and the deny list; the
 call the owner approved exactly (every argument, and the directory a command
 runs in; a relative `workdir` whose directory cannot be told is part of the

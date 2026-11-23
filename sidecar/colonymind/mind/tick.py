@@ -900,8 +900,9 @@ class Mind:
 
     def _stale_reason(self, row: StoredInitiative) -> Optional[str]:
         """Why an intention still waiting should not act: its obligation resolved itself
-        (``invalidates_if``), the owner turned its drive off (weight 0), or the goal it is a
-        step of is no longer open. Notices, the digest and messages other subsystems asked
+        (``invalidates_if``), the owner turned its drive off (weight 0), the goal it is a
+        step of is no longer open, or it asks about the core's ``tool_call`` wrapper, which is no
+        call of its own. Notices, the digest and messages other subsystems asked
         for are the mind's reporting, not a drive's work: a weight of 0 does not cancel them."""
         try:
             reason = invalidation_reason(row.invalidates_if, commitments=self.commitments, followups=self.followups)
@@ -915,6 +916,13 @@ class Mind:
                 reason = self.questions.withheld(row, self.clock())
             except Exception as error:
                 raise Unreadable(f"the question's statements unreadable ({type(error).__name__})") from error
+        if reason is None and row.type == FLOOR_EFFECT and row.status == "asked" and isinstance(row.context, dict):
+            # ``tool_call`` is the core's wrapper for deferred tools, no call of its own: the plugin sends it back
+            # to the worker, and an ask formed under its name before that is not one the owner can decide. One
+            # the owner already answered is left as it is.
+            effect = row.context.get("effect")
+            if isinstance(effect, dict) and effect.get("tool") == "tool_call":
+                reason = "tool_call is the core's wrapper, not a call the owner can decide"
         drive_work = row.type not in audit.NOTICE_TYPES and not str(row.type or "").startswith("reach_out:")
         if reason is None and drive_work and row.drive in DRIVES and float(self.drive_weights.get(row.drive, 1.0)) <= 0:
             reason = f"the {row.drive} drive is off"

@@ -473,6 +473,37 @@ async def test_no_settles_the_task_denied_and_an_expired_ask_is_no_approval(tmp_
         fx.store.close()
 
 
+async def test_an_open_ask_about_the_cores_wrapper_is_withdrawn_by_the_mind(tmp_path, monkeypatch):
+    """``tool_call`` is the core's wrapper for deferred tools, no call the owner can decide. An ask formed under its
+    name (by a plugin from before the wrapper was sent back to the worker) is withdrawn at the next tick as the
+    mind's own, with no verdict of the owner's, and its task settles with it. A real held call, and a wrapper ask
+    the owner already said yes to, stay as they are."""
+    monkeypatch.setenv("COLONYMIND_OWNER_CONTACT_ID", OWNER)
+    fx = Fixture(tmp_path, autonomy="standard")
+    try:
+        task = _dispatched_task(fx, "look up the last plan")
+        held = await fx.mind.guard(tool="tool_call", run="mind", task_id=task.hermes_ref,
+                                   args={"calls": '[{"arguments": {}, {"name": "session_search"}}]'})
+        ask = fx.store.get_by_ask_code(held["held"])
+        assert ask.type == "floor_effect" and ask.context["effect"]["tool"] == "tool_call"
+        answered = _dispatched_task(fx, "look up the plan before it")
+        yes = await fx.mind.guard(tool="tool_call", run="mind", task_id=answered.hermes_ref,
+                                  args={"calls": [{"name": "browser_click", "arguments": {"ref": "@e1"}}]})
+        kept = fx.store.get_by_ask_code(yes["held"]).id
+        await owner_answers(fx.mind, yes["held"])
+        delete = _dispatched_task(fx, "delete the old backups")
+        real = await fx.mind.guard(tool="terminal", run="mind", task_id=delete.hermes_ref,
+                                   args={"command": "rm -rf /srv/backups/2019"})
+        await fx.mind.tick(force=True)
+        withdrawn = fx.store.get(ask.id)
+        assert withdrawn.status == "cancelled" and withdrawn.result.startswith("invalidated: tool_call")
+        assert withdrawn.verdict is None and fx.store.get(task.id).outcome == "cancelled"
+        assert fx.store.get(kept).status == "approved"
+        assert fx.store.get_by_ask_code(real["held"]).status == "asked" and fx.store.get(delete.id).outcome == "blocked"
+    finally:
+        fx.store.close()
+
+
 async def test_a_fourth_person_from_one_task_is_bulk(tmp_path, monkeypatch):
     """"Message all my contacts about the party" is held when one task reaches a fourth person in 24 h."""
     monkeypatch.setenv("COLONYMIND_OWNER_CONTACT_ID", OWNER)
