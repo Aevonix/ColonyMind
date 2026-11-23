@@ -49,7 +49,7 @@ from .authority import (
 )
 from .compose import Composer, template as compose_template
 from .concerns import BROADCAST, MIND_DB, RESOLVED_RETENTION, SETTLED_FOR, Concern, Concerns, open_mind_db
-from .consolidate import Consolidation
+from .consolidate import QUESTION_KEY, Consolidation
 from .deliberate import Deliberation, refresh_context
 from .drift import DriftCheck
 from .drives import CHECK_IN_TYPES, DRIVES, DriveInputs, slug, task_body
@@ -69,7 +69,7 @@ from .answer_turns import AnswerTurns
 from .asks_report import ASK_CLARIFIED, ASK_LATER, ASK_SHOWN, ASK_UNDONE
 from .digest import NEEDS_OK_1_11 as NEEDS_OK_LABEL, lines_of as listed_lines
 from .outbox import ASK_IN_FULL, always_words, ask_sentence
-from .questions import QUESTION_AGAIN, Questions, is_question
+from .questions import Questions, is_question
 from .outcomes import (FINDING_TYPES, Autobiography, Outcomes, evaluate_check, handed_to_body,
                        invalidation_reason, owner_answer, report_line)
 from .rank import (Candidate, DEFAULT_ACT_THRESHOLD, OUTREACH_ANSWER, OUTREACH_FOLLOWUP, OUTREACH_TYPES, TASK_OUTCOME,
@@ -401,14 +401,8 @@ class Mind:
             quiet=self.quiet, cancel=self._cancel_stale, lessons=self.lessons, skills=self.skills,
             wishes=self.wishes)
         self._consolidation_task: Optional[asyncio.Task] = None
-        # The owner's questions (docs/MIND.md, Questions): answered in words, never with a code.
-        self.questions = Questions(store=store, consolidation=self.consolidation, concerns=self.concerns,
-                                   outbox=self.outbox, router=router, owner_id=self.owner_id, clock=self.clock,
-                                   tokens_allowed=self.authority.tokens_allowed, settle=self._question_to_digest,
-                                   cancel=self._cancel_stale, charge=self._charge,
-                                   conn=gate_conn if isinstance(gate_conn, sqlite3.Connection) else None,
-                                   earlier=lambda session, turn: self.consolidation.recent_turns(
-                                       str(self.owner_id or ""), session, exclude=turn))
+        # The questions an earlier build asked the owner are brought to an end (docs/MIND.md, Questions).
+        self.questions = Questions(store=store, cancel=self._cancel_stale)
         # A digest item too long to show whole is summarised by a checked typed call on the mind's router.
         self.outbox.summarize = self._summarize
         # The identity battery and drift detection (docs/MIND.md, Identity check; off by default).
@@ -479,7 +473,6 @@ class Mind:
         self.composer.router = value
         self.consolidation.router = value
         self.drift.router = value
-        self.questions.router = value
 
     def off(self, *, reason: str = "owner", by: str = "owner") -> Dict[str, Any]:
         """No further effects, at once and without the model endpoint (7.9)."""
@@ -647,7 +640,6 @@ class Mind:
                 task.cancel()
         self._task = None
         await self.ideas.close()
-        await self.questions.cancel_readings()
         night = self._consolidation_task
         if night is not None and not night.done():
             night.cancel()
@@ -732,7 +724,7 @@ class Mind:
             summary["goals"] = self._tend_goals(now)
             summary["formed"], summary["below_threshold"] = await self._act(now)
             summary["model_calls"] = self.deliberation.calls_this_tick + self.composer.calls_this_tick
-            summary["questions"] = {"migrated": self.questions.migrate(now), **self.questions.tend(now)}
+            summary["questions"] = {"migrated": self.questions.migrate(), **self.questions.tend(now)}
             summary["digest"] = await self._digest(now)
             asks = self.store.intentions(status=["asked"], limit=200)
             summary["ask_messages"] = await self._deliver_asks(asks, now)
@@ -910,12 +902,9 @@ class Mind:
             raise Unreadable(f"{row.invalidates_if} unreadable ({type(error).__name__})") from error
         if reason is None and row.source_type == "commitment" and row.source_id and self.commitments is not None:
             reason = self._commitment_stale_reason(row)
-        if reason is None and (is_question(row) or row.type == QUESTION_AGAIN):
-            # A question, or its clarification, quotes two statements: it goes only while they still stand.
-            try:
-                reason = self.questions.withheld(row, self.clock())
-            except Exception as error:
-                raise Unreadable(f"the question's statements unreadable ({type(error).__name__})") from error
+        if reason is None:
+            # A question an earlier build raised, or its clarification, never goes out: the mind asks nothing.
+            reason = self.questions.withheld(row)
         if reason is None and row.type == FLOOR_EFFECT and row.status == "asked" and isinstance(row.context, dict):
             # ``tool_call`` is the core's wrapper for deferred tools, no call of its own: the plugin sends it back
             # to the worker, and an ask formed under its name before that is not one the owner can decide. One
@@ -1577,8 +1566,8 @@ class Mind:
     def _reconcile_digested(self, now: datetime) -> None:
         """A finding a queued digest carries (``queued``) is ``listed`` once that digest was delivered, and
         pending again once it can no longer be (expired, cancelled, failed, uncertain or gone): only a delivered
-        digest lists anything. One still on its way stays queued. The owner gate's held items and the questions a
-        digest carries follow the same rule (``Ledger.settle_digest``, ``Questions.reconcile``)."""
+        digest lists anything. One still on its way stays queued. The owner gate's held items follow the same rule
+        (``Ledger.settle_digest``)."""
         in_flight = {"proposed", "asked", "approved", "sending"}
         # Each digest carries its own manifest, written with it (``items``): what it listed is recovered from there,
         # whatever happened between queuing it and marking its items.
@@ -1603,7 +1592,6 @@ class Mind:
                     self._mark_finding(finding.id, "listed", now, digest=digest.id)
                 elif digest.status in in_flight and state.get("state") == "digest":
                     self._mark_finding(finding.id, "queued", now, digest=digest.id)
-            self.questions.digest_settled(digest, items.get("questions") or [], now)
         for digest_id in self.owner_gate.ledger.queued_digests():
             digest = self.store.get(digest_id)
             status = digest.status if digest is not None else None
@@ -1611,7 +1599,6 @@ class Mind:
                 self.owner_gate.ledger.settle_digest(digest_id, delivered=True, at=now)
             elif status not in in_flight:
                 self.owner_gate.ledger.settle_digest(digest_id, delivered=False, at=now)
-        self.questions.reconcile(now)
         for row in self.store.findings(["queued"], sorted(SHARED_FINDINGS)):
             digest = self.store.get(str(((row.result_metadata or {}).get("outreach") or {}).get("digest") or ""))
             status = digest.status if digest is not None else None
@@ -2010,15 +1997,6 @@ class Mind:
             except Exception:
                 logger.warning("owner answer at ingest not read", exc_info=True)
         answered = self._answers_ask(reactions.strip_prefix(text), turn=str(turn_id or ""))
-        if own_turn and not answered:
-            # The one question the owner has seen is answered in the owner's words (a turn read as an ask's answer is
-            # that ask's, never a question's), read off the turn's path. Whatever the outreach faculty: questions
-            # are consolidation's.
-            try:
-                self.questions.schedule(text, turn_id=str(turn_id or ""), occurred_at=occurred_at,
-                                        session_id=session_id)
-            except Exception:
-                logger.warning("owner answer to a question not scheduled", exc_info=True)
         if not (self.faculties.get("outreach") and self.owner_id):
             return None
         o = outreach_functions
@@ -2609,6 +2587,10 @@ class Mind:
         for concern in self.concerns.open(limit=200):
             if len(pairs) >= BROADCAST:
                 break
+            if str(concern.dedup_key).startswith(QUESTION_KEY):
+                # A question an earlier build raised and had not formed yet: the mind asks nothing, so it ends here.
+                self.concerns.resolve(concern.id, note="resolved: the mind keeps the newer statement itself", now=now)
+                continue
             if concern.exhausted or not concern.detail.get("type"):
                 continue
             candidate = Candidate.from_detail(concern.detail)
@@ -2840,10 +2822,8 @@ class Mind:
             # The strategy switch asks the owner instead of acting; it never grants what authority withheld.
             verdict = dataclasses.replace(verdict, decision="ask",
                                           reason=f"{verdict.reason}; {candidate.affect_ask}"[:300])
-        # A question is answered in words, never with a code: where the level would ask, it goes to the digest.
-        asks = verdict.decision == "ask" and candidate.type not in QUESTION_TYPES
-        status = {"act": "approved", "ask": "asked" if asks else "proposed", "drop": "dropped",
-                  "defer": "proposed"}[verdict.decision]
+        asks = verdict.decision == "ask"
+        status = {"act": "approved", "ask": "asked", "drop": "dropped", "defer": "proposed"}[verdict.decision]
         context: Dict[str, Any] = {
             "concern": candidate.concern, "evidence": list(candidate.evidence), "score": round(score, 3),
             "may_contact": may_contact, "notice": verdict.notice,
@@ -3010,19 +2990,6 @@ class Mind:
     def _apply_decision(self, row: StoredInitiative, verdict: Any, now: datetime, *, reconsidered: bool,
                         code: str | None = None) -> Optional[StoredInitiative]:
         decision = verdict.decision
-        if row.type in QUESTION_TYPES and decision in {"act", "ask"}:
-            # One question at a time, and never a code: it goes out on its own (where the level lets the mind
-            # message the owner), to the digest (where the level would ask), or waits behind the one already out.
-            placed = self.questions.place(row, reason=verdict.reason, now=now, would_send=decision == "act")
-            if placed != "send":
-                self.store.update(row.id, decision=decision, decision_reason=verdict.reason, cls=verdict.cls)
-                updated = self.store.get(row.id)
-                if updated is not None:
-                    where = "in the digest" if placed == "digest" else "behind the question already out"
-                    self.autobiography.record(updated.id, f"decided_{decision}",
-                                              f"I put a question for the owner {where}: "
-                                              f"'{Autobiography.name(updated)}' ({verdict.reason}).", decision=decision)
-                return updated
         if decision == "act":
             window = (row.due_at or row.expires_at) if row.kind == "goal" else None
             if row.type in OUTREACH_MESSAGES and row.expires_at is not None and not reconsidered:
@@ -3264,8 +3231,6 @@ class Mind:
             self._close_commitment(row)
         if row.type == "digest":
             self._reconcile_digested(self.clock())
-        if is_question(row) or row.type == QUESTION_AGAIN:
-            self.questions.on_sent(row, self.clock())
         if row.type == ASK_IN_FULL:
             self._full_ask_seen(row)
         self._log_sent(row)
@@ -3828,13 +3793,9 @@ class Mind:
         Should this not run, the notice's own delivery record is read instead (``Outbox.full_view_seen``)."""
         self.outbox.full_view_delivered(notice)
 
-    def _question_to_digest(self, row: StoredInitiative, summary: str) -> Optional[StoredInitiative]:
-        """A question the level would have asked is settled into the digest: expired unsent, no verdict on it."""
-        return self.outcomes.record(row.id, status="expired", summary=summary, by="mind", implicit_verdict=False)
-
     async def _digest(self, now: datetime) -> Optional[str]:
         """The day's one digest (``digest.py``), queued once per local date (its dedup key), only when something
-        waits or happened. What it carries (a finding, a held item, a question) counts as listed only once the body
+        waits or happened. What it carries (a finding, a held item) counts as listed only once the body
         reports it delivered (``_reconcile_digested``); a digest never delivered hands them back to the next one."""
         local = now.astimezone(self.tz)
         local_date = local.date().isoformat()
@@ -3856,7 +3817,7 @@ class Mind:
         found, offers, paused, listed = (self._outreach_digest(since, now)
                                          if self.faculties["outreach"] and self.owner_id else ([], [], None, []))
         # Read whether or not the gate is on now: a hold made while it was on is an obligation the flag
-        # turned off does not cancel. A held question is the Question part's (listed from its own row).
+        # turned off does not cancel. A held question of an earlier build is never listed.
         held_all = self.owner_gate.ledger.held()
         held = held_all[:HELD_LINES]      # listed; marked listed once the digest is delivered
         held_lines = []
@@ -3866,10 +3827,8 @@ class Mind:
                 continue
             held_lines.append((str(entry["topic"] or entry["type"] or ""),
                                str((entry["inputs"].get("message") or {}).get("text") or "")))
-        questions = self.questions.for_digest(now)
         drift = self.drift.digest_lines(since) if self.faculties.get("drift_check") else []
-        items = {"questions": [row.id for row in questions], "held": [entry["id"] for entry in held],
-                 "findings": list(listed)}
+        items = {"held": [entry["id"] for entry in held], "findings": list(listed)}
         recipients = [row.entity_id for row in self.store.intentions(status=["asked"], kind=["message"], limit=200)]
         recipients += [row.entity_id for row in self.store.intentions(since=since, kind=["message"], limit=500)
                        if not self._is_owner(row.entity_id)]
@@ -3884,7 +3843,6 @@ class Mind:
             opt_outs=await self._opt_outs_since(since), found=found, offers=offers, paused=paused,
             held=held_lines, held_more=len(held_all) - len(held),
             wishes=self.wishes.digest_lines(since) if self.faculties["wishes"] else None, drift=drift,
-            questions=[str((row.context or {}).get("question", {}).get("text") or "") for row in questions],
             names=await self._names(recipients), work=work_line)
         self._daily["digest"] = local_date
         if text is None:
@@ -3899,7 +3857,6 @@ class Mind:
                 # Carried, not yet listed: ``listed`` once this digest is delivered (``_reconcile_digested``).
                 self._mark_finding(ident, "queued", now, digest=row.id)
             self.owner_gate.ledger.mark_queued([entry["id"] for entry in held], row.id)
-            self.questions.mark_queued(questions, row.id, now)
             if standing:
                 self.mind_state.set(allow_rules.DIGEST_KEY, text=now.isoformat(), now=now)
         return row.id if row is not None else None

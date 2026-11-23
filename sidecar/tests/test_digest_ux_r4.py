@@ -1,80 +1,42 @@
-"""The owner's questions and asks: erasure, correction and delivery receipts.
+"""The mind's own corrections and the owner's asks: every copy retracted, and delivery receipts.
 
-A clarification never carries statements that were forgotten or a question that is over; an answer retracts every
-live copy of the value it rejects; and a full ask whose delivery was recorded can be approved whatever the hook
-that marks it seen did.
+Keeping the newer statement retracts every live copy of the older value; and a full ask whose delivery was
+recorded can be approved whatever the hook that marks it seen did.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from test_digest_ux import deliver, night, the_digest
-from test_digest_ux_r2 import live, office, said, secret_use, state
+from test_digest_ux import deliver, night
+from test_digest_ux_r2 import live, secret_use
 from test_mind_consolidate import OWNER
 from owner_answer import owner_answers
 
 
 # ---------------------------------------------------------------------------
-# A clarification follows its question and the statements it quotes
-# ---------------------------------------------------------------------------
-
-
-async def test_a_clarification_is_withdrawn_once_its_question_is_answered(tmp_path, monkeypatch):
-    fx = night(tmp_path, monkeypatch, mind_question_answer={"answer": "unclear"})
-    question, a, b = await office(fx)
-    await said(fx, "I need more details to answer this", "t-1")
-    again, = fx.messages("question_again")
-    assert again.context["question_id"] == question.id and set(again.context["claims"]) == {a, b}
-    fx.router.answers["mind_question_answer"] = {"answer": "second"}
-    await said(fx, "Room 7, the other one is old.", "t-2")          # answered before the body pulled it
-    assert state(fx, question)["state"] == "resolved"
-    assert fx.store.get(again.id).status == "cancelled"
-    assert await deliver(fx) == []
-
-
-# ---------------------------------------------------------------------------
-# An answer retracts every live copy of the value it rejects
+# Keeping the newer statement retracts every live copy of the older value
 # ---------------------------------------------------------------------------
 
 async def twice_room_4(fx):
     """Room 4 said twice (two claims: a store that does not fold restatements), then room 7."""
     old = await fx.fact("o-0", OWNER, "s-0", "My office is room 4.", "room 4")
     fx.shift(hours=1)
-    question, a, b = await office(fx)
-    assert old != a and set(question.context["question"]["claims"]) == {a, b}   # the newest room 4 is asked
-    return question, old, a, b
+    a = await fx.fact("o-1", OWNER, "s-1", "My office is room 4.", "room 4")
+    fx.shift(hours=1)
+    b = await fx.fact("o-2", OWNER, "s-2", "My office is room 7.", "room 7")
+    assert old != a
+    return old, a, b
 
 
-async def test_keeping_the_second_retracts_every_copy_of_the_first(tmp_path, monkeypatch):
-    fx = night(tmp_path, monkeypatch, mind_question_answer={"answer": "second"})
-    question, old, a, b = await twice_room_4(fx)
-    await said(fx, "Room 7, the other one is old.", "t-1")
-    assert state(fx, question)["state"] == "resolved"
+async def test_keeping_the_newer_statement_retracts_every_copy_of_the_older(tmp_path, monkeypatch):
+    fx = night(tmp_path, monkeypatch)
+    old, a, b = await twice_room_4(fx)
+    assert (await fx.mind.consolidate())["counts"]["contradictions"] == 1
     assert live(fx, old, a, b) == {b}
     shown = fx.assertions("office")                                # what recall shows a new session
     assert [item["value"] for bundle in shown for item in bundle["assertions"]] == ["room 7"]
     assert not any(bundle["status"] == "unresolved_conflict" for bundle in shown)
-
-
-async def test_neither_retracts_every_copy_of_both(tmp_path, monkeypatch):
-    fx = night(tmp_path, monkeypatch, mind_question_answer={"answer": "neither"})
-    question, old, a, b = await twice_room_4(fx)
-    await said(fx, "Neither, I work from home now.", "t-1")
-    assert state(fx, question)["state"] == "resolved" and live(fx, old, a, b) == set()
-
-
-async def test_a_crash_after_the_whole_change_is_finished_not_repeated(tmp_path, monkeypatch):
-    fx = night(tmp_path, monkeypatch)
-    question, old, a, b = await twice_room_4(fx)
-    assert fx.mind.questions.ledger.claim(question.id, "t-crash", "second", fx.now)
-    from colonymind.mind.questions import asked_of
-    assert fx.mind.consolidation.settle_question(asked_of(question), "second", ref=f"intention:{question.id}",
-                                                 now=fx.now)
-    fx.shift(minutes=5)
-    await fx.mind.tick(force=True)
-    current = state(fx, question)
-    assert current["state"] == "resolved" and current["answer"] == "second" and live(fx, old, a, b) == {b}
 
 
 # ---------------------------------------------------------------------------
@@ -130,44 +92,3 @@ async def test_a_full_ask_not_delivered_still_blocks_the_yes(tmp_path, monkeypat
     fx.restart()
     with pytest.raises(PermissionError):
         await owner_answers(fx.mind, "K7F")
-
-
-from colonymind.memory import curated
-async def test_a_clarification_of_forgotten_statements_is_never_sent(tmp_path, monkeypatch):
-    fx = night(tmp_path, monkeypatch, mind_question_answer={'answer': 'unclear'})
-    question, a, b = await office(fx)
-    await said(fx, 'I need more details to answer this', 't-1')
-    again, = fx.messages('question_again')
-    assert again.status == 'approved'
-    from test_curated_memory import historical_bytes
-    _native_before_withdrawal = historical_bytes(fx.ledger)
-    curated.forget_sources(fx.ledger, OWNER, source_ids=['o-1', 'o-2'])
-    assert historical_bytes(fx.ledger) == _native_before_withdrawal
-    fx.shift(minutes=1)
-    await fx.mind.tick(force=True)
-    assert state(fx, question)['state'] == 'resolved'
-    sent = await deliver(fx)
-    assert not any(('room' in payload['text'] for payload in sent)), sent
-    assert fx.store.get(again.id).status == 'cancelled'
-
-async def test_a_clarification_is_checked_again_when_the_body_pulls_it(tmp_path, monkeypatch):
-    fx = night(tmp_path, monkeypatch, mind_question_answer={'answer': 'unclear'})
-    await office(fx)
-    await said(fx, 'I need more details to answer this', 't-1')
-    from test_curated_memory import historical_bytes
-    _native_before_withdrawal = historical_bytes(fx.ledger)
-    curated.forget_sources(fx.ledger, OWNER, source_ids=['o-1'])
-    assert historical_bytes(fx.ledger) == _native_before_withdrawal
-    sent = await deliver(fx)
-    assert not any(('room' in payload['text'] for payload in sent)), sent
-
-async def test_a_question_whose_statements_were_forgotten_is_never_sent(tmp_path, monkeypatch):
-    fx = night(tmp_path, monkeypatch)
-    question, _, _ = await office(fx, deliver_it=False)
-    assert fx.store.get(question.id).status == 'approved'
-    from test_curated_memory import historical_bytes
-    _native_before_withdrawal = historical_bytes(fx.ledger)
-    curated.forget_sources(fx.ledger, OWNER, source_ids=['o-2'])
-    assert historical_bytes(fx.ledger) == _native_before_withdrawal
-    sent = await deliver(fx)
-    assert not any(('room' in payload['text'] for payload in sent)), sent

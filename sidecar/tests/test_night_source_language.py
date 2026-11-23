@@ -32,7 +32,7 @@ PROMPTS = {
     "summary": (plain.SUMMARY_SYSTEM.format(limit=200), (ITEM, ITEM_MIXED, NEVER, VERBATIM)),
 }
 
-# Too long to quote whole in a question (over 200 characters before its first full stop): the night shortens it.
+# Too long to show whole (over 200 characters before its first full stop): a plain summary shortens it.
 LONG = ("Desde el lunes pasado mi oficina ya no está en la sala 4, porque todo el equipo de diseño se mudó al tercer "
         "piso del edificio nuevo junto a la estación, así que ahora me encuentras en la sala 7, al fondo del pasillo "
         "y frente a las escaleras.")
@@ -57,12 +57,7 @@ def test_each_prompt_that_writes_about_a_person_carries_the_source_language_rule
 async def test_a_night_over_spanish_statements_sends_the_rule_with_them(tmp_path, monkeypatch):
     monkeypatch.setenv("COLONYMIND_OWNER_CONTACT_ID", OWNER)
     fx = Fixture(tmp_path)
-    fx.router.answers["mind_plain_summary"] = {"sentence": "Mi oficina se mudó a la sala 7 del tercer piso."}
     office = {"subject": "mi oficina", "predicate": "location"}
-    # The owner's statement changes in words too long to quote whole: the question's summary call.
-    await fx.fact("turn-o1", OWNER, "chat-owner", "Mi oficina está en la sala 4.", "sala 4", **office)
-    fx.shift(days=1)
-    await fx.fact("turn-o2", OWNER, "chat-owner", LONG, "sala 7", **office)
     # A person who writes Spanish: two statements (the digest) in one conversation of three turns (the episode).
     first = await fx.fact("turn-1", CONTACT, "chat-es", "Mi oficina está en la sala 4.", "sala 4", **office)
     await fx.fact("turn-2", CONTACT, "chat-es", "La reunión del equipo es los martes.", "los martes",
@@ -84,15 +79,11 @@ async def test_a_night_over_spanish_statements_sends_the_rule_with_them(tmp_path
     episode, = system_of(fx, TASK_EPISODE)
     assert PERSON in episode and THEY_SAID in episode
     assert "They said: ¿Me mandas las diapositivas el viernes?" in user_of(fx, TASK_EPISODE)[0]
-    summary, = system_of(fx, plain.SUMMARY_TASK)
-    assert ITEM in summary and VERBATIM in summary
-    assert json.loads(user_of(fx, plain.SUMMARY_TASK)[0]) == {"item": LONG}      # the words themselves, unescaped
-    assert "está en la sala 4" in user_of(fx, plain.SUMMARY_TASK)[0]
     fx.store.close()
 
 
 async def test_the_owners_plain_summaries_keep_the_items_own_language():
-    """The owner-facing path (the daily digest, a question, an ask notice) shortens through ``plain.summarize``:
+    """The owner-facing path (the daily digest, an ask notice) shortens through ``plain.summarize``:
     the same rule, for the language of the item."""
     seen = []
 
@@ -113,10 +104,10 @@ async def test_the_owners_plain_summaries_keep_the_items_own_language():
 
 # ---------------------------------------------------------------------------
 # Scripts with their own sentence ends and no spaces between words (Chinese, Japanese): a summary written in the
-# item's own language passes the no-cut check, so the rule never turns a question into a wait or a pointer.
+# item's own language passes the no-cut check, so the rule never turns an item into a pointer.
 # ---------------------------------------------------------------------------
 
-# Made-up statements too long to quote whole (over 200 characters, one sentence each): the night shortens them.
+# Made-up statements too long to show whole (over 200 characters, one sentence each): a plain summary shortens them.
 ZH_LONG = ("从上周一开始，我的办公室已经不在四号房间了，因为整个设计团队都搬到了车站旁边那栋新大楼的三楼，"
            "公司说旧楼要在年底之前全部装修完，所以我们至少要在新楼里待上半年，现在你可以在七号房间找到我，"
            "就在走廊的尽头，正对着楼梯，门口有一块写着设计部的白色牌子，如果你来找我的话，请先在一楼的前台登记，"
@@ -128,10 +119,10 @@ JA_LONG = ("先週の月曜日から、私のオフィスはもう四号室で�
            "入口にはデザイン部と書かれた白い札が掛かっていて、来るときは一階の受付で名前を書いてから右側の"
            "エレベーターで上がってきてください。")
 SCRIPTS = {
-    "zh": {"short": "我的办公室在四号房间。", "long": ZH_LONG, "old": "四号房间", "new": "七号房间",
-           "subject": "我的办公室", "summary": "我的办公室从上周一起搬到了新大楼三楼的七号房间。"},
-    "ja": {"short": "私のオフィスは四号室です。", "long": JA_LONG, "old": "四号室", "new": "七号室",
-           "subject": "私のオフィス", "summary": "先週の月曜日から、私のオフィスは新しいビルの三階の七号室です。"},
+    "zh": {"short": "我的办公室在四号房间。", "long": ZH_LONG,
+           "summary": "我的办公室从上周一起搬到了新大楼三楼的七号房间。"},
+    "ja": {"short": "私のオフィスは四号室です。", "long": JA_LONG,
+           "summary": "先週の月曜日から、私のオフィスは新しいビルの三階の七号室です。"},
 }
 
 
@@ -189,29 +180,3 @@ async def test_the_owners_plain_summary_in_a_script_without_spaces_is_kept(scrip
     shown = await plain.shown(case["long"], 120, what="A report",
                               summarize_with=lambda text, limit: plain.summarize(router, text, limit))
     assert shown == case["summary"]
-
-
-@pytest.mark.parametrize("script", sorted(SCRIPTS))
-async def test_a_contradiction_in_a_script_without_spaces_is_asked_with_its_summary(tmp_path, monkeypatch, script):
-    """The question path: a statement too long to quote whole is shortened in its own script, and the question is
-    raised that night, quoting both statements as they are (not deferred for want of an accepted summary)."""
-    monkeypatch.setenv("COLONYMIND_OWNER_CONTACT_ID", OWNER)
-    case = SCRIPTS[script]
-    fx = Fixture(tmp_path)
-    fx.router.answers[TASK_DIGEST] = None
-    fx.router.answers["mind_plain_summary"] = {"sentence": case["summary"]}
-    office = {"subject": case["subject"], "predicate": "location"}
-    await fx.fact("turn-1", OWNER, "chat-owner", case["short"], case["old"], **office)
-    fx.shift(days=1)
-    await fx.fact("turn-2", OWNER, "chat-owner", case["long"], case["new"], **office)
-
-    night = await fx.mind.consolidate()
-
-    assert night["errors"] == []
-    assert night["counts"].get("contradictions") == 1 and not night["counts"].get("question_deferred")
-    assert json.loads(user_of(fx, plain.SUMMARY_TASK)[0]) == {"item": case["long"]}
-    concern, = [c for c in fx.mind.broadcast() if c.kind == "question"]
-    question = concern.detail["extra"]["question"]
-    assert question["first"] == case["short"] and question["second"] == case["summary"]
-    assert f"\"{case['short']}\"" in question["text"] and f"\"{case['summary']}\"" in question["text"]
-    fx.store.close()

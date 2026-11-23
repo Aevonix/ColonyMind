@@ -1,11 +1,10 @@
-"""The owner's digest and questions in plain words (docs/MIND.md, The daily digest; Asks; Questions).
+"""The owner's digest in plain words (docs/MIND.md, The daily digest; Asks).
 
-The digest is one message a day, only when something waits, in three labelled parts: actions waiting for the owner's OK
-(in words, with no code and no reply instruction: each ask's own message carries its reply line), questions the owner
-answers in their own words, and what was done or found. No item is ever cut mid-word or mid-sentence, and no internal
-field name reaches the owner. A contradiction is raised only when a typed decision finds the newer statement replaces
-the older; the owner's words resolve it; nothing the owner already received is repeated; and a digest arrives once a day
-whatever the restarts, retries and bodies.
+The digest is one message a day, only when something waits, in labelled parts: actions waiting for the owner's OK
+(in words, with no code and no reply instruction: each ask's own message carries its reply line) and what was done or
+found. No item is ever cut mid-word or mid-sentence, and no internal field name reaches the owner. A contradiction goes
+through a typed decision: an addition is compatible, and when the newer statement replaces the older the mind keeps the
+newer one itself and asks the owner nothing. A digest arrives once a day whatever the restarts, retries and bodies.
 """
 
 from __future__ import annotations
@@ -16,13 +15,11 @@ from contextlib import closing
 from datetime import timedelta
 from types import SimpleNamespace
 
-import pytest
-
 from colonymind.mind import plain
 from colonymind.mind import digest as digest_text
 from colonymind.mind.consolidate import TASK_DIGEST
 from owner_answer import owner_answers
-from test_mind_consolidate import OWNER, CONTACT, Fixture as NightFixture, NightRouter
+from test_mind_consolidate import OWNER, Fixture as NightFixture, NightRouter
 
 CODE = re.compile(r"\b[A-Z2-9]{3}\b")
 FIELD_NAMES = ("office_location", "subject_key", "predicate", "speaker", "p1a", "claim:", "cid-", "intention:")
@@ -77,23 +74,20 @@ async def test_shown_prefers_whole_sentences_then_a_checked_summary_then_a_point
     assert (await plain.shown(long, 120, what="a failure report")).startswith("A failure report is too long")
 
 
-def test_render_has_three_labelled_parts_and_nothing_when_nothing_waits():
+def test_render_has_two_labelled_parts_and_nothing_when_nothing_waits():
     assert digest_text.render() is None
     assert digest_text.render(context=["Still working on the garden plan."]) is None
     text = digest_text.render(needs=["Re-run the archive export. Asked 2 hours ago."],
-                              questions=["Should I keep the first, the second, both, or neither?"],
                               done=["Done: the weekly backup check."])
     assert text.split("\n\n") == [
         "Daily digest",
         "Waiting for your OK:\n- Re-run the archive export. Asked 2 hours ago.",
-        "Question (just answer in words):\n- Should I keep the first, the second, both, or neither?",
         "Done or found since yesterday:\n- Done: the weekly backup check.",
     ]
-    assert digest_text.question_message("Which one?") == "Question (just answer in words): Which one?"
 
 
 # ---------------------------------------------------------------------------
-# The served digest: three parts, codes only for actions, whole sentences, no field names
+# The served digest: labelled parts, no code, whole sentences, no field names
 # ---------------------------------------------------------------------------
 
 class TurnRouter(NightRouter):
@@ -116,16 +110,6 @@ def night(tmp_path, monkeypatch, *, autonomy="standard", relation="replaces", **
     fx = NightFixture(tmp_path, autonomy=autonomy, router=router)
     fx.router.answers[TASK_DIGEST] = None
     return fx
-
-
-async def office_question(fx, *, first="My office is room 4.", second="My office is room 7.",
-                          values=("room 4", "room 7")):
-    a = await fx.fact("turn-a", OWNER, "telegram-1", first, values[0])
-    fx.shift(days=1)
-    b = await fx.fact("turn-b", OWNER, "discord-2", second, values[1])
-    await fx.mind.consolidate()
-    await fx.mind.tick(force=True)
-    return a, b
 
 
 def asked(fx, code, title, *, type_="research", kind="task", **fields):
@@ -152,29 +136,22 @@ async def the_digest(fx):
     return fx.store.get(ident) if ident else None
 
 
-async def test_the_digest_puts_actions_questions_and_news_in_three_parts_with_no_code(tmp_path, monkeypatch):
+async def test_the_digest_puts_actions_and_news_in_labelled_parts_with_no_code(tmp_path, monkeypatch):
     fx = night(tmp_path, monkeypatch, autonomy="suggest")
-    await office_question(fx)
-    question, = fx.messages("contradiction")
-    assert question.ask_code is None and question.status != "asked"      # a question never gets a code
-    ask = asked(fx, "K7F", "Re-run the archive export for the board figures")
+    asked(fx, "K7F", "Re-run the archive export for the board figures")
     acted(fx, "done", "Check the venue hours", outcome="done", status="done")
     row = await the_digest(fx)
     text = row.context["text"]
     parts = text.split("\n\n")
     assert parts[0] == "Daily digest"
-    assert [part.splitlines()[0] for part in parts[1:]] == [
-        "Waiting for your OK:", "Question (just answer in words):", "Done or found since yesterday:"]
+    assert [part.splitlines()[0] for part in parts[1:]] == ["Waiting for your OK:", "Done or found since yesterday:"]
     assert digest_text.lines_of(text, digest_text.WAITING) == [
         "Re-run the archive export for the board figures. Asked less than an hour ago."]
     assert "K7F" not in text and "code" not in text.lower() and "reply" not in text.lower()
-    q, = digest_text.lines_of(text, digest_text.QUESTION)
-    assert "room 4" in q and "room 7" in q and q.endswith("?") and not CODE.search(q.replace("room", ""))
-    assert "both" in q and "neither" in q
     assert "Done: Check the venue hours." in digest_text.lines_of(text, digest_text.DONE)
     items_are_whole(text)
     no_field_names(text)
-    assert "yes <code>" not in text and "Which is right" not in text
+    assert "yes <code>" not in text
 
 
 async def test_a_long_item_is_summarised_whole_and_an_unchecked_summary_is_never_shown(tmp_path, monkeypatch):
@@ -201,16 +178,8 @@ async def test_nothing_waiting_means_no_digest(tmp_path, monkeypatch):
     assert fx.messages("digest") == []
 
 
-async def test_an_asks_message_and_a_question_sent_on_its_own_are_plain_words(tmp_path, monkeypatch):
+async def test_an_asks_message_sent_on_its_own_is_plain_words(tmp_path, monkeypatch):
     fx = night(tmp_path, monkeypatch)
-    await office_question(fx)
-    question, = fx.messages("contradiction")
-    assert question.status == "approved" and question.ask_code is None
-    text = question.context["text"]
-    assert text.startswith("Question (just answer in words): ")
-    assert "room 4" in text and "room 7" in text and text.endswith("?")
-    no_field_names(text)
-    assert "…" not in text and "..." not in text
     ask = asked(fx, "M4P", "Re-run the archive export for the board figures", context={"notice": True})
     notice, = fx.mind.outbox.deliver_asks(fx.mind.outbox.asks_due([ask]))
     assert notice.context["text"] == "Re-run the archive export for the board figures. Reply yes or no."
@@ -218,7 +187,7 @@ async def test_an_asks_message_and_a_question_sent_on_its_own_are_plain_words(tm
 
 
 # ---------------------------------------------------------------------------
-# Contradictions: a typed decision first; an addition is compatible, only a replacement is asked
+# Contradictions: a typed decision first; an addition is compatible, a replacement is settled by the mind
 # ---------------------------------------------------------------------------
 
 async def note_statements(fx):
@@ -252,7 +221,8 @@ async def test_an_addition_is_recorded_compatible_and_never_asked(tmp_path, monk
     assert [tuple(row) for row in logged] == [("labelled", "contradiction_check", "adds")]
 
 
-async def test_a_replacement_is_asked_and_an_unsure_decision_waits_for_another_night(tmp_path, monkeypatch):
+async def test_an_unsure_decision_waits_for_another_night_and_a_replacement_is_settled_by_the_mind(tmp_path,
+                                                                                                   monkeypatch):
     fx = night(tmp_path, monkeypatch, relation="unsure")
     a = await fx.fact("turn-a", OWNER, "telegram-1", "My office is room 4.", "room 4")
     fx.shift(days=1)
@@ -264,12 +234,13 @@ async def test_a_replacement_is_asked_and_an_unsure_decision_waits_for_another_n
     fx.shift(days=1)
     replaced = await fx.mind.consolidate()
     assert replaced["counts"]["contradictions"] == 1 and fx.mind.consolidation.relation(a, b) == "replaces"
-    concern, = [c for c in fx.mind.concerns.open(limit=50) if c.kind == "question"]
-    no_field_names(concern.detail["text"])
+    kept = {row["id"]: row["retracted_by"] for row in fx.claims()}
+    assert kept[a].startswith("note:") and kept[b] is None             # the newer one is kept, nothing is asked
+    assert [c for c in fx.mind.concerns.open(limit=50) if c.kind == "question"] == []
 
 
 # ---------------------------------------------------------------------------
-# Questions answered in words
+# Free words never grant a wish or widen permissions
 # ---------------------------------------------------------------------------
 
 async def deliver(fx):
@@ -281,108 +252,12 @@ async def deliver(fx):
     return sent
 
 
-REPLIES = {"Room 4 is right; I never moved.": "first", "Room 7 since last week; the other one is old.": "second",
-           "Both: room 4 is my desk, room 7 is where I meet people.": "both",
-           "Neither any more, I work from home now.": "neither"}
-
-
-def by_reply(messages, context):
-    """The mocked decision reads the reply it was given: each case's words decide its answer."""
-    return {"answer": REPLIES.get(json.loads(messages[-1]["content"])["reply"], "unsure")}
-
-
-@pytest.mark.parametrize("reply,answer,live", [
-    ("Room 4 is right; I never moved.", "first", {"a"}),
-    ("Room 7 since last week; the other one is old.", "second", {"b"}),
-    ("Both: room 4 is my desk, room 7 is where I meet people.", "both", {"a", "b"}),
-    ("Neither any more, I work from home now.", "neither", set())])
-async def test_the_owners_words_resolve_a_question(tmp_path, monkeypatch, reply, answer, live):
-    fx = night(tmp_path, monkeypatch, mind_question_answer=by_reply)
-    a, b = await office_question(fx)
-    question, = fx.messages("contradiction")
-    assert [p["id"] for p in await deliver(fx)] == [question.id]
-    fx.shift(minutes=1)
-    await fx.mind.owner_turn(reply, turn_id="t-answer", session_id="chat-1")
-    await fx.mind.questions.drain()
-    decided = [(m, c) for m, c in fx.router.calls if c["task"] == "mind_question_answer"]
-    assert len(decided) == 1 and json.loads(decided[0][0][-1]["content"])["reply"] == reply
-    state = fx.store.get(question.id).result_metadata["question"]
-    assert state["state"] == "resolved" and state["answer"] == answer
-    claims = {row["id"]: row for row in fx.claims()}
-    assert {name for name, ident in (("a", a), ("b", b)) if claims[ident]["retracted_by"] is None} == live
-    assert fx.mind.concerns.by_key(question.dedup_key).status == "resolved"
-    await fx.mind.owner_turn(reply, turn_id="t-answer", session_id="chat-1")      # a retry
-    await fx.mind.questions.drain()
-    assert len([c for m, c in fx.router.calls if c["task"] == "mind_question_answer"]) == 1
-    fx.shift(days=1)
-    night_after = await fx.mind.consolidate()
-    assert not night_after["counts"].get("contradictions")
-    assert await deliver(fx) == []                                # nothing more is sent about it
-    from colonymind.mind.questions import open_questions
-    assert open_questions(fx.mind, "where is my office") == []
-    with closing(fx.ledger._connect()) as conn:
-        stages = {row[0] for row in conn.execute("SELECT stage FROM learning_log")}
-    assert "owner_answer" in stages
-
-
-async def test_an_unclear_reply_asks_once_more_in_plain_words_and_never_again(tmp_path, monkeypatch):
-    fx = night(tmp_path, monkeypatch, mind_question_answer={"answer": "unclear"})
-    await office_question(fx)
-    question, = fx.messages("contradiction")
-    await deliver(fx)
-    from colonymind.mind.questions import open_questions
-    carried, = open_questions(fx.mind, "which office is right")
-    assert "answer in words" in carried and "no code" in carried
-    fx.shift(minutes=1)
-    await fx.mind.owner_turn("I need more details to answer this", turn_id="t-1")
-    await fx.mind.questions.drain()
-    again, = await deliver(fx)
-    assert again["text"].startswith("Question (just answer in words): ")
-    assert "room 4" in again["text"] and "room 7" in again["text"] and again["text"].endswith("?")
-    assert not CODE.search(again["text"].replace("room", ""))
-    fx.shift(minutes=1)
-    await fx.mind.owner_turn("Hmm, let me think about it.", turn_id="t-2")
-    await fx.mind.questions.drain()
-    assert len([c for m, c in fx.router.calls if c["task"] == "mind_question_answer"]) == 2
-    assert await deliver(fx) == []                                # asked once more, never a third time
-    assert fx.store.get(question.id).result_metadata["question"]["state"] != "resolved"
-
-
-async def test_an_unanswered_question_goes_to_the_digest_once_then_expires_quietly(tmp_path, monkeypatch):
-    fx = night(tmp_path, monkeypatch)
-    await office_question(fx)
-    question, = fx.messages("contradiction")
-    await deliver(fx)
-    fx.shift(days=1, hours=1)
-    await fx.mind.tick(force=True)
-    listed = await the_digest(fx)
-    q, = digest_text.lines_of(listed.context["text"], digest_text.QUESTION)
-    assert "room 4" in q and "room 7" in q
-    assert [p["id"] for p in await deliver(fx)] == [listed.id]
-    fx.shift(days=1)
-    await fx.mind.tick(force=True)
-    later = await the_digest(fx)
-    assert later is None or "room 7" not in later.context["text"]
-    fx.shift(days=7)
-    await fx.mind.tick(force=True)
-    assert fx.store.get(question.id).result_metadata["question"]["state"] == "expired"
-    sent = [row for row in fx.store.intentions(kind=["message"], limit=100) if row.status == "sent"]
-    assert sum("room 7" in (row.context or {}).get("text", "") for row in sent) == 2   # asked, then listed once
-    from colonymind.mind.questions import open_questions
-    assert open_questions(fx.mind, "where is my office") == []
-
-
 async def test_words_never_grant_a_wish_or_widen_permissions(tmp_path, monkeypatch):
-    fx = night(tmp_path, monkeypatch, mind_question_answer={"answer": "second"})
-    await office_question(fx)
-    question, = fx.messages("contradiction")
-    await deliver(fx)
+    fx = night(tmp_path, monkeypatch)
     wish = asked(fx, "W9K", "A wish: reading scanned tables", type_="wish", kind="note")
     change = asked(fx, "P3Q", "Let Sam be messaged without asking first", type_="people_change", kind="note")
     fx.shift(minutes=1)
-    await fx.mind.owner_turn("Yes, the second one, and yes to everything else too.", turn_id="t-1")
-    await fx.mind.questions.drain()
-    assert fx.store.get(question.id).result_metadata["question"]["answer"] == "second"
+    await fx.mind.owner_turn("Yes, and yes to everything else too.", turn_id="t-1")
     assert fx.store.get(wish.id).status == "asked" and fx.store.get(change.id).status == "asked"
     await owner_answers(fx.mind, "W9K", "sure, if it is free")
     assert fx.store.get(wish.id).status == "asked"
@@ -393,7 +268,7 @@ async def test_words_never_grant_a_wish_or_widen_permissions(tmp_path, monkeypat
 
 
 # ---------------------------------------------------------------------------
-# Delivery: once a day, never repeating what reached the owner, held items listed only when delivered
+# Delivery: once a day, held items listed only when delivered
 # ---------------------------------------------------------------------------
 
 async def test_one_digest_a_day_across_restarts_retries_and_two_bodies(tmp_path, monkeypatch):
@@ -433,17 +308,6 @@ async def test_one_digest_a_day_across_restarts_retries_and_two_bodies(tmp_path,
     assert len(fx.messages("digest")) == 2
 
 
-async def test_what_reached_the_owner_is_not_repeated_in_the_digest(tmp_path, monkeypatch):
-    fx = night(tmp_path, monkeypatch)
-    await office_question(fx)
-    await deliver(fx)                                             # the question reached the owner on its own
-    asked(fx, "K7F", "Re-run the archive export for the board figures")
-    fx.shift(hours=3)
-    text = (await the_digest(fx)).context["text"]
-    assert "room 4" not in text and "room 7" not in text
-    assert digest_text.lines_of(text, digest_text.QUESTION) == []
-
-
 async def test_held_items_are_listed_only_once_the_digest_is_delivered(tmp_path, monkeypatch):
     from test_owner_gate_mind import Fx, M
     monkeypatch.setenv("COLONYMIND_OWNER_CONTACT_ID", OWNER)
@@ -480,15 +344,6 @@ async def test_an_ask_is_answered_in_the_owners_own_plain_words(tmp_path, monkey
     for message in ("ok do it?", "not sure", "yes, but only the first part", "later"):
         await owner_answers(fx.mind, "K7F", message)
     assert fx.store.get(ask.id).status == "asked"
-    await office_question(fx)
-    await deliver(fx)                                                 # a question is open and answerable
-    fx.shift(minutes=1)
-    await fx.mind.owner_turn("yes K7F", turn_id="t-yes")
-    await fx.mind.questions.drain()
-    assert [c for m, c in fx.router.calls if c["task"] == "mind_question_answer"] == []   # a code reply: never read
-    await fx.mind.owner_turn("Hmm.", turn_id="t-other")
-    await fx.mind.questions.drain()
-    assert len([c for m, c in fx.router.calls if c["task"] == "mind_question_answer"]) == 1  # the guard stopped it
     assert (await owner_answers(fx.mind, "K7F", "please yes")).status == "approved"
 
 

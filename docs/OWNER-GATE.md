@@ -75,7 +75,7 @@ as they would without it, so an outage never turns a review into a model call.
   invalidation) stays as it was settled.
 - `digest`: the mind's message is settled `expired` ("held for the digest: ..."), never the owner's verdict on
   its type. A held finding or offer lands in the digest as `Found: ...` or `Offer: ...`, as an outreach that
-  expired unsent does; a held question in the digest's Question part; everything else, outside alerts
+  expired unsent does; a held question of an earlier build is never listed; everything else, outside alerts
   included, as `Held for this digest: ...`, once. One digest lists at most 12 (oldest first) and says how many
   more wait; the rest stay held for the next digest. A listed item counts as listed only once the body reports
   that digest delivered (`digest_ref` names the digest it rides in until then); a digest that expires, fails or

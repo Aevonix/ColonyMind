@@ -288,21 +288,21 @@ async def test_consolidation_runs_inside_every_memory_episode_and_changes_what_i
         assert "episodes" in full["notes"][0].context["done"], ident
         assert [note.context["done"] for note in ablated["notes"]] == [["lessons", "work", "wishes"]], ident
     # What the night changes for the probe: the summary of a long owner session, recalled in the probe
-    # session, and the question the mind put to the owner about two conflicting statements, which its recall
-    # then carries. The other types give a night nothing to consolidate (sessions of one or two turns).
+    # session, and the older of two conflicting statements, which the night retracts itself (the newer one
+    # replaces it), so the probe's recall carries the newer time only. The owner is asked nothing. The other
+    # types give a night nothing to consolidate (sessions of one or two turns).
     assert differing(views, "full", "full-consolidation") == {"preference-after-distractors", "contradiction-ask"}
     for ident in scenarios:
         full, ablated = views[(ident, "full")], views[(ident, "full-consolidation")]
-        memory, other = full["sections"].get("colonymind-memory", ""), ablated["sections"].get("colonymind-memory", "")
+        memory, other = (STAMP.sub("<t>", view["sections"].get("colonymind-memory", "")) for view in (full, ablated))
         if full["scenario"] == "preference-after-distractors":
             assert SUMMARY in memory and "episode_summary" in memory and SUMMARY not in other, ident
         if full["scenario"] == "contradiction-ask":
-            question, = full["questions"]
-            assert question.entity_id == OWNER and question.status == "approved", ident
-            assert f"mind:{question.id}:decided_act" in memory and "decided_act" not in other, ident
-            assert ablated["questions"] == [], ident
-        else:
-            assert full["questions"] == [], ident
+            older, newer = (next(found["time"] for found in (pattern.search(entry["user"]) for pattern in PICKUP)
+                                 if found) for entry in full["episodes"][:2])
+            assert newer in memory and older not in memory, (ident, older, newer, memory)
+            assert newer in other and older in other, (ident, older, newer, other)
+        assert full["questions"] == [] and ablated["questions"] == [], ident
 
 
 @needs_hermes

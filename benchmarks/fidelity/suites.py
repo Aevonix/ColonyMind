@@ -23,9 +23,10 @@ passed and never an error.
   that names its subject needs no earlier message.
 - ``language``: one person per language, with three statements, a conversation and one long statement. A real
   night writes the person's digest (``DIGEST_SYSTEM``) and the conversation's episode summary (``EPISODE_SYSTEM``),
-  and the plain summary shortens the long statement the way an owner question quotes one (``plain.summarize``,
-  ``SUMMARY_SYSTEM``). What is graded is what production accepted: the digest the night stored in the person's
-  record, the episode summary it stored in the ledger, and the summary ``plain.summarize`` returned. An answer
+  and the plain summary shortens the long statement the way the digest shortens an item (``plain.summarize``,
+  ``SUMMARY_SYSTEM``, to ``SUMMARY_CHARS``). What is graded is what production accepted: the digest the night
+  stored in the person's record, the episode summary it stored in the ledger, and the summary ``plain.summarize``
+  returned. An answer
   production refused never reaches anyone, so it is never graded (unscored, never passed). **Trap**: an output in
   another language than its source's. **Correct**: no trap, and the output says only what its source says, with
   names kept as they were written. The statements are committed as
@@ -62,6 +63,8 @@ CONTEXT_HOLDERS = ('own', 'other', 'ambiguous', 'none')
 CONTEXT_SESSION = 'fidelity-context'
 #: What a context item's setup may spend at most: one claim job per earlier message, and a little room (my choice).
 SETUP_JOBS = 8
+#: The length the plain summary of the long statement is asked for and graded at.
+SUMMARY_CHARS = 200
 Z95 = 1.959963984540054
 
 
@@ -419,7 +422,7 @@ async def language_outputs(item: Dict[str, Any], router, work: Path, *, now) -> 
     from colonymind.feedback import TypeFeedbackStore
     from colonymind.initiatives.store import InitiativeStore
     from colonymind.mind import Mind, plain
-    from colonymind.mind.consolidate import STATEMENT_CHARS, TASK_DIGEST, TASK_EPISODE
+    from colonymind.mind.consolidate import TASK_DIGEST, TASK_EPISODE
     from colonymind.self_model.expectations import ExpectationEngine, ExpectationStore
     from colonymind.turns import TurnIdempotencyLedger
     work = Path(work)
@@ -461,7 +464,7 @@ async def language_outputs(item: Dict[str, Any], router, work: Path, *, now) -> 
         answered = {'digest': captured.answered[TASK_DIGEST], 'episode': captured.answered[TASK_EPISODE]}
         # Only the long statement's summary is graded as the summary, never one the night wrote for its own use.
         captured.answered[plain.SUMMARY_TASK] = 0
-        summary = await plain.summarize(captured, item['long_statement'], STATEMENT_CHARS)
+        summary = await plain.summarize(captured, item['long_statement'], SUMMARY_CHARS)
         answered['summary'] = captured.answered[plain.SUMMARY_TASK]
     finally:
         store.close()

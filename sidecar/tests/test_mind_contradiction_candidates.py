@@ -1,7 +1,7 @@
 """Contradiction candidates by meaning: the night pairs claims of one person under two different keys.
 
 The contradictions stage paired two claims only when their ``(subject, predicate)`` key was identical, so the same
-fact filed under two keys ("works at" and "employer") was never put to the owner and the old value was recalled as
+fact filed under two keys ("works at" and "employer") was never checked and the old value was recalled as
 current. The night now also embeds each person's claim keys in one batch, pairs claims whose keys are close,
 interleaves that list with the exact-key list round robin, and sends both to the same typed relation decision under
 the same cap. Everything runs against the real ledger, claim projection and mind (``test_mind_consolidate``'s
@@ -11,7 +11,6 @@ fixture), with a stub embedder; nothing about keys may outlive the night.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import math
 import sqlite3
@@ -22,9 +21,7 @@ import pytest
 
 import colonymind.mind.consolidate as consolidate
 import colonymind.vector as vector
-from colonymind.mind.consolidate import (KEY_SIMILARITY_BOUND, QUESTION_KEY, RELATION_TASK, RELATIONS_PER_NIGHT,
-                                        TASK_DIGEST, key_text)
-from colonymind.mind.questions import asked_of
+from colonymind.mind.consolidate import KEY_SIMILARITY_BOUND, RELATION_TASK, RELATIONS_PER_NIGHT, TASK_DIGEST, key_text
 from test_mind_consolidate import CONTACT, OWNER, Fixture
 
 WORKS_AT, EMPLOYER = key_text("speaker", "works at"), key_text("speaker", "employer")
@@ -68,9 +65,9 @@ def relation_calls(fx):
             if context["task"] == RELATION_TASK]
 
 
-def questions(fx):
-    return [concern for concern in fx.mind.concerns.open(limit=50, status=("open", "intended"))
-            if concern.kind == "question"]
+def retracted_by(fx):
+    """What retracted each claim (None: still live). The mind's own settlement cites the night's note."""
+    return {row["id"]: row["retracted_by"] for row in fx.claims()}
 
 
 @pytest.fixture
@@ -85,10 +82,10 @@ def night(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 1. The same fact under two keys becomes a candidate, is decided, and is asked naming both keys
+# 1. The same fact under two keys becomes a candidate, is decided, and the mind keeps the newer statement
 # ---------------------------------------------------------------------------
 
-async def test_works_at_and_employer_under_two_keys_become_one_candidate_and_one_question(night):
+async def test_works_at_and_employer_under_two_keys_become_one_candidate_and_the_newer_is_kept(night):
     fx = night
     embedder = KeyEmbedder({WORKS_AT: "job", EMPLOYER: "job"})
     fx.mind.consolidation.embedder = embedder
@@ -103,66 +100,44 @@ async def test_works_at_and_employer_under_two_keys_become_one_candidate_and_one
     assert call["older"]["said"] == "I work at Acme." and call["newer"]["said"] == "My employer is Globex."
     assert result["counts"]["contradictions"] == 1 and result["counts"]["keys_embedded"] == 2
 
-    concern, = questions(fx)
-    assert set(concern.sources) == {first, second}
-    assert concern.detail["keys"] == [["speaker", "works at"], ["speaker", "employer"]]
-    single = {hashlib.sha256(f"{OWNER}|speaker|{predicate}".encode()).hexdigest()[:16]
-              for predicate in ("works at", "employer")}
-    assert concern.dedup_key.startswith(QUESTION_KEY) and concern.dedup_key[len(QUESTION_KEY):] not in single
-
-    await fx.mind.tick(force=True)
-    ask, = fx.messages("contradiction")
-    assert ask.description == "Which statement to keep about your works at and employer"
-    text = ask.context["text"]
-    assert '"I work at Acme."' in text and '"My employer is Globex."' in text
-    assert "works at" not in text and "employer" not in text.replace("My employer is Globex.", "")  # plain words
-    assert asked_of(ask)["claims"] == [first, second] and asked_of(ask)["about"] == "your works at and employer"
+    kept = retracted_by(fx)
+    assert kept[first].startswith("note:") and kept[second] is None       # settled by the mind, under two keys
+    assert fx.messages("contradiction") == []                             # and the owner is asked nothing
 
 
-async def test_a_cross_key_question_stands_on_a_night_without_embeddings_and_resolves_when_one_side_goes(night):
-    """The question rests on the recorded decision, not on the night's vectors: an endpoint that is down the
-    next night neither drops it nor asks it again; a retraction resolves it as for an exact key."""
+async def test_a_cross_key_pair_decided_on_an_earlier_night_is_settled_on_a_night_without_embeddings(night):
+    """The settlement rests on the recorded decision, not on the night's vectors: a pair an earlier night decided
+    "replaces" is settled when the embedding endpoint is down, and is never judged again."""
     fx = night
-    fx.mind.consolidation.embedder = KeyEmbedder({WORKS_AT: "job", EMPLOYER: "job"})
-    await fx.fact("t-1", OWNER, "s-1", "I work at Acme.", "Acme", predicate="works_at")
+    first = await fx.fact("t-1", OWNER, "s-1", "I work at Acme.", "Acme", predicate="works_at")
     fx.shift(hours=2)
     second = await fx.fact("t-2", OWNER, "s-2", "My employer is Globex.", "Globex", predicate="employer")
-    await fx.mind.consolidate()
-    concern, = questions(fx)
+    fx.mind.consolidation._record_relation({"id": first}, {"id": second}, "replaces", contact_id=OWNER,
+                                           by="note:earlier", now=fx.now)        # as an earlier night left it
 
     fx.mind.consolidation.embedder = KeyEmbedder(fail=ConnectionError("embedding endpoint down"))
     fx.shift(days=1)
-    quiet = await fx.mind.consolidate()
-    assert quiet["counts"].get("resolved", 0) == 0 and fx.mind.concerns.get(concern.id).status == "open"
-    assert relation_calls(fx) and len(relation_calls(fx)) == 1           # decided once, never again
-
-    with closing(fx.ledger._connect()) as conn, conn:
-        conn.execute("UPDATE source_claims SET retracted_by='owner-correction' WHERE id=?", (second,))
-    fx.shift(days=1)
-    resolved = await fx.mind.consolidate()
-    assert resolved["counts"].get("resolved") == 1 and fx.mind.concerns.get(concern.id).status == "resolved"
+    result = await fx.mind.consolidate()
+    assert relation_calls(fx) == [] and result["counts"]["contradictions"] == 1
+    kept = retracted_by(fx)
+    assert kept[first].startswith("note:") and kept[second] is None
 
 
-async def test_the_owners_answer_drops_every_live_copy_of_the_value_under_its_own_key(night):
-    """A cross-key question's two claims are filed under two keys: keeping the first retracts the second value,
-    including a copy of it said again under the second key (the copies are read under each dropped claim's key)."""
+async def test_keeping_the_newer_drops_every_live_copy_of_the_older_value_under_its_own_key(night):
+    """A cross-key pair's two claims are filed under two keys: keeping the newer retracts the older value,
+    including a copy of it said before under the first key (the copies are read under the dropped claim's key)."""
     fx = night
     fx.mind.consolidation.embedder = KeyEmbedder({WORKS_AT: "job", EMPLOYER: "job"})
-    first = await fx.fact("t-1", OWNER, "s-1", "I work at Acme.", "Acme", predicate="works_at")
+    copy = await fx.fact("t-1", OWNER, "s-1", "I work at Acme.", "Acme", predicate="works_at")
     fx.shift(hours=1)
-    copy = await fx.fact("t-2", OWNER, "s-2", "My employer is Globex.", "Globex", predicate="employer")
+    witness = await fx.fact("t-2", OWNER, "s-2", "I work at Acme.", "Acme", predicate="works_at")
     fx.shift(hours=1)
     newest = await fx.fact("t-3", OWNER, "s-3", "My employer is Globex.", "Globex", predicate="employer")
-    await fx.mind.consolidate()
-    await fx.mind.tick(force=True)
-    ask, = fx.messages("contradiction")
-    question = asked_of(ask)
-    assert question["claims"] == [first, newest]                          # one witness per value: the newest
-
-    assert fx.mind.consolidation.settle_question(question, "first", ref=f"intention:{ask.id}", now=fx.now)
-    retracted = {row["id"]: row["retracted_by"] for row in fx.claims()}
-    assert retracted[newest] == retracted[copy] == f"intention:{ask.id}"
-    assert retracted[first] is None
+    result = await fx.mind.consolidate()
+    assert copy != witness and result["counts"]["contradictions"] == 1    # one witness per value: the newest
+    kept = retracted_by(fx)
+    assert kept[witness] == kept[copy] and kept[copy].startswith("note:")
+    assert kept[newest] is None
 
 
 # ---------------------------------------------------------------------------
@@ -181,10 +156,8 @@ async def test_identical_keys_are_still_paired_with_the_embedder_on(night):
     result = await fx.mind.consolidate()
     assert [call["about"] for call in relation_calls(fx)] == ["your office location"]
     assert result["counts"]["contradictions"] == 1
-    concern, = questions(fx)
-    assert set(concern.sources) == {first, second} and "keys" not in concern.detail
-    ident = hashlib.sha256(f"{OWNER}|speaker|office location".encode()).hexdigest()[:16]
-    assert concern.dedup_key == f"{QUESTION_KEY}{ident}"                 # the exact key's question id is unchanged
+    kept = retracted_by(fx)
+    assert kept[first].startswith("note:") and kept[second] is None      # the exact key's pair is settled as before
 
 
 # ---------------------------------------------------------------------------
@@ -205,7 +178,7 @@ async def test_claims_of_two_people_are_never_paired_however_close_their_keys(ni
     await fx.mind.consolidate()
     assert sorted(sorted(batch) for batch in embedder.batches) == [sorted([EMPLOYER, town]),
                                                                    sorted([WORKS_AT, home])]  # one per person
-    assert relation_calls(fx) == [] and questions(fx) == []
+    assert relation_calls(fx) == [] and set(retracted_by(fx).values()) == {None}
 
 
 # ---------------------------------------------------------------------------
@@ -394,13 +367,12 @@ async def test_without_embeddings_the_night_pairs_exact_keys_only(night, embedde
                 return [self.vector(text)[: 64 - index] for index, text in enumerate(texts)]
         embedder = Ragged({WORKS_AT: "job", EMPLOYER: "job"})
     fx.mind.consolidation.embedder = embedder
-    first, second = await plant(fx)
+    first, _ = await plant(fx)
     result = await fx.mind.consolidate()
     assert [call["about"] for call in relation_calls(fx)] == ["your office location"]
-    concern, = questions(fx)
-    ident = hashlib.sha256(f"{OWNER}|speaker|office location".encode()).hexdigest()[:16]
-    assert concern.dedup_key == f"{QUESTION_KEY}{ident}" and set(concern.sources) == {first, second}
-    assert "keys" not in concern.detail and "keys_embedded" not in result["counts"]
+    kept = retracted_by(fx)
+    assert kept.pop(first).startswith("note:") and set(kept.values()) == {None}   # the office pair only
+    assert "keys_embedded" not in result["counts"]
     if embedder is not None:
         assert result["counts"]["key_embedding_failed"] == 1
 

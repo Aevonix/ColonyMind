@@ -75,8 +75,8 @@ FACULTIES: Tuple[Faculty, ...] = (
             "The owner's turn carries a status block: autonomy level, quiet hours, budgets used, the breaker, "
             "faculties switched off and health problems.", "context.status", "all-on-status"),
     _mind("consolidation", "Nightly consolidation", "the nightly consolidation",
-          "Each night the mind settles contradictions (and asks the owner about them), writes per-contact digests "
-          "and summarises episodes."),
+          "Each night the mind settles contradictions (it keeps the newer statement itself), writes per-contact "
+          "digests and summarises episodes."),
     _mind("contradictions_by_meaning", "Contradictions by meaning", "contradictions by meaning",
           "Each night two of a person's statements filed under different names that mean the same thing are "
           "compared too, and a pair that disagrees goes to the same replace-or-add decision; off, only statements "

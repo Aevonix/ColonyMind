@@ -14,12 +14,11 @@ its own flag, so each ablation turns off one faculty:
    operations are validated before anything is admitted
 3. contradictions: two live scalar claims about the same subject and predicate
    with different values, or under two keys whose embeddings are close (the same
-   fact filed under two names), are first put to one typed decision (does the newer
+   fact filed under two names), are put to one typed decision (does the newer
    statement replace the older, or add to it?); an addition is recorded as
-   compatible and never asked, and only a replacement becomes one question
-   concern carrying a typed message candidate to the owner in plain words,
-   which the tick's ``_act`` forms like any other concern; at most one new
-   question a night (the owner answers it in words, ``P/mind/questions.py``)
+   compatible, and on a replacement the mind keeps the newer statement itself:
+   the older one is retracted by the night's note, with no question to the owner
+   (one an earlier build raised is closed by ``P/mind/questions.py``)
 4. per-contact digests, written into the contact's own record through the contact
    store (``set_digest``, the ``digest`` / ``digest_sources`` / ``digest_writer`` columns
    of the people milestone): at most six stale contacts a night, never the owner;
@@ -38,7 +37,8 @@ the agent's own page and at most six people a night.
 Every input query excludes the mind's own rows (``SELF_TURN_SQL``): the
 autobiography and the episode summaries are the agent's record, not the
 person's conversation. Claims are read one witness per value (the newest), the
-rule recall applies; nothing in the claim store is rewritten. Every call is
+rule recall applies; the one change a night makes in the claim store is the
+retraction of a statement a newer one replaces (stage 3). Every call is
 gated by the shared day budget (``Authority.tokens_allowed``) and by
 ``learn_share x llm_tokens_per_day``, and its real usage is charged at once to
 the run's ``note/consolidation`` audit row, so the day budget sees it. Every
@@ -65,7 +65,6 @@ from colonymind.usage import charged_tokens
 
 from . import audit
 from .authority import boundary_crossed
-from .concerns import SETTLED_FOR
 from colonymind.memory.blocks import BlockLedger
 from colonymind.memory import blocks as resident
 from colonymind.health_counters import bump
@@ -102,9 +101,11 @@ RUN_DEADLINE_S = 900.0
 CLAIM_SETTLE_S, CLAIM_POLL_S = 120.0, 0.25
 DEFAULT_DEADLINE = 60.0
 FINDING_EVENTS = frozenset({"finding", "outcome_done", "goal_adopted"})
-QUESTION_KEY = "reach_out:contradiction:"           # a contradiction's concern and owner question share this key
-QUESTIONS_PER_NIGHT = 1
-# Before a contradiction is raised, a typed decision: does the newer statement replace the older or add to it?
+QUESTION_KEY = "reach_out:contradiction:"           # the key of the concern and question an earlier build raised
+# The learning-log stage of a statement the mind retracted itself because a newer one replaces it (never the
+# owner's ``owner_answer``).
+REPLACED_STAGE = "replaced_by_newer"
+# A typed decision per pair of statements: does the newer one replace the older or add to it?
 RELATION_TASK = "mind_claim_relation"
 RELATIONS = ("replaces", "adds")
 RELATION_KEY = "claims.relation:"                   # mind_state: one pair's decided relation, kept for good
@@ -123,7 +124,6 @@ KEY_EMBED_PASS_S = 120.0
 KEY_EMBED_SHARE = 0.25
 RELATION_OUTPUT_TOKENS = 40
 RELATION_INPUT_CHARS = 1000
-STATEMENT_CHARS = 200                               # one statement as the owner's question quotes it
 RELATION_SYSTEM = (
     "You read two statements one person made about the same thing, the older first, and decide how the newer one "
     "stands to the older. \"replaces\": they cannot both hold now (a changed fact, a correction, one choice "
@@ -1026,7 +1026,7 @@ class Consolidation:
 
     def _record_relation(self, a: Mapping[str, Any], b: Mapping[str, Any], verdict: str, *, contact_id: str,
                          by: str, now: datetime) -> None:
-        """The pair's relation, kept for good (the question is never asked again), and in the learning log."""
+        """The pair's relation, kept for good (the pair is never judged again), and in the learning log."""
         self.mind_state.set(f"{RELATION_KEY}{_pair_id(a['id'], b['id'])}", text=verdict, causes=[a["id"], b["id"], by],
                             now=now)
         try:
@@ -1092,29 +1092,61 @@ class Consolidation:
                 cited.update(str(cause) for cause in entry.get("causes") or [] if str(cause).startswith("claim:"))
         return pairs, cited
 
-    def _conflicts(self, claims: Iterable[Mapping[str, Any]], replaced: Optional[Tuple[set, set]] = None
-                   ) -> Dict[Tuple[str, ...], Tuple[Dict[str, Any], Dict[str, Any], List[str]]]:
-        """Per key: the newest pair of live scalar claims decided ``replaces`` (a newer statement that cannot stand
-        beside the older one). A pair decided ``adds``, or not decided yet, is none. The key is the pair's
-        ``(subject_key, predicate)``; a pair filed under two keys is keyed by both, sorted (``subject_key, predicate,
-        subject_key, predicate``), and carries the claims of both keys. ``replaced`` is ``_replaced()``, read once
-        per night by the caller."""
-        claims = list(claims)
-        found: Dict[Tuple[str, ...], Tuple[Dict[str, Any], Dict[str, Any], List[str]]] = {}
+    def _replaced_pairs(self, claims: Iterable[Mapping[str, Any]], replaced: Optional[Tuple[set, set]] = None
+                        ) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
+        """Every pair of live scalar claims decided ``replaces`` (a newer statement that cannot stand beside the
+        older one), older first: the pairs under one key, then the pairs filed under two keys. A pair decided
+        ``adds``, or not decided yet, is none. ``replaced`` is ``_replaced()``, read once per night by the caller."""
         groups = self._groups(claims)
-        for key, group in groups.items():
-            pair = next(((a, b) for a, b in reversed(self._pairs(group)) if self.relation(a["id"], b["id"]) == "replaces"),
-                        None)
-            if pair is not None:
-                found[key] = (pair[0], pair[1], [c["id"] for c in group])
+        found = [(a, b) for group in groups.values() for a, b in self._pairs(group)
+                 if self.relation(a["id"], b["id"]) == "replaces"]
         pairs, cited = self._replaced() if replaced is None else replaced
         decided = [claim for group in groups.values() for claim in group if claim["id"] in cited]
-        for a, b in self._cross(decided):                    # the newest pair of two keys is the last one found
-            if _pair_id(a["id"], b["id"]) in pairs:
-                sides = (self._key(a), self._key(b))
-                found[tuple(part for side in sorted(sides) for part in side)] = (
-                    a, b, [c["id"] for side in sides for c in groups[side]])
-        return found
+        return found + [(a, b) for a, b in self._cross(decided) if _pair_id(a["id"], b["id"]) in pairs]
+
+    def _retract(self, conn: Any, contact: Optional[str], drop: Sequence[str], pair: Sequence[str], ref: str,
+                 now: datetime) -> List[str]:
+        """Inside the caller's write transaction: each statement of ``drop`` is retracted by ``ref`` and, with it,
+        every other live copy of its value (the same value for the same period, said again, in a store that does
+        not fold restatements), or the next copy would stand in its place. Returns the copies retracted. Raises
+        when a statement of ``drop`` is no longer live: nothing is changed (the transaction rolls back)."""
+        from colonymind.beliefs.source_projection import witness_key
+        # Each dropped claim's copies are read under its own key (a pair can be filed under two).
+        keys = conn.execute("SELECT DISTINCT subject_key, predicate FROM source_claims WHERE id IN "
+                            f"({','.join('?' for _ in drop)})", list(drop)).fetchall() if contact and drop else []
+        current = [row for key in keys for row in self._current_claims(conn, contact, now, key=(key[0], key[1]))]
+        values = {witness_key(row) for row in current if str(row["id"]) in drop} - {None}
+        copies = [str(row["id"]) for row in current if str(row["id"]) not in pair and witness_key(row) in values]
+        for ident in drop:
+            changed = conn.execute("UPDATE source_claims SET retracted_by=? WHERE id=? AND retracted_by IS NULL "
+                                   "AND superseded_by IS NULL", (ref, ident)).rowcount
+            if changed != 1:
+                raise RuntimeError("a statement to retract is no longer live")
+        return [ident for ident in dict.fromkeys(copies) if conn.execute(
+            "UPDATE source_claims SET retracted_by=? WHERE id=? AND retracted_by IS NULL AND superseded_by IS NULL",
+            (ref, ident)).rowcount == 1]
+
+    def _keep_newer(self, contact_id: str, a: Mapping[str, Any], b: Mapping[str, Any], *, by: str,
+                    now: datetime) -> bool:
+        """A pair decided ``replaces``, settled by the mind itself: the newer statement ``b`` stays and the older
+        one ``a`` is retracted by ``by`` (the night's note) with every live copy of its value, as the owner's
+        answer "second" was applied (``_retract``); nothing is deleted. The learning log records each retraction
+        under ``REPLACED_STAGE``, never as an owner answer. False, with nothing changed, when either statement is
+        no longer the live witness of its value (a correction, a retraction or a restatement came first)."""
+        from colonymind.memory import learning
+        older, newer = str(a["id"]), str(b["id"])
+        with self._conn() as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if not {older, newer} <= {str(claim["id"]) for claim in self._live_claims(conn, contact_id, now)}:
+                return False
+            for ident in [older, *self._retract(conn, contact_id, [older], [older, newer], by, now)]:
+                try:
+                    learning.log(conn, store="claim", action="declined", stage=REPLACED_STAGE,
+                                 reason="a newer statement replaces it", item_id=ident, contact_id=contact_id,
+                                 refs=[by, newer])
+                except Exception as error:
+                    logger.warning("replaced statement not logged (%s)", type(error).__name__)
+        return True
 
     def _similar(self, claims: Iterable[Mapping[str, Any]], vectors: Mapping[Tuple[str, str], Sequence[float]],
                  bound: Optional[float] = None) -> List[Tuple[Dict[str, Any], Dict[str, Any], float]]:
@@ -1225,15 +1257,14 @@ class Consolidation:
         return norm_value(value)
 
     async def contradictions(self, night: Night, now: datetime) -> None:
-        """Before a contradiction is raised, a typed decision reads each undecided pair of statements (newer against
-        older, newest first, at most ``RELATIONS_PER_NIGHT``): ``adds`` (both can hold: a detail, a refinement,
-        another item) is recorded as compatible and never asked; ``replaces`` (they cannot both stand) is; anything
-        else is left for a later night. The pairs come from two lists taken in turn: pairs under one key, and pairs
-        of one person's claims under two keys whose embeddings are close (``_similar_pairs``; none without an
-        embedder), each list newest first and never reranked. Each pair decided ``replaces`` becomes one typed
-        question concern the ranker forms into one owner question, at most ``QUESTIONS_PER_NIGHT`` new ones a night
-        (the newest pair first), so the owner's message budget is left to duty work; the rest are raised on later
-        nights."""
+        """A typed decision reads each undecided pair of statements (newer against older, newest first, at most
+        ``RELATIONS_PER_NIGHT``): ``adds`` (both can hold: a detail, a refinement, another item) is recorded as
+        compatible; ``replaces`` (they cannot both stand) is recorded too; anything else is left for a later night.
+        The pairs come from two lists taken in turn: pairs under one key, and pairs of one person's claims under two
+        keys whose embeddings are close (``_similar_pairs``; none without an embedder), each list newest first and
+        never reranked. Then every live pair decided ``replaces``, tonight or on an earlier night, is settled by
+        the mind itself (``_keep_newer``: the newer statement stays, the older one is retracted) and the owner is
+        asked nothing. A question concern an earlier build raised is resolved and its unsent question withdrawn."""
         if not self.faculties.get("consolidation", True):
             return
         undecided: List[Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]] = []
@@ -1253,36 +1284,18 @@ class Consolidation:
                 night.count("compatible")
             elif verdict is None:
                 night.count("undecided")
-        found: Dict[str, Dict[str, Any]] = {}
         replaced = self._replaced()
         for cid, claims in live.items():
-            for key, (a, b, ids) in self._conflicts(claims, replaced).items():
-                info = self._pair_info(cid, a, b) if len(key) > 2 else {
-                    "contact_id": cid, "subject_key": key[0], "predicate": key[1],
-                    "subject": str(a.get("subject") or key[0])}
-                found[f"{QUESTION_KEY}{self._ask_id(cid, *key)}"] = {**info, "a": a, "b": b, "ids": ids}
+            for a, b in self._replaced_pairs(claims, replaced):
+                if self._keep_newer(cid, a, b, by=f"note:{night.note_id}", now=now):
+                    night.count("contradictions")
         for concern in self.concerns.open(limit=10000, status=("open", "intended")):
-            if str(concern.dedup_key).startswith(QUESTION_KEY) and concern.dedup_key not in found:
+            if str(concern.dedup_key).startswith(QUESTION_KEY):
                 # The question goes first: its cancellation settles the intention, which would drop the concern.
                 if self._withdraw_question(concern.dedup_key):
                     night.count("withdrawn")
-                self.concerns.resolve(concern.id, note="resolved: the claims no longer contradict", now=now)
+                self.concerns.resolve(concern.id, note="resolved: the mind keeps the newer statement itself", now=now)
                 night.count("resolved")
-        settled = self.concerns.settled_keys(now - SETTLED_FOR)
-        new: List[Tuple[str, Dict[str, Any]]] = []
-        for key, info in found.items():
-            existing = self.concerns.by_key(key)
-            if key in settled or (existing is not None and existing.status == "intended"):
-                continue
-            if existing is not None and existing.status == "open":
-                await self._raise_question(night, key, info, now)     # still waiting for the ranker: refreshed
-            elif self.store.get_by_dedup_key(key) is None:            # asked once already: never again
-                new.append((key, info))
-        new.sort(key=lambda item: max(self._stamp(item[1]["a"]), self._stamp(item[1]["b"])), reverse=True)
-        for key, info in new[:QUESTIONS_PER_NIGHT]:
-            concern, outcome = await self._raise_question(night, key, info, now)
-            if concern is not None and outcome != "settled":
-                night.count("contradictions")
 
     async def _decide_relation(self, night: Night, info: Mapping[str, Any], a: Mapping[str, Any],
                                b: Mapping[str, Any], now: datetime) -> Optional[str]:
@@ -1329,72 +1342,6 @@ class Consolidation:
         local = when.astimezone(self.tz)
         return f"{local.strftime('%B')} {local.day}"
 
-    async def _said(self, night: Night, claim: Mapping[str, Any]) -> Optional[str]:
-        """One statement as the question quotes it: the person's own words when they fit as whole sentences, else
-        a checked shorter version from the night's typed call (``plain.whole``); None when neither is to be had."""
-        from . import plain
-        words = _statement(claim)
-        shown = plain.fit(words, STATEMENT_CHARS)
-        if shown:
-            return shown
-        parsed = await self._call(night, task=plain.SUMMARY_TASK,
-                                  system=plain.SUMMARY_SYSTEM.format(limit=STATEMENT_CHARS),
-                                  user=json.dumps({"item": plain.clean(words)[:plain.SOURCE_CHARS]}, ensure_ascii=False),
-                                  schema=plain.summary_schema(STATEMENT_CHARS), max_output_tokens=200)
-        summary = (parsed or {}).get("sentence")
-        return plain.whole(summary, words, STATEMENT_CHARS) if isinstance(summary, str) else None
-
-    async def _who(self, contact_id: str) -> Tuple[str, str]:
-        """How the question names who made the statements: ``("You", "you")`` for the owner, else the person's
-        name as the contact store has it (never an internal id)."""
-        if contact_id == self.owner_id:
-            return "You", "you"
-        record = None
-        getter = getattr(self.contacts, "get", None)
-        if callable(getter):
-            try:
-                record = getter(contact_id)
-                record = await record if inspect.isawaitable(record) else record
-            except Exception as error:
-                logger.debug("contact %s unreadable for a question (%s)", contact_id, type(error).__name__)
-        name = next((str(value).strip() for value in (self._field(record, key) for key in
-                     ("display_name", "name", "full_name")) if value and str(value).strip()), "") if record else ""
-        return (name or "One of your contacts"), "they"
-
-    async def _raise_question(self, night: Night, key: str, info: Mapping[str, Any],
-                              now: datetime) -> Tuple[Any, str]:
-        """The question as a typed message candidate to the owner, in plain words: who made the two statements, what
-        each said and when, and how to answer (the first, the second, both or neither), with no code and no internal
-        field name. ``_act`` forms it through rank and authority like any other concern (level, budgets); where the
-        level would ask, it goes to the digest instead (``questions.to_digest``), and its dedup key reports it once.
-        A statement too long to quote whole that no checked summary shortens waits for a later night."""
-        from . import digest as digest_text
-        from .rank import Candidate
-        cid, a, b = info["contact_id"], info["a"], info["b"]
-        first, second = await self._said(night, a), await self._said(night, b)
-        if not first or not second:
-            night.count("question_deferred")
-            return None, "deferred"
-        who, pronoun = await self._who(cid)
-        text = self._question_text(who, pronoun, a, b, first, second)
-        topic = self._topic(info)
-        summary = f"A question for the owner: which statement to keep about {topic}"
-        ident = key[len(QUESTION_KEY):]
-        question = {"kind": "contradiction", "text": text, "first": first, "second": second, "about": topic,
-                    "claims": [a["id"], b["id"]], "contact_id": cid}
-        candidate = Candidate(
-            type="contradiction", drive="curiosity", kind="message", recipient=self.owner_id,
-            title=f"Which statement to keep about {topic}", text=digest_text.question_message(text),
-            dedup_key=key, salience=0.75, cost=0.0, concern_kind="question", concern=summary,
-            evidence=list(info["ids"]), rationale="two recorded statements cannot both stand",
-            source_type="contradiction", source_id=ident, extra={"question": question})
-        detail = {**candidate.as_detail(), "contact_id": cid, "claims": list(info["ids"]),
-                  "subject_key": info["subject_key"], "predicate": info["predicate"]}
-        if info.get("keys"):
-            detail["keys"] = [list(key) for key in info["keys"]]
-        return self.concerns.bump(drive="curiosity", kind="question", summary=summary, dedup_key=key, salience=0.75,
-                                  sources=info["ids"], detail=detail, now=now)
-
     def _topic(self, info: Mapping[str, Any]) -> str:
         """What the two claims are about, for the mind's own records and the typed decisions: "your office
         location" for the speaker's own claims, "the office location of my sister" for anyone else's; a pair filed
@@ -1418,167 +1365,17 @@ class Consolidation:
             return f"{'your' if contact_id == self.owner_id else 'their'} {predicate}"
         return f"the {predicate} of {_clean(subject, 60)}"
 
-    def pair_stands(self, question: Mapping[str, Any], now: datetime) -> bool:
-        """Whether the exact pair a question asks about is still a question: both statements are live and they
-        were not found compatible. Raises when the store cannot be read (the caller then decides nothing)."""
-        claims = [str(item) for item in (question.get("claims") or [])][:2]
-        contact = str(question.get("contact_id") or "")
-        if len(claims) != 2 or not contact or self.ledger is None:
-            return False
-        with self._conn() as conn:
-            live = {str(claim["id"]) for claim in self._live_claims(conn, contact, now)}
-        return set(claims) <= live and self.relation(claims[0], claims[1]) != "adds"
-
-    def recent_turns(self, contact_id: str, session_id: str, *, exclude: str, limit: int = 3,
-                     chars: int = 1500) -> List[str]:
-        """The last few turns of one conversation before ``exclude``, oldest first, as lines ("Owner: ...",
-        "Assistant: ..."), within ``chars``: what a reply may be answering. Empty without a ledger or a session."""
-        if self.ledger is None or not session_id or not contact_id:
-            return []
-        from colonymind.turns.audio import source_text
-        with self._conn() as conn:
-            rows = conn.execute(
-                f"SELECT s.messages_json FROM turn_sources s WHERE s.contact_id=? AND s.session_id=? AND s.turn_id<>? "
-                f"AND {SELF_TURN_SQL} ORDER BY coalesce(s.occurred_at, s.ingested_at) DESC, s.rowid DESC LIMIT ?",
-                (contact_id, session_id, str(exclude or ""), int(limit))).fetchall()
-        lines: List[str] = []
-        for row in reversed(rows):
-            try:
-                messages = json.loads(row["messages_json"])
-            except ValueError:
-                continue
-            for message in messages:
-                text = message.get("content")
-                text = source_text(text) if isinstance(text, list) else text
-                if isinstance(text, str) and text.strip():
-                    who = "Owner" if message.get("role") == "user" else "Assistant"
-                    lines.append(f"{who}: {' '.join(text.split())}")
-        while lines and len("\n".join(lines)) > chars:
-            lines.pop(0)
-        return lines
-
-    def legacy_question(self, row: Any, now: datetime) -> Optional[Dict[str, Any]]:
-        """The question an older release's contradiction ask carried, rebuilt in the current form from its claims
-        (its evidence): the two newest live statements with different values, quoted whole. None when they are
-        gone, agree, or cannot be quoted whole without a model call."""
-        from . import plain
-        context = row.context if isinstance(getattr(row, "context", None), dict) else {}
-        ids = [str(item) for item in (context.get("evidence") or []) if str(item or "").startswith("claim:")][:16]
-        if len(ids) < 2 or self.ledger is None:
-            return None
-        with self._conn() as conn:
-            found = conn.execute(
-                "SELECT s.contact_id FROM source_claims c JOIN turn_sources s ON s.turn_id=c.turn_id "
-                f"WHERE c.id IN ({','.join('?' for _ in ids)}) LIMIT 1", ids).fetchone()
-            if found is None:
-                return None
-            contact = str(found[0])
-            claims = [claim for claim in self._live_claims(conn, contact, now) if str(claim["id"]) in ids]
-        claims.sort(key=lambda c: (c["valid_from"] or "", c["recorded_at"] or "", c["id"]))
-        pair = next(((a, b) for b in reversed(claims) for a in reversed(claims[:claims.index(b)])
-                     if self._norm(a["value"]) != self._norm(b["value"])), None)
-        if pair is None:
-            return None
-        a, b = pair
-        first = plain.fit(_statement(a), STATEMENT_CHARS) or plain.fit(a.get("value"), STATEMENT_CHARS)
-        second = plain.fit(_statement(b), STATEMENT_CHARS) or plain.fit(b.get("value"), STATEMENT_CHARS)
-        if not first or not second:
-            return None
-        who, pronoun = ("You", "you") if contact == self.owner_id else ("One of your contacts", "they")
-        info = {"contact_id": contact, "subject_key": a["subject_key"], "predicate": a["predicate"],
-                "subject": str(a.get("subject") or a["subject_key"])}
-        return {"kind": "contradiction", "text": self._question_text(who, pronoun, a, b, first, second),
-                "first": first, "second": second, "about": self._topic(info), "claims": [a["id"], b["id"]],
-                "contact_id": contact}
-
-    def _question_text(self, who: str, pronoun: str, a: Mapping[str, Any], b: Mapping[str, Any], first: str,
-                       second: str) -> str:
-        day_a, day_b = self._day(a), self._day(b)
-        if day_a and day_a == day_b:
-            said = f"On {day_a} {pronoun} first said: \"{first}\" Later that day {pronoun} said: \"{second}\""
-        elif day_a and day_b:
-            said = f"On {day_a} {pronoun} said: \"{first}\" On {day_b} {pronoun} said: \"{second}\""
-        else:
-            said = f"First {pronoun} said: \"{first}\" Later {pronoun} said: \"{second}\""
-        return f"{who} told me two things that may not fit together. {said} Should I keep the first, the second, both, or neither?"
-
-    def answer_applied(self, question: Mapping[str, Any], answer: str, *, ref: str) -> bool:
-        """Whether this answer's memory change already happened (``settle_question`` with ``ref``): the statements
-        it drops are retracted by ``ref`` and the ones it keeps are not; for ``both``, the pair is compatible."""
-        claims = [str(item) for item in (question.get("claims") or [])][:2]
-        if len(claims) != 2 or answer not in {"first", "second", "both", "neither"} or self.ledger is None:
-            return False
-        if answer == "both":
-            return self.relation(claims[0], claims[1]) == "adds"
-        drop = {"first": [claims[1]], "second": [claims[0]], "neither": claims}[answer]
-        with self._conn() as conn:
-            rows = {str(row[0]): row[1] for row in conn.execute(
-                "SELECT id, retracted_by FROM source_claims WHERE id IN (?, ?)", claims)}
-        return all(rows.get(ident) == ref for ident in drop) and all(
-            rows.get(ident) != ref for ident in claims if ident not in drop)
-
-    def settle_question(self, question: Mapping[str, Any], answer: str, *, ref: str, now: datetime) -> bool:
-        """The owner's answer in words to a contradiction question, applied to its two statements: ``first`` keeps
-        the first and retracts the second, ``second`` the reverse, ``neither`` retracts both, ``both`` records them
-        as compatible (never asked again). Every change is in the learning log (stage ``owner_answer``). True when
-        the answer was applied."""
-        claims = [str(item) for item in (question.get("claims") or [])][:2]
-        if len(claims) != 2 or answer not in {"first", "second", "both", "neither"} or self.ledger is None:
-            return False
-        first, second = claims
-        drop = {"first": [second], "second": [first], "neither": [first, second], "both": []}[answer]
-        keep = [ident for ident in claims if ident not in drop]
-        contact = str(question.get("contact_id") or "") or None
-        from colonymind.beliefs.source_projection import witness_key
-        from colonymind.memory import learning
-        with self._conn() as conn, conn:
-            conn.execute("BEGIN IMMEDIATE")
-            # The question shows one witness per value; the value it drops goes, not only that witness: every
-            # live copy of it (said again, in a store that does not fold restatements) is retracted with it, or
-            # the next copy would stand in its place.
-            # Each dropped claim's copies are read under its own key (a pair can be filed under two).
-            keys = conn.execute("SELECT DISTINCT subject_key, predicate FROM source_claims WHERE id IN "
-                                f"({','.join('?' for _ in drop)})", drop).fetchall() if contact and drop else []
-            current = [row for key in keys for row in self._current_claims(conn, contact, now, key=(key[0], key[1]))]
-            values = {witness_key(row) for row in current if str(row["id"]) in drop} - {None}
-            copies = [str(row["id"]) for row in current if str(row["id"]) not in claims and witness_key(row) in values]
-            for ident in drop:
-                changed = conn.execute("UPDATE source_claims SET retracted_by=? WHERE id=? AND retracted_by IS NULL "
-                                       "AND superseded_by IS NULL", (ref, ident)).rowcount
-                if changed != 1:
-                    # The statement is no longer live: nothing is changed (the transaction rolls back).
-                    raise RuntimeError("a statement of the question is no longer live")
-            copies = [ident for ident in dict.fromkeys(copies) if conn.execute(
-                "UPDATE source_claims SET retracted_by=? WHERE id=? AND retracted_by IS NULL AND superseded_by IS NULL",
-                (ref, ident)).rowcount == 1]
-            for action, idents in (("declined", [*drop, *copies]), ("ratified", keep)):
-                for ident in idents:
-                    try:
-                        learning.log(conn, store="claim", action=action, stage="owner_answer",
-                                     reason=f"the owner answered {answer}", item_id=ident, contact_id=contact,
-                                     refs=[ref])
-                    except Exception as error:
-                        logger.warning("owner answer not logged (%s)", type(error).__name__)
-        if answer == "both":
-            self._record_relation({"id": first}, {"id": second}, "adds", contact_id=contact or "", by=ref, now=now)
-        return True
-
-    @staticmethod
-    def _ask_id(contact_id: str, *key: str) -> str:
-        """The question's id: its concern's and its message row's dedup key is ``reach_out:contradiction:<id>``.
-        ``key`` is one ``(subject_key, predicate)``, or both keys of a pair filed under two (``_conflicts``)."""
-        return hashlib.sha256("|".join([contact_id, *key]).encode()).hexdigest()[:16]
-
     def _withdraw_question(self, key: str) -> bool:
-        """A question the owner has not answered yet (still deferred, asked or queued) is moot once the
-        claims agree: it is cancelled by the check. One already sent or answered is left as it is."""
+        """A question an earlier build raised that has not gone out yet (still deferred, asked or queued) is
+        cancelled by the mind: it keeps the newer statement itself. One already sent is closed by the question
+        code (``questions.tend``)."""
         if not callable(self.cancel):
             return False
         row = self.store.get_by_dedup_key(key)
         if row is None or row.status not in {"proposed", "asked", "approved"}:
             return False
         try:
-            self.cancel(row, "the claims no longer contradict")
+            self.cancel(row, "the mind keeps the newer statement itself")
         except Exception as error:
             logger.warning("contradiction question not withdrawn (%s)", type(error).__name__)
             return False

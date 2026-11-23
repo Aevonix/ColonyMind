@@ -6,8 +6,8 @@ the credential may not write is refused with a clear error; it is never quietly 
 
 Why: with one key shared by every client, any client can name the owner in a turn's `contact_id`. An
 integration configured that way (a game bot posting its game log, say) writes every line as the owner's:
-the lines become the owner's claims and appraisals, and the nightly consolidation asks the owner which of
-two things "you told me" is right. Who said something is decided by where it came from, and only a few
+the lines become the owner's claims and appraisals, and the nightly consolidation lets the newer of them
+replace what the owner really said. Who said something is decided by where it came from, and only a few
 channels speak for the owner.
 
 ## The credentials of an instance
@@ -209,7 +209,7 @@ is reserved, so a client may send the same turn id again with a body it is allow
 
 A turn written as `credential:<name>` is kept as session evidence: it can be recalled within its own
 session, and nothing else reads it. It is never projected into claims, appraisals, commitments or
-opinions, so it can never raise a contradiction question to the owner, and it is not a person: it records
+opinions, so it can never replace a statement of the owner's, and it is not a person: it records
 no interaction, no communication and no opt-out. An integration that plays a game, replays a log or runs
 a batch writes there. Nothing re-attributes it: not a sender, not a machine channel (`cron:`, `api:`) and not
 the words a machine's turn carries ("System note: ...", a system tag), so it stays the credential's and the

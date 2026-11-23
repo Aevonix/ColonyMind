@@ -325,20 +325,6 @@ def _status_problems(mind, *, recall: Optional[str] = None) -> dict:
             "body": lambda: bool(mind.body_stale()), "capture": capture_behind}
 
 
-def _mind_open_questions(query_text: str) -> str:
-    """The questions the mind asked the owner that are still open and about this turn's subject (a
-    contradiction it asked about), or nothing. Never breaks the turn."""
-    mind = _mind()
-    if mind is None or not query_text:
-        return ""
-    try:
-        from colonymind.mind.questions import open_questions
-        return "\n".join(f"- {line}" for line in open_questions(mind, query_text))
-    except Exception:
-        logger.debug("open questions unavailable", exc_info=True)
-        return ""
-
-
 def _mind_note_novel(query_text: str) -> None:
     """An owner turn memory recalled nothing for: a new topic, a little curiosity for the agent's own
     affect at the next tick (architecture 4.3). A no-op without a mind; never breaks the turn."""
@@ -2987,11 +2973,6 @@ async def _assembled_lanes(
                 mind_text = await producers.read(_mind_section, default="")
                 if mind_text:
                     sections.append(ContextSection(id='colonymind-mind', title='Mind', body=mind_text, priority=77))
-                # The mind's open questions about this turn's subject: statements that still disagree.
-                questions = await producers.read(_mind_open_questions, query_text, default="")
-                if questions:
-                    sections.append(ContextSection(id='colonymind-open-questions', title='Open questions',
-                                                   body=questions, priority=78))
         except HTTPException:
             pass
         except Exception:

@@ -469,12 +469,12 @@ Recent dismissals (an owner-reported "not now", a `dismissed` or `ignored`
 verdict on owner-facing work) are a fifth decaying level, `affect.dismissed`
 (+0.25, 24 h): the satiation input, never rendered as a mood. Nothing that
 expired is a dismissal: an ask the owner let lapse (a task to approve, a
-check-in or link to confirm, a contradiction question) is silence, not a
+check-in or link to confirm) is silence, not a
 wave-off. The load is computed each tick, not stored: `min(1, 0.3 x
 running/cap + 0.2 x near owed obligations + 0.1 x failures in the last hour +
 0.1 x open asks about work)`. Only asks of kind task or goal count; the owner
-questions the people and memory faculties raise (check-ins and links to
-confirm, contradiction questions) are the mind's reporting, and counting them
+questions the people faculty raises (check-ins and links to
+confirm) are the mind's reporting, and counting them
 would let the asks about check-ins postpone the check-ins themselves.
 
 Every tick the mind reads one snapshot of stored records: the owner's reported
@@ -1586,9 +1586,8 @@ one (an executor task, a held call: The floor), an owner question (an identity l
 only, a change to who gets messaged, a wish) or a standing grant to confirm (Standing grants). It lives only in the
 sidecar: nothing is created in Hermes until the owner approves, so no board action can approve one. Each ask has a
 short code (`K7F`), its id for the console and the API; no ask message carries it (a private value's use is the one
-exception: docs/KNOWN-GAPS.md), and a code typed in chat approves nothing (Which ask a message answers). A question
-the mind asks the owner (which of two statements to keep) is never an ask: it has no code, and where the level would
-make it one it goes to the digest instead (Questions).
+exception: docs/KNOWN-GAPS.md), and a code typed in chat approves nothing (Which ask a message answers). Which of
+two statements to keep is never asked: the mind keeps the newer one itself (Questions).
 
 `suggest` holds the mind's initiative, not what the owner asked to be told: a reminder or heads-up the owner asked
 for, the question about a recipient the owner named that the store cannot resolve, and the mind's own health and
@@ -1844,93 +1843,43 @@ ask's own message: a reaction or a quoted reply there answers it.
 
 ## Questions
 
-The nightly consolidation raises a question when two statements a person made
-about one thing cannot both stand (docs/CONSOLIDATION.md, Contradictions). The
-question is written in plain words from the statements themselves, never from
-the names the memory files them under: who said them (the owner, or a contact
-by name), what each said and when, and how to answer ("You told me two things
-that may not fit together. On September 14 you said: "..." On September 15 you
-said: "..." Should I keep the first, the second, both, or neither?"). A
-statement too long to quote whole is shortened whole or by a checked typed call
-(The daily digest); failing both, the question waits for a later night.
+The mind does not ask the owner which of two statements to keep. When the
+nightly consolidation decides that a newer statement replaces an older one
+(docs/CONSOLIDATION.md, Contradictions), it keeps the newer one itself: the
+older statement and every live copy of its value (the same value for the same
+period, said again) are retracted by the night's note (`retracted_by` is
+`note:<id>`; nothing is deleted), and each is in the learning log (action
+`declined`, stage `replaced_by_newer`; never `owner_answer`, which only the
+owner's own answers carry). A pair decided `adds`, and one the night could not
+decide, are left as they are.
 
-**One question at a time** (`P/mind/questions.py`). At most one question is on
-its way to the owner or waiting for an answer. Where the level lets the mind
-message the owner it goes on its own, labelled like the digest's part
-("Question (just answer in words): ..."); where the level would ask it goes to
-the next digest's Question part instead (a question never gets a code). Any
-other question waits behind it and goes to the digest once the one before it is
-answered, found moot or expired. The owner gate may hold a question for the
-digest like any message.
-
-**Only a confirmed delivery makes it answerable**: the body's `sent` for the
-question itself, for its one clarification, or for a digest that lists it. A
-send that failed or ended uncertain leaves it unseen, and it goes to the next
-digest. For a day after each confirmed delivery (`ANSWER_WINDOW`), the owner's
-turns that came after it are read as possible answers; no other turn is.
-
-**The owner answers in words.** Each such turn is read once, globally: before it
-is read, the turn and the question it is read against are recorded
-(`question_turns`), so a retried turn is never read again, against this
-question or the next. The reading is one typed decision on the mind's router
-(`mind_question_answer`: `first`, `second`, `both`, `neither`, `unclear` or
-`none`) that also sees the last few turns of that conversation, so a reply to
-something else is `none`. It runs off the turn's path (after the turn is
-recorded, never delaying the reply), within the turn deadline, and its tokens
-are charged to the day's budget. An answer that resolves the question is
-claimed atomically (`question_claims`) and revalidated against the exact pair of
-statements the question asks about: a second, concurrent or stale answer changes
-nothing. `first` keeps the first statement and retracts the second, `second` the
-reverse, `neither` retracts both, `both` records them as compatible so they are
-never asked about again. A value retracted goes with every live copy of it (the
-same value for the same period, said again), not only the one the question
-quoted, so no earlier copy takes its place; each change is in the learning log
-(stage `owner_answer`). The question closes only once that change succeeded; a change
-that failed leaves it answerable and is applied again at the next tick, and a
-claim a crash left unapplied (still held two minutes on) is recovered at the
-next tick: finished with its answer when the change already happened, applied
-otherwise.
-`unclear` asks once more in plain words (a `question_again` notice with the
-whole question, at most once per question). A question and its clarification
-quote the two statements, so each goes out only while they still stand: at
-every tick and again when the body pulls it, one whose statements were
-forgotten, retracted or found compatible is withdrawn unsent, and so is a
-clarification whose question was answered, expired or is no longer answerable.
-`none` or no decision (no router,
-the budget spent, a timeout, `unsure`) changes nothing. A turn the answer route
-read as an answer to an ask (it approved, declined, undid or put off an ask,
-showed one again or was asked about one) is that ask's and is never read for a
-question, nor is a turn that carries an open ask's code, nor a scheduled or
-worker run. An answer in words decides only which statements the memory keeps:
-it never grants a wish, confirms a link or a cadence, changes who may be
-contacted or approves anything; those are asks, answered through their own
-message (Asks).
-
-**Never a reminder.** Sent and unanswered for a day, a question is listed in the
-next digest once; listed and unanswered for a day, it expires quietly (and
-seven days after its first delivery, whatever happened; a question waiting
-behind another or never delivered does not expire); once its statements agree
-again (a correction, a retraction) or one of them is forgotten, it closes. A digest's delivery counts from
-when the body delivered it, even when it is recovered later. While it is open, an owner turn
-about its subject carries it in the context (`Open questions`), saying that the
-owner answers in words and that there is no code for it. An older release's
-contradiction ask is rebuilt in this form at the next tick and loses its code
-(one whose statements can no longer be quoted whole, or agree, is withdrawn), and
-a question delivered under the earlier state format keeps its deliveries.
-The state is on the question's message row (`result_metadata.question`).
+**A question an earlier build raised is brought to an end, never asked again**
+(`P/mind/questions.py`). An earlier build asked the owner which of the two
+statements to keep, in a message of its own or in a part of the digest, and
+read the owner's reply in words as the answer. At the first tick, a question
+not yet sent is withdrawn (cancelled by the mind, like any stale message), and
+so is the one clarification of a question; one raised that had formed no
+message yet (a concern, no row) is resolved before it can form; one already
+sent or listed in a digest closes as `resolved` with the answer `moot`; an
+older release's contradiction ask is withdrawn and loses its code. No digest
+lists one, no owner turn carries one in its context, and a late reply in words
+to one is an ordinary turn: nothing reads it as an answer. The pair itself is
+settled like any other at the next night. What the owner answered before stays
+as it is: the statements an answer retracted and the learning log's
+`owner_answer` rows. An answer whose memory change was still unfinished at the
+update is not applied: the pair is settled by the night instead. The state
+stays on the question's message row (`result_metadata.question`).
 
 ## The daily digest
 
 One message a day, after `mind.digest_hour` (local, outside quiet hours), and
-only when something waits or happened (`P/mind/digest.py`). It has up to three
+only when something waits or happened (`P/mind/digest.py`). It has up to two
 labelled parts, in plain words:
 
 - **Waiting for your OK**: one line per open ask, what it is and when it was
   asked ("Asked 5 hours ago."), with no code and no reply instruction: the ask's
   own message carries the reply line, and a yes binds to that message, never to
-  this line (Asks). A question is never listed here.
-- **Question (just answer in words)**: the one question waiting for the digest
-  (Questions), with no code.
+  this line (Asks). A question an earlier build raised is never listed here.
 - **Done or found since yesterday**: the tasks and goals that finished, could
   not finish (with the reason given) or started; messages sent to contacts;
   what outreach found or offered; what the owner gate held for the digest; the
@@ -1940,11 +1889,11 @@ labelled parts, in plain words:
   along, with their progress as a sentence of its own, but never make a digest
   on their own.
 
-The recorder adds one line of counts to the third part, and a day with recorded
+The recorder adds one line of counts to the second part, and a day with recorded
 lines has a digest ([RECORDER.md](RECORDER.md#the-daily-line)).
 
-Nothing that already reached the owner is listed again: a question, a notice or
-an answer the owner asked for went out on its own. Every item is one or a few
+Nothing that already reached the owner is listed again: a notice or an answer
+the owner asked for went out on its own. Every item is one or a few
 whole sentences. A text that does not fit its room keeps its leading whole
 sentences; when not even the first fits, a typed composition call
 (`mind_plain_summary`) writes a shorter version, which must pass the no-cut
@@ -2059,7 +2008,7 @@ section per faculty:
 | Earlier statements by meaning | `mind.faculties.priors_by_meaning` | no record here; whether an embedding endpoint is set (it needs semantic recall on) |
 | Memory blocks | mandatory context fitting | no record here |
 | Status block | `context.status` | no record here |
-| Nightly consolidation | `mind.faculties.consolidation` | nights run and finished, contradictions, per-contact digests, episode summaries, the questions it asked the owner and how they ended |
+| Nightly consolidation | `mind.faculties.consolidation` | nights run and finished, contradictions (settled by the mind: the newer statement kept), per-contact digests, episode summaries, the questions an earlier build asked the owner and how they ended |
 | Contradictions by meaning | `mind.faculties.contradictions_by_meaning` | nights that compared statements under different names by meaning and how many names, people left for a later night, a night the embedding model failed, an embedding model never measured on the labelled pairs (it needs the nightly consolidation and semantic recall on) |
 | Self-narrative | `mind.faculties.self_narrative` | nights it was rewritten, the account's size and date |
 | Opinions | `mind.faculties.opinions` | opinions formed, revised and withdrawn (and which the owner asked for), views held: the owner's views the running mind lists, so one whose premise was superseded or whose source is gone is not held |

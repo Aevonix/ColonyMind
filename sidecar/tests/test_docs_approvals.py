@@ -112,7 +112,7 @@ def test_no_approval_doc_tells_the_owner_to_answer_with_a_code():
 
 def test_the_digest_section_names_the_parts_the_digest_writes():
     section = _sections(_read("MIND.md"))["The daily digest"]
-    for label in (digest.WAITING, digest.QUESTION, digest.DONE):
+    for label in (digest.WAITING, digest.DONE):
         assert f"**{label}**" in section, label
 
 

@@ -277,7 +277,6 @@ async def test_with_the_fast_provider_refusing_the_mind_loop_makes_exactly_the_c
         fx = Fx(directory, config={"faculties": {"owner_gate": True}})
         made = engine_with(provider, live=list(DEFAULTS_1_11), store=Store(directory / "instinct.db"))
         fx.mind.instinct = fx.mind.owner_gate.instinct = fx.mind.lessons.instinct = made
-        fx.mind.questions.instinct = made
         router = CountingRouter()
         await _loop(fx, router)
         await made.drain()

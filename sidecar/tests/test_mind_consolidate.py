@@ -25,10 +25,12 @@ from colonymind.commitments.store import CommitmentStore
 from colonymind.feedback import TypeFeedbackStore
 from colonymind.initiatives.store import InitiativeStore
 from colonymind.mind import Mind
-from colonymind.mind.consolidate import (CITE, LAST_KEY, RELATION_TASK, SELF_TURN_SQL, TASK_DIGEST, TASK_EPISODE,
-                                        TASK_NARRATIVE, Consolidation)
+from colonymind.mind.consolidate import (CITE, LAST_KEY, QUESTION_KEY, RELATION_TASK, REPLACED_STAGE, SELF_TURN_SQL,
+                                        TASK_DIGEST, TASK_EPISODE, TASK_NARRATIVE, Consolidation)
 from colonymind.mind.lessons import LESSON_TASK
 from colonymind.mind.outcomes import Autobiography
+from colonymind.mind.questions import state_of
+from colonymind.mind.rank import Candidate
 from colonymind.mind.tick import DEFAULT_FACULTIES
 from colonymind.self_model.expectations import ExpectationEngine, ExpectationStore
 from colonymind.turns.idempotency import TurnIdempotencyLedger
@@ -423,123 +425,119 @@ async def test_an_own_outcome_is_narrated_with_its_id_and_recalled_in_a_new_sess
 
 
 # ---------------------------------------------------------------------------
-# 3. A contradiction: one typed question concern, formed by the ranker into exactly one owner question
+# 3. A contradiction: the mind keeps the newer statement itself and asks the owner nothing
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("autonomy,status", [("standard", "approved"), ("suggest", "expired")])
-async def test_a_contradiction_asks_the_owner_once_and_resolves_when_one_side_is_retracted(tmp_path, monkeypatch, autonomy, status):
-    monkeypatch.setenv("COLONYMIND_OWNER_CONTACT_ID", OWNER)
-    fx = Fixture(tmp_path, autonomy=autonomy)
+async def office_pair(fx):
     fx.router.answers[TASK_DIGEST] = None                                  # keep the night about the contradiction
-    first = await fx.fact("turn-a", OWNER, "telegram-1", "My office is room 4.", "room 4")
+    older = await fx.fact("turn-a", OWNER, "telegram-1", "My office is room 4.", "room 4")
     fx.shift(days=1)
-    second = await fx.fact("turn-b", OWNER, "discord-2", "My office is room 7.", "room 7")
+    newer = await fx.fact("turn-b", OWNER, "discord-2", "My office is room 7.", "room 7")
+    return older, newer
+
+
+def retracted_by(fx):
+    return {row["id"]: row["retracted_by"] for row in fx.claims()}
+
+
+def old_question(fx, key, claims, *, code=None):
+    """A contradiction question as an earlier build left it, not sent yet; with a code, an older release's ask."""
+    asked = {} if code else {"question": {
+        "kind": "contradiction", "text": "You told me two things that may not fit together. Should I keep the "
+        "first, the second, both, or neither?", "first": "My office is room 4.", "second": "My office is room 7.",
+        "about": "your office location", "claims": list(claims), "contact_id": OWNER}}
+    row, _ = fx.store.create_intention(
+        kind="message", type="contradiction", title="Which statement to keep about your office location",
+        drive="curiosity", cls="owner", decision="ask" if code else "act", decision_reason="standard: owner",
+        status="asked" if code else "approved", dedup_key=f"{QUESTION_KEY}{key}", ask_code=code, recipient=OWNER,
+        context={"text": "Question (just answer in words): which one?", "evidence": list(claims), "notice": True,
+                 **asked}, hermes_kind="none", created_at=fx.now, expires_at=fx.now + timedelta(days=3))
+    return row
+
+
+async def test_a_replaced_statement_is_retracted_by_the_mind_and_the_owner_is_asked_nothing(fx):
+    older, newer = await office_pair(fx)
     assert any(b["status"] == "unresolved_conflict" for b in fx.assertions("office"))   # recall's own rule
-
     night = await fx.mind.consolidate()
     assert night["counts"]["contradictions"] == 1
-    assert fx.messages() == []                                           # the night raises a concern, sends nothing
-    concern, = [c for c in fx.mind.broadcast() if c.kind == "question"]
-    assert concern.drive == "curiosity" and concern.dedup_key.startswith("reach_out:contradiction:")
-    assert concern.detail["type"] == "contradiction" and concern.detail["kind"] == "message"
-    assert concern.detail["recipient"] == OWNER and set(concern.sources) == {first, second}
-    assert "which statement to keep" in fx.mind.section().lower()
-    # Affect's lines lead the section but take only the room the rest leaves, so a long strategy-switch
-    # note never cuts the question (integration map X4f).
-    note = ("Prior attempts at the quarterly export failed 3 times using the archive export; choose a "
-            "different approach or ask one question. ") * 4
-    fx.mind.feelings.section_lines = lambda room: [note[:room].rstrip()] if room > 0 else []
-    with_affect = fx.mind.section()
-    assert with_affect.startswith("Prior attempts at") and "which statement to keep" in with_affect.lower()
-    assert len(with_affect) <= 600
-    del fx.mind.feelings.section_lines
-
-    tick = await fx.mind.tick(force=True)                                 # the ranker forms it like any concern
-    assert [(row["kind"], row["type"]) for row in tick["formed"]] == [("message", "contradiction")]
-    assert fx.mind.concerns.get(concern.id).status == "intended"
-    ask, = fx.messages("contradiction")
-    assert ask.status == status and ask.entity_id == OWNER and ask.dedup_key == concern.dedup_key
-    assert fx.mind.concerns.get(concern.id).intention_id == ask.id
-    assert ask.description == "Which statement to keep about your office location" and ask.ask_code is None
-    text = ask.context["text"]
-    assert text.startswith("Question (just answer in words): You told me two things that may not fit together. On ")
-    assert '"My office is room 4."' in text and '"My office is room 7."' in text
-    assert text.endswith("Should I keep the first, the second, both, or neither?")
-    if status == "expired":                                              # the level would ask: the digest lists it
-        assert ask.result_metadata["question"]["state"] == "digest"
-    again = await fx.mind.consolidate()
-    assert again["counts"].get("contradictions", 0) == 0                 # already asked: nothing new
-    assert (await fx.mind.tick(force=True))["formed"] == [] and len(fx.messages("contradiction")) == 1
-
-    with closing(fx.ledger._connect()) as conn, conn:
-        conn.execute("UPDATE source_claims SET retracted_by='owner-correction' WHERE id=?", (second,))
-    resolved = await fx.mind.consolidate()
-    assert resolved["counts"].get("resolved") == 1
-    assert fx.mind.concerns.get(concern.id).status == "resolved"
-    assert fx.mind.broadcast() == [] and len(fx.messages("contradiction")) == 1
-    fx.store.close()
-
-
-async def test_at_most_one_new_contradiction_question_a_night_newest_first(fx):
-    """The owner's message budget (3 a day) is not spent on questions: one new one a night, the newest
-    conflicting pair first; the others are asked on later nights."""
-    fx.router.answers[TASK_DIGEST] = None
-    for index, predicate in enumerate(("office_location", "desk_number", "parking_spot")):
-        await fx.fact(f"a-{index}", OWNER, "s-a", f"My {predicate} is {index}.", f"{index}", predicate=predicate)
-        fx.shift(hours=1)
-        await fx.fact(f"b-{index}", OWNER, "s-b", f"My {predicate} is {index + 10}.", f"{index + 10}", predicate=predicate)
-        fx.shift(hours=1)
-    night = await fx.mind.consolidate()
-    assert night["counts"]["contradictions"] == 1
-    question, = [c for c in fx.mind.concerns.open(limit=50) if c.kind == "question"]
-    assert "parking spot" in question.summary                             # the newest pair
+    kept = retracted_by(fx)
+    assert kept[older].startswith("note:") and kept[newer] is None        # the older is marked; nothing is deleted
+    with closing(fx.ledger._connect()) as conn:
+        logged = [tuple(row) for row in conn.execute(
+            "SELECT action, stage, item_id FROM learning_log WHERE store='claim' AND action IN ('declined', 'ratified')")]
+    assert logged == [("declined", REPLACED_STAGE, older)]                 # the mind's own record, never an owner answer
+    assert not any(b["status"] == "unresolved_conflict" for b in fx.assertions("office"))
+    assert [c for c in fx.mind.broadcast() if c.kind == "question"] == []
     await fx.mind.tick(force=True)
-    assert len(fx.messages("contradiction")) == 1
+    assert fx.messages("contradiction") == []                              # no question for the owner
     fx.shift(days=1)
-    assert (await fx.mind.consolidate())["counts"]["contradictions"] == 1
-    await fx.mind.tick(force=True)
-    asked = [row.description for row in fx.messages("contradiction")]
-    assert len(asked) == 2 and "desk number" in asked[0]                  # newest first; the next night's
+    assert not (await fx.mind.consolidate())["counts"].get("contradictions")   # settled once
 
 
-async def test_a_resolved_contradiction_withdraws_its_owner_question_while_it_is_still_pending(tmp_path, monkeypatch):
-    """The question is moot once the claims agree: an ask not yet answered (or a message not yet sent) is
-    cancelled by the check, and the concern resolves; the answered-and-sent case is left alone."""
-    monkeypatch.setenv("COLONYMIND_OWNER_CONTACT_ID", OWNER)
-    fx = Fixture(tmp_path)
-    fx.router.answers[TASK_DIGEST] = None
-    await fx.fact("turn-a", OWNER, "telegram-1", "My office is room 4.", "room 4")
-    fx.shift(hours=2)
-    second = await fx.fact("turn-b", OWNER, "discord-2", "My office is room 7.", "room 7")
-    await fx.mind.consolidate()
-    await fx.mind.tick(force=True)
-    ask, = fx.messages("contradiction")
-    assert ask.status == "approved"                                       # queued, not sent yet
-    with closing(fx.ledger._connect()) as conn, conn:
-        conn.execute("UPDATE source_claims SET retracted_by='owner-correction' WHERE id=?", (second,))
+@pytest.mark.parametrize("relation,counted", [("adds", "compatible"), ("unsure", "undecided")])
+async def test_an_addition_or_an_undecided_pair_is_left_as_it_is(fx, relation, counted):
+    fx.router.answers[RELATION_TASK] = {"relation": relation}
+    await office_pair(fx)
     night = await fx.mind.consolidate()
-    assert night["counts"].get("resolved") == 1 and night["counts"].get("withdrawn") == 1
-    ask = fx.store.get(ask.id)
-    assert ask.status == "cancelled" and ask.verified == "check" and "no longer contradict" in ask.result
-    assert ask.verdict is None                                               # the check's cancellation, not a dismissal
-    fx.store.close()
-
-
-async def test_a_contradiction_between_a_contacts_own_claims_names_the_contact(fx):
-    fx.router.answers[TASK_DIGEST] = None
-    fx.contacts.records[CONTACT].display_name = "Sam"
-    await fx.fact("c-1", CONTACT, "sms-1", "My office is room 4.", "room 4")
-    fx.shift(hours=1)
-    await fx.fact("c-2", CONTACT, "sms-2", "My office is room 7.", "room 7")
-    night = await fx.mind.consolidate()
-    assert night["counts"]["contradictions"] == 1
-    concern, = [c for c in fx.mind.broadcast() if c.kind == "question"]
-    assert concern.detail["contact_id"] == CONTACT
+    assert night["counts"].get(counted) == 1 and not night["counts"].get("contradictions")
+    assert set(retracted_by(fx).values()) == {None}
     await fx.mind.tick(force=True)
-    ask, = fx.messages("contradiction")
-    assert ask.entity_id == OWNER and CONTACT not in ask.context["text"]  # the owner is asked, the contact is named
-    assert ask.context["text"].startswith("Question (just answer in words): Sam told me two things that may not "
-                                          "fit together. On ")
+    assert fx.messages("contradiction") == []
+
+
+@pytest.mark.parametrize("first", ["tick", "night"])
+async def test_an_unsent_question_of_an_earlier_build_is_withdrawn_by_the_mind(fx, first):
+    older, newer = await office_pair(fx)
+    question = old_question(fx, "0000000000000001", [older, newer])
+    concern, _ = fx.mind.concerns.bump(
+        drive="curiosity", kind="question", dedup_key=question.dedup_key, salience=0.75, sources=[older, newer],
+        summary="A question for the owner: which statement to keep about your office location", now=fx.now)
+    fx.mind.concerns.intended(concern.id, question.id, fx.now)
+    if first == "tick":
+        await fx.mind.tick(force=True)
+    else:
+        counts = (await fx.mind.consolidate())["counts"]
+        assert counts.get("withdrawn") == 1 and counts.get("resolved") == 1
+    row = fx.store.get(question.id)
+    assert row.status == "cancelled" and row.verified == "check" and row.verdict is None   # the mind's own withdrawal
+    assert fx.mind.concerns.get(concern.id).status not in {"open", "intended"}
+
+
+async def test_a_question_an_earlier_build_raised_and_had_not_formed_yet_never_forms(fx):
+    older, newer = await office_pair(fx)
+    assert (await fx.mind.tick(force=True))["consolidation"] == "done"    # this date's night has run
+    key, about = f"{QUESTION_KEY}0000000000000004", "A question for the owner: which statement to keep"
+    raised = Candidate(                                                    # as that build left it: a concern, no row
+        type="contradiction", drive="curiosity", kind="message", recipient=OWNER, title="Which statement to keep",
+        text="Question (just answer in words): which one?", dedup_key=key, salience=0.75, cost=0.0,
+        concern_kind="question", concern=about, evidence=[older, newer], source_type="contradiction",
+        source_id=key[-16:], rationale="two recorded statements cannot both stand",
+        extra={"question": {"kind": "contradiction", "text": "Which one?", "claims": [older, newer],
+                            "contact_id": OWNER}})
+    concern, _ = fx.mind.concerns.bump(drive="curiosity", kind="question", summary=about, dedup_key=key,
+                                       salience=0.75, sources=[older, newer], detail=raised.as_detail(), now=fx.now)
+    tick = await fx.mind.tick(force=True)                                 # no night in this one: the tick ends it
+    assert tick["consolidation"] is None and fx.store.get_by_dedup_key(key) is None
+    assert fx.messages("contradiction") == [] and fx.mind.concerns.get(concern.id).status == "resolved"
+
+
+async def test_a_sent_question_and_an_older_ask_close_and_a_late_answer_changes_nothing(fx):
+    older, newer = await office_pair(fx)
+    sent = old_question(fx, "0000000000000002", [older, newer])
+    at = fx.now.isoformat()
+    fx.store.update(sent.id, status="sent", result_metadata={"question": {
+        "state": "sent", "sent_at": at, "delivered_at": at, "first_delivered_at": at}})
+    ask = old_question(fx, "0000000000000003", [older, newer], code="Q4R")
+    await fx.mind.tick(force=True)                                        # closes both; its night keeps the newer one
+    sent, ask = fx.store.get(sent.id), fx.store.get(ask.id)
+    assert state_of(sent)["state"] == "resolved" and state_of(sent)["answer"] == "moot"
+    assert ask.status == "cancelled" and ask.ask_code is None and ask.verdict is None
+    assert fx.mind.questions.tend(fx.now) == {"moot": 0}                  # none is left open
+    settled = retracted_by(fx)
+    assert settled[older].startswith("note:") and settled[newer] is None
+    await fx.mind.owner_turn("Room 4 is right.", turn_id="late-1")        # an ordinary turn: nothing reads it as an answer
+    await fx.mind.tick(force=True)
+    assert retracted_by(fx) == settled and state_of(fx.store.get(sent.id))["answer"] == "moot"
 
 
 # ---------------------------------------------------------------------------
@@ -630,7 +628,7 @@ async def test_narrative_lines_must_cite_evidence_ids_that_exist(fx):
 
 async def test_the_narrative_is_never_shown_other_peoples_business(fx):
     """The narrative's evidence holds the agent's own work and what it told the owner, never a message to
-    someone else or a question quoting what people said (the plugin shows it only in the owner's sessions)."""
+    someone else or what people said (the plugin shows it only in the owner's sessions)."""
     row = settled_task(fx)
     assert await fx.mind.request_message({"id": "m-1", "message": "Your parcel for the Harbour St flat arrived.",
                                           "title": "Parcel for the Harbour St flat", "recipient": CONTACT,
@@ -642,14 +640,13 @@ async def test_the_narrative_is_never_shown_other_peoples_business(fx):
     await fx.fact("c-1", CONTACT, "sms-1", "My office is room 4.", "room 4")
     fx.shift(hours=1)
     await fx.fact("c-2", CONTACT, "sms-2", "My office is room 7.", "room 7")
-    await fx.mind.consolidate()
-    await fx.mind.tick(force=True)                                         # the contradiction question is asked
-    assert fx.messages("contradiction")
+    await fx.mind.consolidate()                                            # the newer statement is kept
+    await fx.mind.tick(force=True)
     fx.shift(days=1)
     await fx.mind.consolidate()
     prompts = [m[-1]["content"] for m, c in fx.router.calls if c["task"] == TASK_NARRATIVE]
     assert prompts and row.id in prompts[-1] and "Call moved to 4pm" in prompts[-1]
-    assert "Harbour St" not in prompts[-1] and "Which is right" not in prompts[-1]
+    assert "Harbour St" not in prompts[-1] and "room 7" not in prompts[-1]
     assert "never name other people" in [m for m, c in fx.router.calls if c["task"] == TASK_NARRATIVE][-1][0]["content"]
 
 
@@ -1250,7 +1247,7 @@ def quote_them(messages, context):
 
 async def test_the_night_first_extracts_the_statements_still_queued(fx):
     """A statement made just before the night is extracted before the night reads claims (the projection's
-    own call, with the mind's router, not charged to the night), so its contradiction is asked tonight,
+    own call, with the mind's router, not charged to the night), so its contradiction is settled tonight,
     not a day later."""
     fx.router.answers[TASK_DIGEST] = None
     await fx.fact("turn-a", OWNER, "chat-1", "My office is room 4.", "room 4")
@@ -1261,8 +1258,8 @@ async def test_the_night_first_extracts_the_statements_still_queued(fx):
     fx.router.claims = Model({text: claim(text, "room 7")})
     fx.shift(days=1)
     tick = await fx.mind.tick(force=True)
-    assert tick["consolidation"] == "done"
-    assert [(row["kind"], row["type"]) for row in tick["formed"]] == [("message", "contradiction")]
+    assert tick["consolidation"] == "done" and tick["formed"] == []
+    assert fx.mind.consolidation.last.counts["contradictions"] == 1        # the newer statement is kept, nothing asked
     assert "source_claim_extraction" in fx.router.claim_calls
     with closing(fx.ledger._connect()) as conn:
         assert conn.execute("SELECT status FROM source_claim_jobs WHERE turn_id='turn-b'").fetchone()[0] == "complete"
@@ -1383,33 +1380,6 @@ def test_consolidation_is_exported_from_the_mind_package():
     assert mind.Consolidation is Consolidation
 
 from colonymind.memory import curated
-
-async def test_the_agents_record_of_a_contradiction_question_never_quotes_the_statements(fx):
-    """The question to the owner carries both values; the agent's own recallable record of it does not, so
-    erasing a person's statement leaves no copy of it under the owner (the ledger follows lineage only
-    inside one contact's sources)."""
-    fx.router.answers[TASK_DIGEST] = None
-    await fx.fact("c-1", CONTACT, "sms-1", "My office is room 4.", "room 4")
-    fx.shift(hours=1)
-    await fx.fact("c-2", CONTACT, "sms-2", "My office is room 7.", "room 7")
-    await fx.mind.consolidate()
-    await fx.mind.tick(force=True)
-    ask, = fx.messages("contradiction")
-    assert "room 4" in ask.context["text"] and "room 7" in ask.context["text"]  # the question itself
-    assert "room" not in ask.description                                   # its title quotes neither
-    fx.mind.outcomes.record(ask.id, status="done", hermes_ref="message:1", summary="sent")
-    fx.mind.outcomes.rate(ask.id, "useful")
-    with closing(fx.ledger._connect()) as conn:
-        record = [row[0] for row in conn.execute(
-            "SELECT messages_json FROM turn_sources WHERE contact_id=? AND turn_id LIKE ?", (OWNER, f"mind:{ask.id}:%"))]
-    assert len(record) >= 3                                          # decided, outcome, rated
-    assert not any("room" in text for text in record), record
-    from test_curated_memory import historical_bytes
-    _native_before_forget = historical_bytes(fx.ledger)
-    _source_forget_receipt = curated.forget_sources(fx.ledger, CONTACT, source_ids=['c-1', 'c-2'])
-    assert historical_bytes(fx.ledger) == _native_before_forget
-    assert all(curated.is_forgotten(fx.ledger, sid) for sid in _source_forget_receipt['source_ids'])
-
 
 async def test_forgetting_a_turn_forgets_the_episode_summary_built_from_it(fx):
     """The summary carries its turns as source lineage, so the ledger's erasure closure takes it with any of

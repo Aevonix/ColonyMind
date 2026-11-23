@@ -2,7 +2,7 @@
 
 Sleep-time compute for the mind (architecture 3.1, 4.1, 4.2, 4.8; build plans M8 and M9). Once per
 night crossed, the sidecar consolidates what the time since the last run left in its stores: the
-self-narrative delta, the lessons verified results taught, contradictions turned into questions,
+self-narrative delta, the lessons verified results taught, contradictions settled (the newer statement kept),
 per-contact digests, the agent's pages and episode summaries. It runs inside the token budget, writes only to stores
 that already exist, and its whole record is one audit row.
 
@@ -159,34 +159,23 @@ into one owner ask; the night records a refusal in `mind_state["wishes.refused"]
    answer outside the two leaves the pair for a later night. The read is Instinct's `claim_relation`
    point ([DECISIONS.md](DECISIONS.md)): this call is its existing path, and a model tier may only ever
    record `adds`. Only a pair decided `replaces` is a
-   contradiction: it becomes one `question` concern that carries a typed message candidate to the
-   owner (type `contradiction`, drive `curiosity`, salience 0.75, cost 0,
-   `dedup_key = reach_out:contradiction:<id>`, the id a hash of the person and the key, or of both
-   keys for a pair filed under two, whose title then names both: "Which statement to keep about
-   your works at and employer"; such a pair is found again from its recorded decision, so a night
-   without the embedder neither drops nor asks it again, and an answer that drops one value retracts
-   its copies under that value's own key); the tick's `_act` forms it through rank and
-   authority like every other concern, so the autonomy level and the owner-message budget apply
-   unchanged: `standard` sends it, and where the level would ask it goes to the digest instead (a
-   question never gets a code). The question is written in plain words from the two statements
-   themselves (who said them, what each said and when, and "Should I keep the first, the second,
-   both, or neither?"), never from the names the memory files them under; a statement too long to
-   quote whole is shortened by a checked typed call (`mind_plain_summary`) or waits for a later
-   night. That call, like every plain summary the owner reads, writes in the language and script of
-   the item it shortens and never translates it; names, identifiers and quoted words stay verbatim.
-   Its no-cut check reads the item's own script: a sentence ends at that script's full stop,
-   question or exclamation mark (。？！ among them), and in a script written without spaces between
-   words (Chinese, Japanese, Thai) each letter counts as a word. One question is out at a time, and the owner answers in words (docs/MIND.md, Questions). At most one new question a night,
-   the newest conflicting pair first: the owner's three daily messages are left to duty work, and
-   the rest are raised on later nights. A question is asked once (the shared dedup key); a concern still waiting for the ranker
-   is refreshed. When the claims agree again (a correction retracted or superseded one side) a
-   question not yet answered (deferred, asked or queued) is withdrawn by the check
-   (`verified: check`, no verdict) and the concern resolves: the owner is never asked something
-   already settled. The agent's own recallable record of the question (the autobiography's
-   `decided_*`, `outcome_*`, `rated` and `approved` rows under the owner) names it by its title,
-   which carries neither statement ("Which statement to keep about your office location"): erasure follows lineage only
-   inside one contact's sources, so an owner-side copy of a person's words would outlive their
-   erasure.
+   contradiction, and the night settles it itself: it keeps the newer statement and asks the owner
+   nothing. The older statement and every live copy of its value (the same value for the same
+   period, under that value's own key) are retracted by the night's note (`retracted_by` is
+   `note:<id>`; nothing is deleted), each in the learning log (action `declined`, stage
+   `replaced_by_newer`), and the night counts the pair in `contradictions`. A pair filed under two
+   keys is found again from its recorded decision, so a night without the embedder settles it too
+   and never judges it again. A question an earlier build raised
+   (`dedup_key = reach_out:contradiction:<id>`) is withdrawn: its concern resolves (the tick
+   resolves one that had formed no message yet, so it never forms), one not yet
+   sent (deferred, asked or queued) is cancelled by the mind (`verified: check`, no verdict), and
+   one already sent is closed by the question code at the next tick (docs/MIND.md, Questions).
+   Every plain summary the owner reads (`mind_plain_summary`: a digest item, an ask notice) is
+   written in the language and script of the item it shortens and never translates it; names,
+   identifiers and quoted words stay verbatim. Its no-cut check reads the item's own script: a
+   sentence ends at that script's full stop, question or exclamation mark (。？！ among them), and
+   in a script written without spaces between words (Chinese, Japanese, Thai) each letter counts
+   as a word.
 4. **Per-contact digests** (`mind.faculties.people`; at most 6 calls). A digest has one home, the
    contact's own record (`digest`, `digest_sources`, `digest_writer`, `digest_withheld_at`), and one
    writer path, the contact store's `set_digest(contact_id, text, sources, writer=...)` (awaited when
@@ -295,10 +284,10 @@ repeating one `(subject, predicate, value)` over one period (the same validity a
 the contradiction and digest stages see only the newest witness, the rule recall's
 `current_group` already applies (`distinct_values`); quoted preferences are never folded. The
 commitment extractor's prior claims use the same rule (`source_projection.one_witness_per_value`):
-the same value over two periods stays two claims there, so a correction can name either. Because a
-question quotes only the newest witness, the owner's answer that drops a value retracts every live
-copy of it (`source_projection.witness_key`: the same value for the same period), so no older copy
-stands in its place.
+the same value over two periods stays two claims there, so a correction can name either. Because
+the night pairs only the newest witness, keeping the newer statement retracts every live copy of
+the older value (`source_projection.witness_key`: the same value for the same period), so no older
+copy stands in its place.
 
 ## Budget
 
@@ -342,8 +331,9 @@ wire, where the label is not.
 | `mind.db` `mind_state` | `consolidation.last` (`updated_at` = the moment of the last run, text = its local date); `self.interests`, `self.strengths`, `self.recent`, `self.stances` (text = the section, causes = up to 5 cited ids) |
 | `mind.db` `mind_state` | `consolidation.stage.<name>` (`updated_at` = start time of the last night that entered the stage); `consolidation.episodes.last` (`updated_at` = last finished episodes window, initially taken from `consolidation.last`); no cycle record |
 | contact store | `digest`, `digest_sources`, `digest_writer` of each digested contact, through `set_digest` (only a store that has it); a withheld digest's text, through `withhold_digest` |
-| `mind.db` `concerns` | kind `question`, `dedup_key reach_out:contradiction:*`, a typed message candidate to the owner |
-| `initiatives` (the audit log) | one `note/consolidation` row per run (`cost_tokens`, `context` = the run's record: counts, calls, tokens, rejected lines, errors); the owner question is the `message` row (type `contradiction`) the tick forms from the concern |
+| `mind.db` `concerns` | none new; a `question` concern of an earlier build (`dedup_key reach_out:contradiction:*`) is resolved |
+| ledger `source_claims` | `retracted_by = note:<id>` on the older statement of a replaced pair and on every live copy of its value |
+| `initiatives` (the audit log) | one `note/consolidation` row per run (`cost_tokens`, `context` = the run's record: counts, calls, tokens, rejected lines, errors) |
 | ledger `turn_sources` | `mind:episode:<session>:<date>:episode_summary`, or `mind:episode:<session>:<date>:<digest>:episode_summary` when that id is forgotten, under the episode's contact; `mind:lesson:<id>:<event>` under the owner (session `mind`, `scope='session'`) |
 | ledger `page_lines`, `page_rewrites` | the night's lines of each page written again (`writer` = `night`), each with its source turns, and the moment of each page's last rewrite ([pages](SOCIAL-STATE.md#pages)) |
 | `<instance>/recall-questions.jsonl` | nothing is added; a question whose source turn was erased or forgotten is removed ([the instance's own question set](RECALL-HYBRID.md#the-instances-own-question-set)) |

@@ -61,7 +61,7 @@ def owner_verdict_record(provider):
 def wired(fx):
     """The Fx mind with its own Instinct engine logging to the instance's instinct.db."""
     engine = Instinct(store=Store(fx.mind.state_dir / "instinct.db"), clock=lambda: fx.now)
-    fx.mind.instinct = fx.mind.owner_gate.instinct = fx.mind.lessons.instinct = fx.mind.questions.instinct = engine
+    fx.mind.instinct = fx.mind.owner_gate.instinct = fx.mind.lessons.instinct = engine
     return engine
 
 
@@ -450,35 +450,6 @@ async def test_a_contacts_opt_out_row_re_renders_from_its_turn(tmp_path, contact
     await apply_opt_out(contacts, sam.contact_id, "Lose my number.", source_ref="turn:c-1", owner_id=owner.contact_id,
                         instinct=Instinct(store=store))
     assert dict(outcomes.replay_share(store, Sources(tmp_path))["opt_out"]) == {"matched": 1}
-
-
-async def test_a_question_answer_re_renders_when_read_at_once_and_not_when_a_later_turn_came_first(tmp_path,
-                                                                                                    monkeypatch):
-    from test_digest_ux import night
-    from test_digest_ux_r2 import office
-    fx = night(tmp_path, monkeypatch, mind_question_answer={"answer": "unclear"})
-    engine = Instinct(store=Store(fx.mind.state_dir / "instinct.db"), clock=lambda: fx.now)
-    fx.mind.questions.instinct = engine
-    await office(fx)
-
-    def record(turn, text):
-        fx.shift(minutes=1)
-        fx.ledger.record_source(turn, contact_id=OWNER, session_id="chat-1", scope="person",
-                                occurred_at=fx.now.isoformat(),
-                                messages=[{"role": "user", "content": text}, {"role": "assistant", "content": "OK."}])
-
-    record("t-1", "Which one do you mean?")
-    await fx.mind.owner_turn("Which one do you mean?", turn_id="t-1", session_id="chat-1")
-    await fx.mind.questions.drain()
-    record("t-2", "The one on the second floor.")
-    record("t-3", "Also, book the car for Monday.")         # a later turn is in before t-2 is read
-    await fx.mind.owner_turn("The one on the second floor.", turn_id="t-2", session_id="chat-1")
-    await fx.mind.questions.drain()
-    rows = {row["refs"]["turn"]: row for row in engine.store.rows() if row["point"] == "question_answer"}
-    sources = Sources(fx.mind.state_dir)
-    secret = engine.store.secret()
-    assert outcomes.rerender(rows["t-1"], sources, secret) == "matched"
-    assert outcomes.rerender(rows["t-2"], sources, secret) == "changed"      # it read a turn that came after it
 
 
 def test_the_share_needs_the_instances_secret_and_never_makes_one(tmp_path):

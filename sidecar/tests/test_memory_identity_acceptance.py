@@ -11,7 +11,8 @@ into that person's own contact record, through the store (the people
 milestone's ``digest`` / ``digest_sources`` columns), from their own words only
 (the owner gets none), and shown only to that person; the agent's own earlier outcome is
 recalled in a new session and narrated with ids that exist; a contradiction is
-one question to the owner; a night over an empty store does nothing.
+settled once by the mind, which keeps the newer statement and asks the owner
+nothing; a night over an empty store does nothing.
 """
 
 from __future__ import annotations
@@ -241,24 +242,26 @@ async def test_an_own_outcome_is_recalled_in_a_new_session_and_narrated_with_ids
     assert set(cited) <= set(narrative["cites"])
 
 
-async def test_a_contradiction_across_channels_is_one_question_to_the_owner(world):
+async def test_a_contradiction_across_channels_is_settled_once_and_the_owner_is_asked_nothing(world):
     fx = world
     fx.router.answers[TASK_DIGEST] = None
-    await fx.fact("tg-turn-1", await person(fx, "telegram", "1001"), "telegram-session", "My office is room 4.", "room 4")
+    older = await fx.fact("tg-turn-1", await person(fx, "telegram", "1001"), "telegram-session",
+                          "My office is room 4.", "room 4")
     fx.shift(days=1)
-    await fx.fact("sg-turn-1", await person(fx, "signal", "+15550001"), "signal-session", "My office is room 7.",
-                  "room 7")
+    newer = await fx.fact("sg-turn-1", await person(fx, "signal", "+15550001"), "signal-session",
+                          "My office is room 7.", "room 7")
 
+    settled = 0
     for _ in range(3):
-        await mind_call("POST", "/v1/mind/consolidate")
+        night = await mind_call("POST", "/v1/mind/consolidate")
+        settled += night.get("counts", {}).get("contradictions", 0)
         await mind_call("POST", "/v1/mind/tick")
-    questions = fx.messages("contradiction")
-    assert len(questions) == 1 and questions[0].entity_id == fx.owner_id
-    assert "room 4" in questions[0].context["text"] and "room 7" in questions[0].context["text"]
-    concern, = [c for c in fx.mind.concerns.open(limit=100, status=("open", "intended")) if c.kind == "question"]
-    assert concern.status == "intended" and concern.intention_id == questions[0].id
+    assert settled == 1
+    kept = {row["id"]: row["retracted_by"] for row in fx.claims()}
+    assert kept[older].startswith("note:") and kept[newer] is None       # the newer statement stays
+    assert fx.messages("contradiction") == []
     log = await mind_call("GET", "/v1/mind/log", params={"recipient": fx.owner_id, "kind": "message"})
-    assert [entry["id"] for entry in log["entries"]] == [questions[0].id]
+    assert log["entries"] == []
 
 
 async def test_a_night_over_an_empty_store_is_a_no_op(world):

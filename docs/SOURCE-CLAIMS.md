@@ -531,10 +531,7 @@ extraction.
 
 What it does not do: it does not re-run the other projections of a source (opinions,
 appraisals, commitments), and an opinion resting on a claim whose reading changed
-rests on a claim that is no longer current. A contradiction question the owner has not
-answered yet names the claims it was asked about: when the re-extraction changes the id
-of one of them, the answer no longer reaches it, so run a re-extraction when no such
-question is open.
+rests on a claim that is no longer current.
 
 `sidecar/tests/test_source_claim_projection.py` exercises actual source ingestion, SQLite transactions, source FTS, projection and context assembly. Controlled extractor outputs make correction, conflict, valid-time, erasure, lease and model-swap checks reproducible. The router check verifies that disabled escalation makes only one provider call.
 

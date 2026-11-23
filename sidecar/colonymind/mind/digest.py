@@ -1,18 +1,15 @@
 """The owner's daily digest and the messages that share its style (architecture 6.3).
 
-One message a day, only when something waits or happened, in three labelled parts written in plain words:
+One message a day, only when something waits or happened, in two labelled parts written in plain words:
 
 - **Waiting for your OK**: one line per open ask, what it is and when it was asked, with no code and no reply
   instruction. The ask's own message carries its reply line and is what the owner answers (``outbox``): a reaction,
   a quoted reply or their next message binds to it, never a code.
-- **Question (just answer in words)**: what the mind asked the owner that the owner answers in their own words (which of
-  two statements to keep, for one) (``questions.py``).
 - **Done or found since yesterday**: what the mind did, found, held back or learned since the last digest. What
-  already reached the owner (a question, a notice, an answer the owner asked for) is not listed again.
+  already reached the owner (a notice, an answer the owner asked for) is not listed again.
 
 Every item is one self-contained plain sentence or a few: long source text is shortened to whole sentences, or
-summarised by a checked typed call, never cut (``plain.py``). A question the mind sends on its own uses the same
-label.
+summarised by a checked typed call, never cut (``plain.py``).
 """
 
 from __future__ import annotations
@@ -22,14 +19,12 @@ from typing import Iterable, List, Optional, Sequence
 
 TITLE = "Daily digest"
 WAITING = "Waiting for your OK"
-QUESTION = "Question (just answer in words)"
 DONE = "Done or found since yesterday"
 # The label 1.11 notices and digests listed open asks under, each line starting with its code: read only to find
 # which asks such a message showed (``Mind._asks_shown_by``), never written.
 NEEDS_OK_1_11 = "Needs your OK (reply yes or no with the code)"
 # The room one item takes, in characters: what does not fit is shortened whole (``plain.shown``).
 ITEM_CHARS = 280
-QUESTION_CHARS = 600
 
 
 def _block(label: str, lines: Iterable[str]) -> str:
@@ -61,26 +56,18 @@ def ask_list(sentences: Sequence[str], reply: str) -> str:
     return f"{len(sentences)} more things wait for your OK: {numbered} {answer}"
 
 
-def render(*, needs: Sequence[str] = (), questions: Sequence[str] = (), done: Sequence[str] = (),
-           context: Sequence[str] = ()) -> Optional[str]:
+def render(*, needs: Sequence[str] = (), done: Sequence[str] = (), context: Sequence[str] = ()) -> Optional[str]:
     """The digest's text, or None when nothing waits and nothing happened. ``needs`` are the waiting asks' lines,
-    ``questions`` and ``done`` plain sentences; ``context`` (what the mind keeps working on) joins the last part
-    but never makes a digest on its own."""
-    if not (needs or questions or done):
+    ``done`` plain sentences; ``context`` (what the mind keeps working on) joins the last part but never makes a
+    digest on its own."""
+    if not (needs or done):
         return None
     blocks = [TITLE]
     if needs:
         blocks.append(_block(WAITING, needs))
-    if questions:
-        blocks.append(_block(QUESTION, questions))
     if done or context:
         blocks.append(_block(DONE, [*done, *context]))
     return "\n\n".join(blocks)
-
-
-def question_message(text: str) -> str:
-    """A question the mind sends on its own: the digest's question label, then the question."""
-    return f"{QUESTION}: {text}"
 
 
 def lines_of(text: str, label: str) -> List[str]:
@@ -98,5 +85,4 @@ def lines_of(text: str, label: str) -> List[str]:
     return items
 
 
-__all__ = ["DONE", "ITEM_CHARS", "NEEDS_OK_1_11", "QUESTION", "QUESTION_CHARS", "TITLE", "WAITING", "ask_list",
-           "asked_ago", "lines_of", "question_message", "render"]
+__all__ = ["DONE", "ITEM_CHARS", "NEEDS_OK_1_11", "TITLE", "WAITING", "ask_list", "asked_ago", "lines_of", "render"]

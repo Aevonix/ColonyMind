@@ -862,12 +862,11 @@ class Outbox:
                            found: List[Tuple[str, str]] | None = None, offers: List[Tuple[str, str]] | None = None,
                            paused: str | None = None, held: List[Tuple[str, str]] | None = None, held_more: int = 0,
                            wishes: List[str] | None = None, drift: List[str] | None = None,
-                           questions: List[str] | None = None, standing: List[str] | None = None,
+                           standing: List[str] | None = None,
                            names: Mapping[str, str] | None = None, work: str | None = None) -> Optional[str]:
-        """The day's digest in three labelled parts (``digest.render``), or None when nothing waits and nothing
-        happened. Waiting for your OK: every open ask in words, when it was asked, and no code (a question is never
-        one). Question: the questions the owner answers in words that the caller lists (``questions``: open ones that
-        did not reach the owner yet, ``questions.Questions.for_digest``). Done or found since yesterday: the settled
+        """The day's digest in two labelled parts (``digest.render``), or None when nothing waits and nothing
+        happened. Waiting for your OK: every open ask in words, when it was asked, and no code (a question an earlier
+        build raised is never one). Done or found since yesterday: the settled
         actions since ``since`` (never a message that already reached the owner), then owner outreach (what the mind
         ``found`` that bears on the owner's interests, the ``offers`` that went unsent or were put off, a ``paused``
         line), what the owner gate ``held`` for the digest (``(topic, text)``; ``held_more`` counts those left for the
@@ -880,13 +879,13 @@ class Outbox:
         try:
             return await self._build_digest(since=since, breaker_states=breaker_states, goals=goals,
                                             opt_outs=opt_outs, found=found, offers=offers, paused=paused, held=held,
-                                            held_more=held_more, wishes=wishes, drift=drift, questions=questions,
+                                            held_more=held_more, wishes=wishes, drift=drift,
                                             standing=standing, names=names, work=work)
         finally:
             self._summary_room = None
 
     async def _build_digest(self, *, since: datetime, breaker_states, goals, opt_outs, found, offers, paused, held,
-                            held_more: int, wishes, drift, questions, names, standing=None, work=None) -> Optional[str]:
+                            held_more: int, wishes, drift, names, standing=None, work=None) -> Optional[str]:
         names = dict(names or {})
         room = digest_text.ITEM_CHARS
         needs: List[str] = []
@@ -895,8 +894,6 @@ class Outbox:
                        if row.ask_code and row.type not in QUESTION_TYPES), key=self._asked_at)
         for row in asks[:ASK_LINES]:
             needs.append(await self._waiting_line(row, names.get(str(row.entity_id)), now))
-        asked_questions = [await self._shown(text, digest_text.QUESTION_CHARS, what="A question I asked you")
-                           for text in questions or []]
         done: List[str] = []
         rows = [row for row in self.store.intentions(since=since, limit=500) if row.type not in NOTICE_TYPES]
         for row in rows:
@@ -932,7 +929,7 @@ class Outbox:
         context = [await self._goal_line(goal) for goal in (goals or [])[:4]]
         context += [await self._shown(line, room, what="A note about what I do without asking")
                     for line in (standing or [])[:1]]
-        return digest_text.render(needs=needs, questions=asked_questions, done=done, context=context)
+        return digest_text.render(needs=needs, done=done, context=context)
 
     async def _waiting_line(self, row: StoredInitiative, name: str | None, now: datetime) -> str:
         """One open ask as the digest lists it: what it is, whole, and when it was asked. No reply instruction: the

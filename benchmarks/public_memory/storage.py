@@ -9,7 +9,8 @@ read or matched. The first that holds is the outcome:
 
 - ``superseded``: an evidence claim was replaced or withdrawn; the store holds the old value as no longer current.
 - ``conflict``: two live evidence claims the night decided cannot both stand (a ``replaces`` decision) and neither was
-  replaced: the store keeps both and asks which holds.
+  replaced: the decision is not settled yet. The night that decides it retracts the older statement itself, which
+  reads ``superseded``; only a store an earlier build formed still holds such a pair.
 - ``both_current``: two different live values, each from a different evidence message, with nothing settling them:
   both read as current. A value is a claim's value key: a claim witnessed by several evidence messages is one value
   (the witnesses are its provenance), and so are two claims filed under one value key.

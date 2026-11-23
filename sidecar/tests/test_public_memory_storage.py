@@ -2,7 +2,7 @@
 
 For a knowledge-update or contradiction question, the claims its evidence messages yielded (anchored at one, or
 witnessed by one) are classified in this order: an old value replaced or withdrawn (``superseded``); two live values
-the night decided cannot both stand (``conflict``: the store keeps both and asks); two different live values, each
+the night decided cannot both stand and has not settled (``conflict``); two different live values, each
 from a different evidence message, with nothing settling them (``both_current``); one live value however often it is
 stated, or values one evidence message alone states (``single_value``); nothing stored from the evidence
 (``not_stored``).
@@ -231,9 +231,9 @@ def test_the_command_reads_stores_named_by_a_relative_directory(storage, records
 
 def test_a_replayed_update_is_read_from_the_formed_store(storage, formed):
     """The replay's office moved from Room 4 to Room 9: before the night both are held as current, and the night
-    decided the newer replaces the older, which the store keeps as a conflict for the owner to settle."""
+    decided the newer replaces the older and retracted the older itself."""
     before = storage.outcome(formed.root, formed.question, store='before_night')
     after = storage.outcome(formed.root, formed.question)
     assert before['outcome'] == storage.BOTH_CURRENT
-    assert after['outcome'] == storage.CONFLICT
+    assert after['outcome'] == storage.SUPERSEDED and after['counts']['withdrawn'] == 1
     assert after['counts']['evidence'] == 2 and after['counts']['stored'] == 2

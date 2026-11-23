@@ -736,20 +736,24 @@ LEARNING = {("claim", "rejected"): "turned away {n} restated {statements} as not
             ("lesson", "ratified"): "had {n} lesson {changes} confirmed by the owner",
             ("claim", "declined"): "had {n} declined by the owner",
             ("lesson", "declined"): "had {n} lesson {changes} declined by the owner",
+            ("claim", "replaced"): "replaced {n} older {statements} with what was said later",
             ("claim", "cooled"): "moved {n} unused {statements} to the cold tier",
             ("lesson", "cooled"): "moved {n} unused {lessons} to the cold tier",
             ("claim", "revived"): "brought {n} back from the cold tier",
             ("lesson", "revived"): "brought {n} {lessons} back from the cold tier",
             ("claim", "reinforced"): "reinforced {n} {statements} that proved useful in recall",
             ("lesson", "reinforced"): "reinforced {n} {lessons} that proved useful"}
-LEARNING_ORDER = ("rejected", "witnessed", "pending", "ratified", "declined", "cooled", "revived", "reinforced")
+LEARNING_ORDER = ("rejected", "witnessed", "pending", "ratified", "declined", "replaced", "cooled", "revived",
+                  "reinforced")
 
 
 def learning(reading: Reading, section: Section) -> None:
+    from colonymind.mind.consolidate import REPLACED_STAGE
     start, end = reading.start.timestamp(), reading.end.timestamp()
-    rows = reading.instance.query(LEDGER, "SELECT store, action FROM learning_log WHERE at >= ? AND at < ?",
+    rows = reading.instance.query(LEDGER, "SELECT store, action, stage FROM learning_log WHERE at >= ? AND at < ?",
                                   (start, end))
-    counts = Counter((row["store"], row["action"]) for row in rows)
+    # A statement the mind retracted itself because a newer one replaces it is its own count, never the owner's.
+    counts = Counter((row["store"], "replaced" if row["stage"] == REPLACED_STAGE else row["action"]) for row in rows)
     # Rejections are written whatever the switch (the novelty gate is mandatory); the rest only with it on.
     section.activity = sum(count for (store, action), count in counts.items() if action != "rejected")
     clauses = []

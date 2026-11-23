@@ -1,8 +1,8 @@
 """An operator's test turn through an owner channel never becomes the owner's words.
 
 A check sent through the voice gateway (a qualification prompt, a post-deploy probe) arrives on a platform
-that speaks for the owner. Recorded as the owner, its lines become the owner's claims and the night asks
-the owner which of two things "you told me" is right. A test turn says so through a trusted signal only:
+that speaks for the owner. Recorded as the owner, its lines become the owner's claims and the night weighs
+them against each other as things the owner said. A test turn says so through a trusted signal only:
 the request carries the ``X-ColonyMind-Test`` header, or its text opens with the exact ``[operator-test]``
 marker or with the qualification harness's machine-generated provenance line. Such a turn, an ordinary
 turn or a checkpoint alike, is accepted and kept under the sending credential's own identity as session
@@ -66,11 +66,11 @@ def stored(fx) -> list[tuple[str, str, str, list[str]]]:
 
 async def assert_kept_as_the_credentials(fx, expected: list[tuple[str, str]]) -> None:
     """Exactly ``expected`` (turn id, its user text) is stored, each under the credential's own identity as
-    session evidence; nothing is the owner's, projected, claimed or questioned."""
+    session evidence; nothing is the owner's, projected, claimed or settled as a contradiction."""
     assert stored(fx) == [(turn_id, OWN_IDENTITY, "session", [text]) for turn_id, text in expected]
     assert await project_everything(fx) == 0
     assert fx.claims() == []
-    assert await night(fx) == []
+    assert await night(fx) == 0
 
 
 async def test_a_turn_sent_with_the_test_header_is_kept_as_the_credentials(arm):

@@ -337,10 +337,27 @@ async def test_a_value_read_anew_stays_corrected_when_the_corrected_claim_change
 ACME, GLOBEX = "I work at Acme.", "My employer is Globex now."
 
 
+def owner_answered(night, first, second, answer, *, ref, now):
+    """What an earlier build wrote when the owner answered its question about two statements (the engine asks none
+    now; a store still holds these records): ``first`` keeps the first and retracts the second by ``ref``, ``both``
+    records the pair as compatible; each change is in the learning log as the owner's answer."""
+    drop = [second] if answer == "first" else []
+    with night._conn() as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        dropped = [*drop, *night._retract(conn, OWNER, drop, [first, second], ref, now)]
+        for action, idents in (("declined", dropped), ("ratified", [c for c in (first, second) if c not in drop])):
+            for ident in idents:
+                learning.log(conn, store="claim", action=action, stage="owner_answer",
+                             reason=f"the owner answered {answer}", item_id=ident, contact_id=OWNER, refs=[ref])
+    if answer == "both":
+        night._record_relation({"id": first}, {"id": second}, "adds", contact_id=OWNER, by=ref, now=now)
+
+
 @pytest.mark.parametrize("case", ["the same key, now linked", "another key"])
 async def test_an_owners_answer_carries_forward(tmp_path, case):
-    """The owner answered a contradiction question: keep Acme, drop Globex. Read again, Globex may come back as a
-    change of Acme, or under another key: Acme stays, Globex stays dropped, and the refused link is reported."""
+    """The owner answered an earlier build's contradiction question: keep Acme, drop Globex. Read again, Globex may
+    come back as a change of Acme, or under another key: Acme stays, Globex stays dropped, and the refused link is
+    reported."""
     ledger = ledger_at(tmp_path)
     await history(ledger, [("t1", ACME, 9), ("t2", GLOBEX, 10)],
                   {ACME: [fact(ACME, "Acme", predicate="employer")],
@@ -349,8 +366,8 @@ async def test_an_owners_answer_carries_forward(tmp_path, case):
     [globex] = by_turn(ledger)["t2"]
     night = Consolidation(store=None, ledger=ledger, concerns=None, mind_state=None, contacts=None, router=None,
                           autobiography=None, owner_id=OWNER, budgets=None, tokens_allowed=None, faculties={})
-    assert night.settle_question({"claims": [acme["id"], globex["id"]], "contact_id": OWNER}, "first",
-                                 ref="intention:ask-1", now=datetime(2026, 3, 2, tzinfo=timezone.utc))
+    owner_answered(night, acme["id"], globex["id"], "first", ref="intention:ask-1",
+                   now=datetime(2026, 3, 2, tzinfo=timezone.utc))
     assert live(ledger) == ["Acme"]
     again = {"the same key, now linked": [fact(GLOBEX, "Globex", predicate="employer", operation="change",
                                                link="employer")],
@@ -379,8 +396,8 @@ async def test_an_owners_answer_that_both_hold_follows_a_claim_that_changed_id(t
     state = Concerns(tmp_path / "mind.db").state
     night = Consolidation(store=None, ledger=ledger, concerns=None, mind_state=state, contacts=None, router=None,
                           autobiography=None, owner_id=OWNER, budgets=None, tokens_allowed=None, faculties={})
-    assert night.settle_question({"claims": [acme["id"], globex["id"]], "contact_id": OWNER}, "both",
-                                 ref="intention:ask-2", now=datetime(2026, 3, 2, tzinfo=timezone.utc))
+    owner_answered(night, acme["id"], globex["id"], "both", ref="intention:ask-2",
+                   now=datetime(2026, 3, 2, tzinfo=timezone.utc))
     assert night.relation(acme["id"], globex["id"]) == "adds"
     model = Scripted({ACME: [fact(ACME, "Acme", predicate="employer")],
                       GLOBEX: [fact(GLOBEX, "Globex", predicate="works_for")]})
