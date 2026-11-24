@@ -16,7 +16,9 @@ logger = logging.getLogger(__name__)
 # Recall's own character budget when the environment names none (``COLONYMIND_RECALL_CONTEXT_MAX_CHARS``). The
 # packet rides in the user turn and the host replays it as history on every later turn. An explicit search keeps
 # DEFAULT_RECALL_CHARS. A turn's recall takes what the context budget has past REST_CHARS, the room the other
-# sections keep, and never less than DEFAULT_RECALL_CHARS (``turn_recall_chars``).
+# sections keep, and never less than DEFAULT_RECALL_CHARS (``turn_recall_chars``): its budget while the other
+# sections are assembled. Once they are, context assembly can pack it again within the room they really leave
+# (``api.routers.host._recall_room``), never dropping a record this budget kept.
 DEFAULT_RECALL_CHARS = 4000
 REST_CHARS = 6000
 

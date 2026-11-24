@@ -3146,7 +3146,13 @@ async def _memory_within_allowance(sections: list[ContextSection], recalled, *, 
     left out as ``over_host_allowance``. The packet is annotated as the assembled memory was (``records``), and the
     annotated packet is what has to fit. When not one record fits beside them, the section is held back whole: it
     is left out, and the caller names it (``_fit_sections``) and the trace says ``held_back``, so the memory never
-    vanishes unmentioned and never passes as a heading without evidence."""
+    vanishes unmentioned and never passes as a heading without evidence.
+
+    With the host's allowance named and no recall budget named in the environment, the packet may also take room
+    recall's own budget did not give it: what the allowance leaves once the pinned items and every other section,
+    at its whole assembled size, are counted. The offered candidates are packed again within that room, and the
+    wider packet replaces the packet only when it shows every record the packet shows, each at least as fully, so
+    recall only gains and every other section keeps the room it has without it."""
     from colonymind.memory import curated
     async def read():
         return await _read_memory_within_allowance(sections, recalled, inline_chars=inline_chars, records=records, trace=trace)
@@ -3181,27 +3187,64 @@ async def _read_memory_within_allowance(sections: list[ContextSection], recalled
 
     # A source tombstone may commit after selection even when no smaller host
     # allowance was requested. Recheck the entire offer before either early return.
+    free = None
     if inline_chars is None:
         room = max(len(memory.body), offered.max_chars)
     else:
         _, counted = await compass.select_context(others, "", None)
         room = inline_chars - int(counted.get("kept_whole") or 0) - blocks.cost(memory.title or memory.id, "")
-    if len(pool) == len(offered.rows) and (inline_chars is None or len(memory.body) <= room):
-        return sections, packet.selected
+        free = _recall_room(memory, others, counted, room=room, inline_chars=inline_chars)
 
     def annotated(content: str) -> str:
         return compass.annotate_superseded([memory.model_copy(update={"body": content})], list(records))[0].body \
             if records and content else content
 
-    # A note grows the lines it annotates: pack again within less until the annotated packet fits (each round
-    # packs within fewer characters than the last packet took).
-    budget = min(offered.max_chars, room)
-    while True:
-        kept, content = fit_packet(pool, limit=offered.limit, max_chars=budget, recalled=packet.selected)
-        over = len(annotated(content)) - room
-        if not content or over <= 0:
-            break
-        budget = min(budget, len(content)) - over
+    def fitted(budget: int, room: int):
+        # A note grows the lines it annotates: pack again within less until the annotated packet fits (each round
+        # packs within fewer characters than the last packet took).
+        while True:
+            kept, content = fit_packet(pool, limit=offered.limit, max_chars=budget, recalled=packet.selected)
+            over = len(annotated(content)) - room
+            if not content or over <= 0:
+                return kept, content, budget
+            budget = min(budget, len(content)) - over
+
+    def wider(kept, body: str):
+        # The packet packed again within ``free`` when that is more room than the packet takes and the pool holds
+        # more than it shows. It stands only when it shows every record ``kept`` shows, each at least as fully, and
+        # is longer; otherwise None and the packet stays as it is.
+        if free is None or free <= len(body):
+            return None
+        shown = {str(row.get("id")): row for row in kept}
+        if all(str(row.get("id")) in shown for row in pool) and not any(
+                row.get("excerpt_truncated") for row in kept):
+            return None
+        wide = fitted(free, free)
+        if not wide[1] or len(annotated(wide[1])) <= len(body):
+            return None
+        held = {str(row.get("id")): row for row in wide[0]}
+        if not all(_shows_as_much(held.get(key), row) for key, row in shown.items()):
+            return None
+        return wide
+
+    if len(pool) == len(offered.rows) and (inline_chars is None or len(memory.body) <= room):
+        wide = wider(packet.selected, memory.body)
+        if wide is None:
+            return sections, packet.selected
+        kept, content, budget = wide
+        try:
+            # Only a gain: when the wider packet's sources cannot be read, the packet stays as recall returned it
+            # (and the trace, told nothing yet, still names that packet).
+            refs = await producers.read(packet_refs, recalled.ledger, kept, contact_id=recalled.contact_id,
+                                           session_id=recalled.session_id)
+        except Exception:
+            logger.debug("wider recall packet's sources unreadable; the packet stays as recalled", exc_info=True)
+            return sections, packet.selected
+    else:
+        refs = None
+        kept, content, budget = fitted(min(offered.max_chars, room), room)
+        if content:
+            kept, content, budget = wider(kept, annotated(content)) or (kept, content, budget)
     if not content:
         # Not one record fits: the section is held back whole, citations included, and the caller names it. Its
         # heading and the packet's first line alone would carry no evidence (the block fit keeps a head of any block).
@@ -3210,10 +3253,38 @@ async def _read_memory_within_allowance(sections: list[ContextSection], recalled
         # The same packing again, told to the trace: what it left out, and the packet the context now carries.
         kept, content = fit_packet(pool, limit=offered.limit, max_chars=budget, recalled=packet.selected, trace=trace)
         trace.packet(kept, content)
-    refs = await producers.read(packet_refs, recalled.ledger, kept, contact_id=recalled.contact_id,
-                                   session_id=recalled.session_id)
+    if refs is None:
+        refs = await producers.read(packet_refs, recalled.ledger, kept, contact_id=recalled.contact_id,
+                                       session_id=recalled.session_id)
     return [*sections[:index], memory.model_copy(update={"body": annotated(content), "citations": refs or None}),
             *sections[index + 1:]], kept
+
+
+def _recall_room(memory: ContextSection, others: list[ContextSection], counted: dict, *, room: int,
+                 inline_chars: int) -> Optional[int]:
+    """The characters a turn's recalled packet may take once the context is assembled: what the host's allowance
+    leaves after every other section at its whole assembled size, counted both as the per-turn selection counts it
+    (``counted``: the pinned items in ``room``, the others in ``chars_before``) and as the block fit does. A packet
+    within it leaves the selection (scored, within its budget or fallen back) and the block fit exactly the room
+    they have without it. None when the environment names recall's budget (``COLONYMIND_RECALL_CONTEXT_MAX_CHARS``):
+    that budget is the packet's."""
+    from colonymind.memory import blocks
+    from colonymind.memory.search import turn_recall_chars
+    if turn_recall_chars(inline_chars) is None:
+        return None
+    heading = blocks.cost(memory.title or memory.id, "")
+    return min(room - int(counted.get("chars_before") or 0),
+               inline_chars - heading - sum(blocks.cost(section.title or section.id, section.body) for section in others))
+
+
+def _shows_as_much(wide, row) -> bool:
+    """Whether ``wide``, a record of a wider packing, shows at least what ``row``, the same record as the packet
+    showed it, did: whole, or cut no shorter than it was."""
+    if wide is None:
+        return False
+    if not wide.get("excerpt_truncated"):
+        return True
+    return bool(row.get("excerpt_truncated")) and str(wide.get("content") or "").startswith(str(row.get("content") or ""))
 
 
 async def assemble_packet(contact_id: str, *, query: str = "", limit_chars: int = 2000) -> str:

@@ -406,9 +406,12 @@ An explicit search's combined rendered budget is 4,000 characters. A turn's pack
 takes what the context budget has past the 6,000 characters the other sections
 keep: `context.budget_chars` (default 16,000), or the host's inline allowance when
 that is smaller, less 6,000, and never less than 4,000. That is 10,000 characters
-at the defaults and 4,000 under an allowance of 10,000 or less.
+at the defaults and 4,000 under an allowance of 10,000 or less: recall's own
+budget, while the other sections are still being assembled. Once they are, the
+packet may take more, up to the room they leave (see Per-turn context selection
+below).
 `COLONYMIND_RECALL_CONTEXT_MAX_CHARS` names one budget for both, up to 24,000; zero
-suppresses this packet.
+suppresses this packet, and a turn's packet then never takes more.
 When the host names its inline allowance, a turn's packet also stays within that
 allowance less the items kept whole beside it (see Per-turn context selection
 below). This is a character limit, not an asserted token count. Shortened excerpts carry
@@ -503,6 +506,22 @@ it admits), and never a packet over the allowance with the resident blocks off.
 The budget report lists it among `held_back`, the `Held back this turn` section
 names it in room kept for it (a budget too small for those words still names
 it on the report), and the trace says `held_back`.
+
+The packet can also take room recall's own budget did not give it. Unless the
+environment names recall's budget, the allowance (`context.budget_chars` when
+the host names none) less the pinned items and every other section at its whole
+assembled size, counted as the selection counts them and as the block fit does,
+is the room recall really has. When that is more than the packet takes and the
+offered candidates hold more than it shows, they are packed again within it,
+with the same rules and count limit. The wider packet replaces the packet only
+when it shows every record the packet shows, each at least as fully; otherwise
+the packet stays as it is. So recall only gains, and the selection (scored,
+within its budget or fallen back) and the block fit see exactly the room they
+see without it: no other section changes. Recall's own packing, its trace
+reasons for what stays out and an explicit search are unchanged; a candidate the
+wider packet shows has no exit reason in the trace. The wider packet rides in
+the turn's user message like any other, so a turn that takes it adds those
+characters to every later request that replays the turn.
 
 When the memory and the pinned items alone still exceed the allowance they are
 kept whole, nothing else is added and a warning is logged (at most once per

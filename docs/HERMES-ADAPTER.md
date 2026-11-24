@@ -723,8 +723,10 @@ sections even when the host offers more room or will collapse unchanged sections
 `context.recall_items` caps recalled records (owner-adjustable default 20), whether or not a
 verified reranker cutoff chose them. This matches the independent 20-candidate rerank bound;
 missed reranking keeps its five-record fallback. The default `context.budget_chars` is 16,000: a host whose inline
-cap is smaller keeps the context within its own allowance, so raise `hooks.output_spill.max_chars` to 16,256 or more
-to let a turn's recall use the room. `COLONYMIND_CONTEXT_HOST_WAIT_MS` caps the whole assembly
+cap is smaller keeps the context within its own allowance. Within it a turn's recall also takes the room the other
+sections leave once they are assembled, so under the default cap it is not held to 4,000 characters when they are
+small; raise `hooks.output_spill.max_chars` to 16,256 or more to give the whole context the default budget.
+`COLONYMIND_CONTEXT_HOST_WAIT_MS` caps the whole assembly
 (default 7,500 ms); `wait_ms` can shorten it. An expired assembly returns no sections. Synchronous producers use a
 dedicated 16-worker pool. Healthy concurrent reads wait for a free worker within the turn deadline; work is never
 queued in the executor. When abandoned reads fill the pool, a producer is skipped and counted in
