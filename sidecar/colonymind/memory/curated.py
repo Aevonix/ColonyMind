@@ -852,7 +852,12 @@ def is_forgotten(ledger, source_ref, *, conn=None):
 
 
 def _journal_version(ledger):
-    """Read the live journal independently of any caller's native snapshot."""
+    """Read the live journal independently of any caller's native snapshot.
+
+    Inside a hot computation's withdrawal envelope (``withdrawal_fenced_read``, ``context_fenced_read``) on this
+    ledger, the envelope's cursor fences withdrawals and the version is the curated journal's alone: any other
+    commit to the file (a turn's activity, a capture) would otherwise make every retry of a nested read look
+    torn and withhold it whole."""
     try:
         ledger = _reader_ledger(ledger)
         if ledger is None or not hasattr(ledger, 'db_path'):
@@ -862,6 +867,8 @@ def _journal_version(ledger):
             cache.refresh()
             version = cache.monitor.execute('PRAGMA data_version').fetchone()[0]
             sequence = cache.monitor.execute('SELECT max(sequence) FROM curated_memory_events').fetchone()[0]
+            if _ledger_path(ledger) in _withdrawal_reads.get():
+                version = None
             return cache.identity, version, sequence
     except Exception as error:
         if ledger is not None and hasattr(ledger, 'db_path'):

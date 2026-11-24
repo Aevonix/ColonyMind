@@ -291,6 +291,23 @@ async def test_async_fence_bounds_churn(traffic, churn):
     assert len(calls) == (3 if churn else 1)
 
 
+@pytest.mark.parametrize('churn', [False, True])
+async def test_nested_fence_ignores_ordinary_churn_inside_the_envelope(traffic, churn):
+    # A hot assembly's own envelope fences withdrawals; a nested read is not withheld for an unrelated commit.
+    ledger, _ = traffic
+    calls = []
+    async def read():
+        calls.append(True)
+        if churn:
+            ledger.record_source('marker-' + str(len(calls)), contact_id=OWNER, session_id='fixture-session',
+                messages=[{'role': 'user', 'content': 'Fixture'}], derive_claims=False)
+        return 'stable'
+    async def hot():
+        return await curated.fenced_read(ledger, read, empty='empty')
+    assert await curated.withdrawal_fenced_read(ledger, hot, empty='outer') == 'stable'
+    assert len(calls) == 1
+
+
 @pytest.mark.parametrize('withdrawn', [True, False])
 async def test_commitment_list_complete(traffic, tmp_path, monkeypatch, withdrawn):
     from colonymind.api.routers import host
