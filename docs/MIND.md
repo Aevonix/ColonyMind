@@ -374,7 +374,9 @@ The design is in
     learned about X: ...") the same way, so a later turn uses it. Any other
     task the body reports with a summary stores what it came to ("What my
     task '...' came to (done): ...") the same way, whatever its outcome, as
-    an entry of that task (`mind:<id>:result`).
+    an entry of that task (`mind:<id>:result`). Recall places it after that
+    task's outcome entry, which carries the same report and how it was
+    verified, so a packet with room for one of them holds the outcome.
 
 Each task intention has one line in the recorder (`colonymind.recorder`: kind
 `card`, source `mind.task`, ref `initiative:<id>`). The line opens when the

@@ -220,6 +220,36 @@ async def test_a_settled_task_writes_its_result_into_memory_and_closes_its_line(
     assert (line_of(missed)["result"], line_of(missed)["detail"]) == ("failed", "check_not_passed")
 
 
+async def test_a_later_turns_recall_holds_a_tasks_outcome_before_what_it_came_to(fx):
+    """A task the body reports with a summary has two entries: its outcome ("My task '...' ended done ...", with how
+    it was verified) and what it came to, the same report without the verification. A later turn's recall ranks the
+    result after that outcome, so a packet with room for only one of them carries the outcome."""
+    from colonymind.memory import search
+    from colonymind.memory.selection import RecallSelector
+    task, _ = fx.store.create_intention(kind="task", type="upkeep", title="Overdue: Send them the report rep-1234",
+                                        drive="upkeep", cls="internal", decision="act",
+                                        decision_reason="standard: internal -> act", status="approved",
+                                        dedup_key="task:report", context={"body": "Send it."}, created_at=fx.now)
+    fx.mind.bound(task.id, "t_5b1bcf96")
+    done = fx.mind.report(task.id, status="done", outcome="done", final=True,
+                          summary="Done as asked. Evidence: this run's log. It worked.")
+    assert memory(fx, done, "outcome_done") and memory(fx, done, "result")
+    question = "What happened with the report rep-1234? Answer from what you know."
+
+    async def recall(max_chars):
+        collected = await search.collect_sources(fx.ledger, query=question, contact_id=OWNER, session_id="later")
+        return await search.select_memory(collected, query=question, selector=RecallSelector(), limit=None,
+                                          timezone_name="UTC", max_chars=max_chars)
+
+    lines = (await recall(search.DEFAULT_RECALL_CHARS)).content.splitlines()
+    [outcome] = [n for n, line in enumerate(lines) if f'"turn:mind:{task.id}:outcome_done"' in line]
+    [result] = [n for n, line in enumerate(lines) if f'"turn:mind:{task.id}:result"' in line]
+    assert outcome < result
+    # Room for all but one of the two entries: the outcome stays and what it came to is left out.
+    tight = (await recall(len("\n".join(lines)) - len(lines[result]) - 1)).content
+    assert f"mind:{task.id}:outcome_done" in tight and f"mind:{task.id}:result" not in tight
+
+
 async def test_the_owners_no_marks_the_line_of_an_asked_task(tmp_path, monkeypatch):
     monkeypatch.setenv("COLONYMIND_OWNER_CONTACT_ID", OWNER)
     fx = Fixture(tmp_path)

@@ -190,6 +190,23 @@ def current_work_query(query):
         r"(?:currently |now )?(?:running|active|in flight)\b)", text))
 
 
+def outcome_before_result(ranked):
+    """``ranked`` with a task's result entry (``mind:<id>:result``, what it came to) placed right after that task's
+    outcome entry (``mind:<id>:outcome_<outcome>``) when it ranked before it. The outcome carries the same report
+    with how it was verified (``mind.outcomes``), so a packet with room for only one of the two holds the outcome."""
+    def entry(row):
+        task, _, event = str(row.get('source_turn_id') or '').rpartition(':')
+        return (task, event) if task.startswith('mind:') else (None, '')
+    ordered = list(ranked)
+    for row in [row for row in ordered if entry(row)[1] == 'result']:
+        at = next(n for n, other in enumerate(ordered) if other is row)
+        outcome = next((n for n, other in enumerate(ordered) if n > at and entry(other)[0] == entry(row)[0]
+                        and entry(other)[1].startswith('outcome_')), None)
+        if outcome is not None:
+            ordered.insert(outcome, ordered.pop(at))
+    return ordered
+
+
 class RecallSelector:
     def __init__(self, rerank_fn=None, *, calibration_metadata=None, logger=None):
         self._rerank_fn = rerank_fn
@@ -311,6 +328,7 @@ class RecallSelector:
         # its abstention decisions and substantive order, then place only exact
         # unqualified request repeats after the remaining evidence.
         ranked.sort(key=repeats_request)
+        ranked = outcome_before_result(ranked)
         from . import recall_stats
         if not missed or mode != 'on':
             # A context packet holds up to ``context.recall_items`` records within its character budget. A verified
