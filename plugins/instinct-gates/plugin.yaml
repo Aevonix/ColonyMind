@@ -1,5 +1,5 @@
 name: colonymind-gates
-version: 1.0.1
+version: 1.1.0
 description: |
   Optional gates on stock Hermes seams, decided by ColonyMind's Instinct and
   measured in shadow before they act: a cron job's pre-run script that skips

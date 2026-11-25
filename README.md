@@ -27,7 +27,7 @@ sessions and channels, tracks promises and people, and acts when needed, inside 
 budgets and quiet hours. It joins stock
 Hermes as a plugin and memory provider, with no fork and no patches: Hermes stays the body, ColonyMind is the mind.
 
-**Status:** research software, release 1.0.1. Hermes 0.21.3 is the supported floor for install, the first loop and
+**Status:** research software, release 1.1.0. Hermes 0.21.3 is the supported floor for install, the first loop and
 the container on Python 3.11 to 3.13; session archives need Hermes 0.21.7 or newer. A capability is
 claimed only once it is measured against stock Hermes. Proto-AGI is the project's [research goal](#research-mission),
 not a claim about this release.

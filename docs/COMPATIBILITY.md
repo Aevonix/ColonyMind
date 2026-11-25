@@ -6,6 +6,7 @@ are released together with the same version.
 
 | ColonyMind | Installer's Hermes range (`hermes-agent`) | Python environments | Qualification |
 |---|---|---|---|
+| 1.1.x | `>=0.21.3, <0.24` | Sidecar: 3.11, 3.12, 3.13; Hermes: 3.14 from 0.21.7 | Install and first loop: Hermes 0.21.3 from source, Hermes 0.23.1 from Hermes' installer. Container: Hermes 0.21.3. Adapter suite: Hermes 0.21.7 and Hermes 0.23.1. |
 | 1.0.x | `>=0.21.3, <0.24` | Sidecar: 3.11, 3.12, 3.13; Hermes: 3.14 from 0.21.7 | Install and first loop: Hermes 0.21.3 from source, Hermes 0.23.1 from Hermes' installer. Container: Hermes 0.21.3. Adapter suite: Hermes 0.21.7 and Hermes 0.23.1. |
 
 3.12 is the recommended sidecar Python: the install guide picks it, and the release artifacts are built and checked on it.

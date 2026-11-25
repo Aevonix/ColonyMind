@@ -24,7 +24,7 @@ import os
 import threading
 from typing import Any, Callable, Mapping
 
-__version__ = "1.0.1"
+__version__ = "1.1.0"
 
 from .answers import Answers, ChatLedger, ledger_path
 from .archive import ArchiveWorker
