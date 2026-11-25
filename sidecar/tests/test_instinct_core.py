@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
@@ -515,7 +516,16 @@ async def test_a_row_carries_raw_probabilities_and_references_and_never_the_word
     words = "My door code is 4417 and the spare key is under the mat"
     await made.decide("probe", {"text": words}, {"turn": "t-9", "intention": "row-1", "note": words})
     with sqlite3.connect(store.path) as conn:
-        dump = "\n".join(str(value) for row in conn.execute("SELECT * FROM instinct_decisions") for value in row)
+        conn.row_factory = sqlite3.Row
+        rows = [dict(row) for row in conn.execute("SELECT * FROM instinct_decisions")]
+    for row in rows:                    # a generated id, the clock, a timing and a keyed hash can hold any digits
+        assert re.fullmatch(r"dec-[0-9a-f]{16}", row.pop("id")) and datetime.fromisoformat(row.pop("at"))
+        assert re.fullmatch(r"[0-9a-f]{32}", row.pop("state_hash"))
+        tiers, refs = json.loads(row.pop("tiers_json")), json.loads(row.pop("refs_json"))
+        assert all(isinstance(entry.pop("latency_ms"), float) for entry in tiers.values())
+        assert re.fullmatch(r"h:[0-9a-f]{24}", refs.pop("note"))
+        row.update(tiers=tiers, refs=refs)
+    dump = repr(rows)
     assert "4417" not in dump and "spare key" not in dump
     [row] = store.rows()
     assert row["refs"]["turn"] == "t-9" and row["refs"]["intention"] == "row-1"

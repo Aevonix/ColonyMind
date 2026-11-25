@@ -57,8 +57,14 @@ def test_a_line_holds_labels_only(state):
     assert (line["source"], line["detail"]) == ("other", "TimeoutError")     # an error class is a label
     with sqlite3.connect(state / DB_FILE) as conn:
         tables = [name for (name,) in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
-        dump = repr(conn.execute("SELECT * FROM lines").fetchall())
+        cursor = conn.execute("SELECT * FROM lines")
+        names = [column[0] for column in cursor.description]
+        rows = [dict(zip(names, row)) for row in cursor]
     assert tables == ["lines"]
+    for row in rows:                                   # a generated id and the clock can hold any digits
+        assert re.fullmatch(r"[0-9a-f]{32}", row.pop("id"))
+        assert isinstance(row.pop("began_at"), float) and isinstance(row.pop("took_ms"), (int, type(None)))
+    dump = repr(rows)
     assert "Hello" not in dump and "555" not in dump
 
 
