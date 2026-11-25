@@ -112,6 +112,38 @@ def test_commitment_readers_hide_forgotten_source_and_keep_row(tmp_path):
         assert db.execute('SELECT description FROM commitments').fetchone()[0] == item['description']
 
 
+@pytest.mark.parametrize('withdrawn', [False, True])
+def test_commitment_listing_reads_its_sources_on_one_connection(tmp_path, monkeypatch, withdrawn):
+    import sqlite3
+    from colonymind.commitments.store import CommitmentStore
+    ledger = TurnIdempotencyLedger(tmp_path/'turn-idempotency.db')
+    for index in range(12):
+        ledger.record_source(f'source-{index}', contact_id='owner', session_id='session',
+                             messages=[{'role': 'user', 'content': f'Fixture item {index}'}], derive_claims=False)
+    store = CommitmentStore(tmp_path/'commitments.db')
+    for index in range(12):
+        store.create(person_id='owner', description=f'Fixture item {index}',
+                     metadata={'source_turn': f'source-{index}'} if index % 4 else None)
+    if withdrawn:
+        curated.forget_sources(ledger, 'owner', source_ids=['source-1', 'source-6'])
+    with closing(store._connect()) as db:
+        rows = db.execute('SELECT * FROM commitments ORDER BY made_at DESC').fetchall()
+    expected = [row['id'] for row in rows if store._visible(row)]    # each row checked on its own connection
+    assert len(expected) == (10 if withdrawn else 12)
+    connect, opened = sqlite3.connect, []
+
+    def counted(target, *args, **kwargs):
+        if 'turn-idempotency.db' in str(target):
+            opened.append(target)
+        return connect(target, *args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, 'connect', counted)
+    listed = store.list(person_id='owner', limit=5, offset=2)
+    assert [item['id'] for item in listed['commitments']] == expected[2:7]
+    assert listed['total'] == len(expected)
+    assert len(opened) == 1
+
+
 def test_later_dependent_answers_and_plain_copies_inherit_withdrawal(tmp_path):
     ledger = TurnIdempotencyLedger(tmp_path/'turn-idempotency.db')
     record(ledger)

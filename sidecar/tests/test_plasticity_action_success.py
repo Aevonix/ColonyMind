@@ -175,6 +175,28 @@ def test_rows_reference_sources_and_use_only_past_topic_failures(tmp_path):
         store.close()
 
 
+def test_a_scored_candidate_checks_the_sources_of_only_the_failures_it_counts(tmp_path, monkeypatch):
+    store = InitiativeStore(state_dir=tmp_path)
+    service = runtime(tmp_path, [NOW])
+    try:
+        for i in range(6):
+            task(store, NOW - (i + 2) * HOUR, outcome='failed', verified='check', turn=f'failed-{i}')
+            task(store, NOW - (i + 2) * HOUR, outcome='done', verified='check', topic=WORDS[0], turn=f'done-{i}')
+        rows = service.loaded['success'].driver.rows
+        rows.sources.withheld = lambda ids: {'failed-0'} & set(ids)
+        row = {'type': 'research', 'drive': 'curiosity', 'success_check': None,
+               'context': {'topic': WORDS[2], 'evidence': ['turn:new-turn'], 'open_ended': True}}
+        expected = rows.frame(row, NOW, snapshot=rows.snapshot())
+        hidden, checked = rows.hidden, []
+        monkeypatch.setattr(rows, 'hidden', lambda refs: checked.append(refs) or hidden(refs))
+        assert rows.frame(row, NOW) == expected
+        assert expected[0]['prior_failures'] == 5 and 'failed-0' not in expected[1]
+        assert len(checked) == 1 + 6     # the candidate's own sources, then each same-topic failure
+    finally:
+        service.close()
+        store.close()
+
+
 def planted(store):
     for i in range(840):
         risky = i % 60 < 20

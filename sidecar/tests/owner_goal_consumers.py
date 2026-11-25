@@ -23,7 +23,7 @@ CONSUMERS = {
     "mind/tick.py": {"Mind._owner_cadences"},
     "reports/instance.py": {"Instance.mind_rows", "Instance.open_rows", "Instance.handed_over", "Instance.history"},
     "reports/senses.py": {"collect"},
-    "plasticity/learners/action_success.py": {"Rows.snapshot", "Rows.remember", "report"},
+    "plasticity/learners/action_success.py": {"Rows._created", "Rows.remember", "report"},
     "plasticity/learners/reply_timing.py": {"Rows.snapshot", "report"},
     "plasticity/learners/salience.py": {"Rows.snapshot", "Rows.label", "report"},
 }

@@ -91,7 +91,7 @@ import logging
 import os
 import sqlite3
 from collections import Counter, defaultdict
-from contextlib import closing
+from contextlib import closing, contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -168,6 +168,38 @@ class Sources:
             logger.info("instinct outcomes: %s unreadable (%s)", Path(path).name, type(error).__name__)
             return []
 
+    @contextmanager
+    def _reading(self, path: Path):
+        """``_query`` for several reads of one store on one connection; each read that fails reads as empty, as
+        there."""
+        conn, failure = None, None
+        if Path(path).is_file():
+            try:
+                conn = sqlite3.connect(str(path), timeout=5)
+                conn.row_factory = sqlite3.Row
+                conn.execute("PRAGMA query_only = ON")
+            except sqlite3.Error as error:
+                if conn is not None:
+                    conn.close()
+                conn, failure = None, error
+
+        def query(sql: str, args: Iterable[Any] = ()) -> List[sqlite3.Row]:
+            error = failure
+            if conn is not None:
+                try:
+                    return conn.execute(sql, list(args)).fetchall()
+                except sqlite3.Error as raised:
+                    error = raised
+            if error is not None:
+                logger.info("instinct outcomes: %s unreadable (%s)", Path(path).name, type(error).__name__)
+            return []
+
+        try:
+            yield query
+        finally:
+            if conn is not None:
+                conn.close()
+
     # -- turns -----------------------------------------------------------------------------------------------
 
     @staticmethod
@@ -215,23 +247,21 @@ class Sources:
         ``source_erasure_revisions``). A decision may have read the message that went, so either forgets it."""
         wanted = [str(ident) for ident in dict.fromkeys(turn_ids) if ident]
         out: Set[str] = set()
-        for start in range(0, len(wanted), 500):
-            chunk = wanted[start:start + 500]
-            marks = ",".join("?" * len(chunk))
-            rows = self._query(self.state_dir / TURN_DB, f"SELECT turn_id FROM source_erasures WHERE turn_id IN "
-                               f"({marks})", chunk)
-            out.update(str(row["turn_id"]) for row in rows)
-            rows = self._query(self.state_dir / TURN_DB, "SELECT source_turn_id AS turn_id FROM "
-                               f"source_erasure_revisions WHERE source_turn_id IN ({marks})", chunk)
-            out.update(str(row["turn_id"]) for row in rows)
+        if wanted:
+            with self._reading(self.state_dir / TURN_DB) as query:
+                # All the ids in one parameter and the matches in one result row, as ``withheld`` reads.
+                for table, column in (("source_erasures", "turn_id"), ("source_erasure_revisions", "source_turn_id")):
+                    rows = query(f"SELECT json_group_array({column}) AS turn_ids FROM {table} "
+                                 f"WHERE {column} IN (SELECT value FROM json_each(?))", (json.dumps(wanted),))
+                    out.update(str(ident) for row in rows for ident in json.loads(row["turn_ids"]))
         path = self.state_dir / TURN_DB
         if path.is_file():
             from colonymind.memory import curated
             with closing(sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)) as conn:
                 conn.row_factory = sqlite3.Row
-                return curated.fenced_read(conn,
-                    lambda: out | {ident for ident in wanted if curated.is_forgotten(conn, ident)},
-                    empty=set(wanted))
+                reader = curated.reader_of(conn)
+                return curated.fenced_read(reader, lambda: out | curated.forgotten_among(reader, wanted, conn=conn),
+                                           empty=set(wanted))
         return out
 
     def withheld(self, turn_ids: Iterable[str]) -> Set[str]:
@@ -241,14 +271,17 @@ class Sources:
         (``source_attribution_invalidations``). Nothing learned may read them either (``_Reading``)."""
         wanted = [str(ident) for ident in dict.fromkeys(turn_ids) if ident]
         out: Set[str] = set()
-        for start in range(0, len(wanted), 500):
-            chunk = wanted[start:start + 500]
-            marks = ",".join("?" * len(chunk))
+        if not wanted:
+            return out
+        with self._reading(self.state_dir / TURN_DB) as query:
             for table, column in (("source_projection_erasures", "turn_id"),
                                   ("source_attribution_invalidations", "source_id")):
-                rows = self._query(self.state_dir / TURN_DB, f"SELECT DISTINCT {column} AS turn_id FROM {table} "
-                                   f"WHERE {column} IN ({marks})", chunk)
-                out.update(str(row["turn_id"]) for row in rows)
+                # All the ids in one parameter, one index probe each (a turn can have hundreds of rows), and the
+                # ids that have a row in one result row: each statement step and each row fetched hands the
+                # interpreter lock over and back.
+                rows = query(f"SELECT json_group_array(w.value) AS turn_ids FROM json_each(?) AS w "
+                             f"WHERE EXISTS (SELECT 1 FROM {table} WHERE {column}=w.value)", (json.dumps(wanted),))
+                out.update(str(ident) for row in rows for ident in json.loads(row["turn_ids"]))
         return out
 
     def raw_turn(self, turn_id: str) -> Optional[Dict[str, Any]]:

@@ -148,11 +148,14 @@ class Rows:
     def snapshot(self):
         if not self.sources.owner_id:
             return [], []
-        turns = self.query(TURN_DB, "SELECT s.turn_id AS id, coalesce(s.occurred_at,s.ingested_at) AS at, "
+        # One row for all the turns: fetched row by row, each row hands the interpreter lock over and back.
+        found = self.query(TURN_DB, "SELECT json_group_array(json_object('id', id, 'at', at, 'channel', channel)) "
+            "AS turns FROM (SELECT s.turn_id AS id, coalesce(s.occurred_at,s.ingested_at) AS at, "
             "coalesce(c.platform,'other') AS channel FROM turn_sources s LEFT JOIN source_channels c "
             "ON c.turn_id=s.turn_id WHERE s.contact_id=? AND s.scope='person' AND s.session_id<>'mind' "
             "AND s.turn_id NOT LIKE 'mind:%' AND EXISTS (SELECT 1 FROM json_each(s.messages_json) m "
-            "WHERE json_extract(m.value,'$.role')='user')", (self.sources.owner_id,))
+            "WHERE json_extract(m.value,'$.role')='user'))", (self.sources.owner_id,))
+        turns = json.loads(found[0]['turns']) if found else []
         hidden = self.sources.withheld(t['id'] for t in turns) | self.sources.erased(t['id'] for t in turns)
         for turn in turns:
             turn['at'], turn['hidden'] = moment(turn['at']), turn['id'] in hidden
@@ -398,11 +401,12 @@ class Driver(Cycle):
         return self.last_report
 
     def poll(self, runtime):
-        """Confirm delivery, serve once, and label only after the complete hour."""
+        """Confirm delivery, serve once, and label only after the complete hour. Returns the snapshot it read
+        (``Rows.snapshot``), None when it read none."""
         if not runtime.enabled or runtime.find('reply_timing') != self.store.name:
-            return
+            return None
         with runtime.lock:
-            turns, sends = self.rows.snapshot()
+            turns, sends = snapshot = self.rows.snapshot()
             comparator = runtime.loaded[self.store.name].comparator
             records = {r['ref_hash']: r for r in comparator.records()}
             for send in sends:
@@ -424,6 +428,7 @@ class Driver(Cycle):
                         float(self.learner.predict(pin.state if pin else {}, [value])[0, 0]))
                 if row is not None and (saved is None or saved['outcome'] is None):
                     runtime.outcome(self.store.name, ref, observed=row['label'], teacher='realized_value')
+        return snapshot
 
     async def live(self, runtime):
         while True:
@@ -461,7 +466,7 @@ def _prepare(mind, state):
         return
     driver = runtime.loaded[name].driver
     driver.rows.sources.owner_id = mind.owner_id
-    driver.poll(runtime)
+    polled = driver.poll(runtime)
     holds = TimingHolds()
     for item in mind.mind_state.items(HOLD_PREFIX):
         first = moment(item['text'])
@@ -475,7 +480,8 @@ def _prepare(mind, state):
     state.timing_holds = holds
     # Existing rules form the eligible candidates before the learned hold.
     eligible = outreach.candidates(state)[1]
-    turns, _ = driver.rows.snapshot()
+    # The poll's snapshot, read under the same lock hold.
+    turns, _ = polled if polled is not None else driver.rows.snapshot()
     for candidate in eligible:
         holds.decisions[candidate.dedup_key] = {
             **driver.forced.choose(keyed(driver.rows.key, ['candidate', candidate.dedup_key]),

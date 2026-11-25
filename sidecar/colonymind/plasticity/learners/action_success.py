@@ -185,6 +185,10 @@ class Rows:
                    for ref in refs)
 
     def snapshot(self):
+        return [row for row in self._created() if not self.hidden(row['deps'])]
+
+    def _created(self):
+        """The task rows created by now, as ``snapshot`` reads them, before the source check."""
         rows = self.query('SELECT id,type,drive,kind,context,success_check,lesson_ids,parent_goal_id, '
             'created_at,assigned_at,completed_at,failed_at,cancelled_at,outcome,verified '
             "FROM initiatives WHERE kind='task' ORDER BY created_at,id")
@@ -203,7 +207,7 @@ class Rows:
             ended = self.settled_at(row)
             verification = [at for at in ratings.get(row['id'], ()) if ended is not None and at >= ended]
             row['verified_at'] = min(verification, default=None) if row['verified'] == 'owner' else None
-            if moment(row['created_at']) <= self.clock() and not self.hidden(row['deps']):
+            if moment(row['created_at']) <= self.clock():
                 kept.append(row)
         return kept
 
@@ -262,11 +266,13 @@ class Rows:
         topic_hash = keyed(self.key, ['topic', topic]) if topic else ''
         failures = []
         if topic:
-            for previous in self.snapshot() if snapshot is None else snapshot:
+            # Without a snapshot only the rows that would count are checked against their sources.
+            for previous in self._created() if snapshot is None else snapshot:
                 ended = self.settled_at(previous)
                 if (previous['id'] != row.get('id') and label(previous) == 0 and ended is not None
                         and at - timedelta(days=30) <= ended < at
-                        and previous['context'].get('topic') == topic):
+                        and previous['context'].get('topic') == topic
+                        and (snapshot is not None or not self.hidden(previous['deps']))):
                     failures.append((ended, previous))
         failures.sort(key=lambda item: (item[0], item[1]['id']))
         deps = tuple(dict.fromkeys((*deps, *(ref for _, prior in failures for ref in prior['deps']))))

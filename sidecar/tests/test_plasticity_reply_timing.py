@@ -307,6 +307,29 @@ def test_unreadable_timing_data_leaves_outreach_off_arm(tmp_path, monkeypatch):
         concerns.close()
 
 
+def test_outreach_preparation_reads_the_sources_once(tmp_path, monkeypatch):
+    from colonymind.mind.concerns import Concerns
+    from colonymind.plasticity.learners.reply_timing import prepare
+    from test_mind_outreach import declared, finding, inputs
+    ledger = TurnIdempotencyLedger(tmp_path / 'turn-idempotency.db')
+    turn(ledger, 'last-turn', NOW - 3 * H)
+    service = runtime(tmp_path, [NOW])
+    concerns = Concerns(tmp_path / 'mind.db')
+    mind = SimpleNamespace(plasticity=service, faculties={'plasticity': True}, owner_id='Owner',
+                           mind_state=concerns.state)
+    state = inputs(interests=[declared()], findings=[finding()])
+    rows = service.loaded['timing'].driver.rows
+    snapshot, reads = rows.snapshot, []
+    monkeypatch.setattr(rows, 'snapshot', lambda: reads.append(snapshot()) or reads[-1])
+    try:
+        prepare(mind, state)
+        assert len(reads) == 1 and [turn['id'] for turn in reads[0][0]] == ['last-turn']
+        assert set(state.timing_holds.decisions) == {c.dedup_key for c in outreach.candidates(state)[1]}
+    finally:
+        service.close()
+        concerns.close()
+
+
 def test_report_hold_counts_expire_even_without_another_outreach_tick(tmp_path):
     from colonymind.mind.concerns import Concerns
     from colonymind.plasticity.learners.reply_timing import SAMPLE_PREFIX, report

@@ -822,6 +822,17 @@ def _reader_ledger(ledger):
     return ledger
 
 
+def reader_of(conn):
+    """The ledger a connection's reads resolve to, resolved once for a caller that checks many refs through it:
+    ``is_forgotten(reader_of(conn), ref, conn=conn)`` reads as ``is_forgotten(conn, ref)`` and
+    ``fenced_read(reader_of(conn), ...)`` as ``fenced_read(conn, ...)``. When the probe fails it is the connection
+    itself, so each read probes, and fails, as before."""
+    try:
+        return _reader_ledger(conn)
+    except Exception:
+        return conn
+
+
 def is_forgotten(ledger, source_ref, *, conn=None):
     """Shared live read fence, preserving the existing loud fail-open contract."""
     if not source_ref:
@@ -849,6 +860,25 @@ def is_forgotten(ledger, source_ref, *, conn=None):
                                         or isinstance(source_ref, dict) and source_ref.get('_curated_id')):
                 return True  # known withdrawal + unreadable evidence cannot certify a fresh use
         return False
+
+
+def withdrawals_known(ledger, *, conn=None):
+    """False only when ``is_forgotten`` would read every ref as not forgotten now (its empty-journal check: no
+    withdrawal known); True otherwise, a failure included, so each ref is checked as before."""
+    try:
+        reader = _reader_ledger(ledger) if hasattr(ledger, 'execute') else ledger
+        cache = _cache_of(reader)
+        return bool(cache.source_fences or _state(conn, reader, '', source_only=True, cache=cache).forgotten)
+    except Exception:
+        return True
+
+
+def forgotten_among(ledger, source_refs, *, conn=None):
+    """The refs ``is_forgotten`` reads as forgotten, with its empty-journal check made once for them all."""
+    refs = [ref for ref in source_refs if ref]
+    if not refs or not withdrawals_known(ledger, conn=conn):
+        return set()
+    return {ref for ref in refs if is_forgotten(ledger, ref, conn=conn)}
 
 
 def _journal_version(ledger):

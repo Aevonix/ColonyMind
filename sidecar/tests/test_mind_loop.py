@@ -1442,6 +1442,37 @@ async def test_what_is_owed_is_not_learned_away(fx):
     assert [(item["type"], item["decision"]) for item in summary["formed"]] == [("commitment_reminder", "act")]
 
 
+async def test_a_tick_with_slow_commitment_listings_does_not_hold_the_loop(fx, monkeypatch, caplog):
+    """The tick's commitment listings (the overdue flip, the drives' open items) run in a worker: a slow
+    listing leaves the loop free, and what the tick does with the rows is what it did."""
+    import logging
+    import threading
+    from colonymind import loop_lag
+    fx.turn("t-1", OWNER, "Remind me to pick up the kids at 3.", "Will do.")
+    assert await fx.capture(FakeRouter(fx.now + timedelta(minutes=30), description="Pick up the kids",
+                                       obligor="owner"))
+    fx.shift(hours=1)
+    listing = fx.commitments.list
+    loop_thread = threading.get_ident()
+    workers = []
+
+    def slow(*args, **kwargs):
+        if threading.get_ident() != loop_thread:
+            workers.append((tuple(kwargs.get("status") or ()), kwargs.get("limit")))
+            time.sleep(.8)
+        return listing(*args, **kwargs)
+
+    monkeypatch.setattr(fx.commitments, "list", slow)
+    with caplog.at_level(logging.INFO, logger=loop_lag.__name__):
+        async with loop_lag.loop_lag_lifespan():
+            summary = await fx.mind.tick(force=True)
+    assert summary["overdue_flipped"] == 1
+    assert [(item["type"], item["decision"]) for item in summary["formed"]] == [("commitment_reminder", "act")]
+    assert {(("pending",), 500), (("pending", "overdue"), 500)} <= set(workers)
+    assert not [record for record in caplog.records if record.name == loop_lag.__name__
+                and record.levelno == logging.WARNING]
+
+
 async def test_at_suggest_the_owners_reminders_and_the_minds_health_reports_still_go_out(tmp_path, monkeypatch):
     """suggest keeps the mind's own initiative to the digest. It does not hold back a reminder the
     owner asked for, or the mind's report that a store is failing: a digest would bring either a day late."""

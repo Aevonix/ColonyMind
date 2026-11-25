@@ -947,3 +947,33 @@ async def test_a_grade_whose_reaction_turn_was_erased_teaches_nothing(tmp_path):
     assert list(outcomes.replay_rows(store, sources)) == []
     assert outcomes.forget_erased(store, sources) == 1 and store.rows() == []
     initiatives.close()
+
+
+def test_erased_and_withheld_read_many_turns_on_bounded_connections(tmp_path, monkeypatch):
+    """Over more turns than one query takes, each check opens its connections once, not per chunk or per turn,
+    and names the same turns: a turn with many projection rows counts once."""
+    ledger = TurnIdempotencyLedger(tmp_path / "turn-idempotency.db")
+    turns = [f"t-{index:04d}" for index in range(1200)]
+    with closing(ledger._connect()) as conn, conn:
+        conn.executemany("INSERT INTO source_projection_erasures VALUES (?,?)",
+                         [(turn, f"s-{copy}") for turn in turns[::3] for copy in range(4)])
+        conn.executemany("INSERT INTO source_attribution_invalidations VALUES (?,?,?)",
+                         [(turn, "corrected", "operation") for turn in turns[1::50]])
+        conn.executemany("INSERT INTO source_erasures (contact_id, turn_id, session_id, message_hashes_json) "
+                         "VALUES (?,?,?,?)", [(OWNER, turn, "session", "[]") for turn in turns[::7]])
+        conn.executemany("INSERT INTO source_erasure_revisions VALUES (?,?,?,?,?)",
+                         [(index, turn, "v1", "person", 0) for index, turn in enumerate(turns[5::11])])
+    connect, opened = sqlite3.connect, []
+
+    def counted(target, *args, **kwargs):
+        opened.append(target)
+        return connect(target, *args, **kwargs)
+
+    sources = Sources(tmp_path)
+    sources.erased(["t-0000"])      # opens the curated journal's long-lived monitor
+    monkeypatch.setattr(sqlite3, "connect", counted)
+    assert sources.withheld(turns + ["missing"]) == set(turns[::3]) | set(turns[1::50])
+    assert len(opened) == 1
+    opened.clear()
+    assert sources.erased(turns + ["missing"]) == set(turns[::7]) | set(turns[5::11])
+    assert len(opened) == 2      # the store's rows, and the curated fence's own read

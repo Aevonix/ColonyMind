@@ -9,6 +9,7 @@ import sqlite3
 import threading
 import uuid
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 from colonymind.util.temporal import now_utc
@@ -21,6 +22,10 @@ logger = logging.getLogger(__name__)
 # item silently vanishes from dedup lists, prompt sections, and workspace
 # ingest while still being owed.
 OPEN_STATUSES = ("pending", "overdue")
+
+# What one attempt of a fenced read shares across the rows it checks (``_visible``), by store: the source-ledger
+# connection and its reads. Per thread, and only while that attempt runs.
+_source_reads = threading.local()
 
 # How a resolution outcome maps onto the terminal status. 'done' is the only
 # outcome that counts as kept; everything else is a cancellation whose reason
@@ -635,9 +640,33 @@ class CommitmentStore:
     def _fenced_read(self, read, *, empty):
         from colonymind.memory import curated
         from types import SimpleNamespace
+        from inspect import iscoroutinefunction
         path = self._source_path()
+        if not iscoroutinefunction(read):
+            read = partial(self._sharing_sources, read)
         return curated.fenced_read(SimpleNamespace(db_path=path) if path.is_file() else None,
                                    read, empty=empty)
+
+    @staticmethod
+    def _sharing_sources(read):
+        """One attempt of a fenced read, with one source-ledger connection for every row it checks; a retry opens
+        its own."""
+        if getattr(_source_reads, 'open', None) is not None:
+            return read()
+        _source_reads.open = {}
+        try:
+            return read()
+        finally:
+            opened, _source_reads.open = _source_reads.open, None
+            for entry in opened.values():
+                if entry is not None:
+                    entry[0].close()
+
+    @staticmethod
+    def _source_connection(path):
+        conn = sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)
+        conn.row_factory = sqlite3.Row
+        return conn
 
     def _visible(self, row):
         from colonymind.memory import curated
@@ -645,13 +674,28 @@ class CommitmentStore:
         source = metadata.get('source_turn') or metadata.get('source_turn_id')
         if not source:
             return True
-        path = self._source_path()
-        if not path.is_file():
+        shared = getattr(_source_reads, 'open', None)
+        if shared is None:
+            path = self._source_path()
+            if not path.is_file():
+                return True
+            from contextlib import closing
+            with closing(self._source_connection(path)) as conn:
+                return not curated.is_forgotten(conn, source)
+        # Inside one attempt the ledger, its probe and the empty-journal check are read once: a withdrawal
+        # committed meanwhile moves the journal, and the fence repeats the attempt.
+        if self._db_path not in shared:
+            path = self._source_path()
+            if path.is_file():
+                conn = self._source_connection(path)
+                reader = curated.reader_of(conn)
+                shared[self._db_path] = conn, reader, curated.withdrawals_known(reader, conn=conn)
+            else:
+                shared[self._db_path] = None
+        if shared[self._db_path] is None:
             return True
-        from contextlib import closing
-        with closing(sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)) as conn:
-            conn.row_factory = sqlite3.Row
-            return not curated.is_forgotten(conn, source)
+        conn, reader, known = shared[self._db_path]
+        return not known or not curated.is_forgotten(reader, source, conn=conn)
 
     def list(self, person_id: Optional[str]=None, status: Optional[List[str]]=None, overdue_only: bool=False, limit: int=50, offset: int=0) -> Dict[str, Any]:
         """List commitments with optional filters.

@@ -710,7 +710,8 @@ class Mind:
             summary["capture_drained"], summary["appraisal_wait"] = await asyncio.gather(
                 self._drain_capture(force), self._await_appraisals(force))
             await self.ideas.tick(now)
-            summary["overdue_flipped"] = self._flip_overdue(now)
+            # Commitments only: the store takes its own lock and opens a connection per call, so a worker may run it.
+            summary["overdue_flipped"] = await asyncio.to_thread(self._flip_overdue, now)
             summary["check_ins_scored"] = await self._score_check_ins(now)
             summary["outreach_scored"] = self._score_outreach(now)
             self.mind_state.decay(now)
@@ -1338,7 +1339,7 @@ class Mind:
         """Everything the drives read, gathered once; every store is optional."""
         inputs = DriveInputs(now=now, owner_id=self.owner_id, worker_profile=WORKER_PROFILE,
                              people_on=self.faculties["people"])
-        inputs.commitments = self._open_commitments()
+        inputs.commitments = await asyncio.to_thread(self._open_commitments)
         if inputs.people_on:
             await self._resolve_recipients(inputs.commitments)
             await self._apply_cadences(inputs.commitments)

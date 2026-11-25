@@ -758,7 +758,9 @@ class Ideas:
         # Commitment revisions trigger the same debounced synthesis as Google.
         commitments = self.mind.commitments
         if commitments is not None:
-            watermark = digest(commitments.list(person_id=self.owner, status=["pending", "overdue"], limit=16)["commitments"])
+            listed = await asyncio.to_thread(commitments.list, person_id=self.owner, status=["pending", "overdue"],
+                                             limit=16)
+            watermark = digest(listed["commitments"])
             meta = self.meta()
             if meta.get("commitments") != watermark:
                 meta["commitments"] = watermark
