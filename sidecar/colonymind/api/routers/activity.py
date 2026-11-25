@@ -5,6 +5,7 @@ import sqlite3
 
 from fastapi import Depends, HTTPException, Request, Response
 from pydantic import ValidationError
+from starlette.requests import ClientDisconnect
 
 from colonymind import get_state_dir
 from colonymind.api.auth import request_authority
@@ -42,6 +43,10 @@ async def snapshot():
 async def ingest(request: Request):
     try:
         body = ProducerSnapshot.model_validate(await request.json())
+    except ClientDisconnect:
+        # The adapter gives up on a snapshot after its own short limit and delivers it again later: the hang-up of a
+        # sender while its body is read is expected, not a server error. Nothing was read, so nothing changes.
+        return Response(status_code=499, headers={"Cache-Control": "no-store"})
     except (ValidationError, ValueError, json.JSONDecodeError):
         raise HTTPException(422, detail={"code": "invalid_activity_snapshot"},
                             headers={"Cache-Control": "no-store"}) from None

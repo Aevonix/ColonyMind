@@ -215,6 +215,30 @@ def test_invalid_snapshot_does_not_reflect_private_input_or_mutate_state(state, 
     assert not state.snapshot()["available"]
 
 
+async def test_sender_that_hangs_up_while_its_snapshot_is_read_is_no_server_error(state):
+    """The adapter gives up at its own short limit and delivers again: the engine answers quietly, with no 500."""
+    app = FastAPI()
+    app.include_router(host.router)
+    app.add_middleware(ApiKeyMiddleware, api_key="test-key", credentials=CredentialTable.from_config({}))
+    scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST", "scheme": "http",
+             "path": PATH + "/snapshot", "raw_path": (PATH + "/snapshot").encode(), "query_string": b"",
+             "root_path": "", "headers": [(b"host", b"127.0.0.1"), (b"authorization", b"Bearer test-key"),
+                                          (b"content-type", b"application/json")],
+             "client": ("127.0.0.1", 1234), "server": ("127.0.0.1", 7777)}
+    sent = []
+
+    async def receive():
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        sent.append(message)
+
+    await app(scope, receive, send)
+    start = next(message for message in sent if message["type"] == "http.response.start")
+    assert start["status"] == 499
+    assert not state.snapshot()["available"]
+
+
 def test_auth_refuses_missing_wrong_and_underprivileged_credentials(state):
     table = CredentialTable.from_config({
         "reader": {"sha256": secret_digest("reader"), "access": ["read"], "contacts": "own"},
