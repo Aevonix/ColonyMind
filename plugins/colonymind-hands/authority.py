@@ -128,7 +128,13 @@ def _destination(value: str) -> str:
     if parsed.username or parsed.password:
         raise ValueError("credential-bearing destinations cannot enter an ask")
     host = parsed.hostname.lower().rstrip(".")
-    port = parsed.port
+    try:
+        port = parsed.port
+    except ValueError:
+        # A port that is no number in range reaches no port. The destination is its host as with no port at all, so
+        # a target configured without a port, or an owner-account host, on that host is still recognized and the
+        # call is still judged.
+        port = None
     if port and (parsed.scheme.lower(), port) not in {("https", 443), ("http", 80)}:
         host += f":{port}"
     return urlunsplit((parsed.scheme.lower(), host, parsed.path or "/", parsed.query, ""))

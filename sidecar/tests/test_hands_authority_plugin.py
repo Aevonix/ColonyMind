@@ -89,6 +89,33 @@ def test_floor_classes_and_configured_destinations_wait(plugin, command):
     assert len(plugin.writes) == 1
 
 
+@pytest.mark.parametrize("session", ["child-session", "owner-session"])
+def test_url_with_an_unreadable_port_neither_blocks_nor_aborts_recognition(plugin, caplog, session):
+    """A port that is no number in range is read as no port: the call is judged like any other, with no warning."""
+    for command in ("curl https://docs.example.test:notaport/page", "curl https://docs.example.test:99999/page"):
+        assert before(plugin, command, session=session) is None
+    assert not plugin.writes and not plugin.checks
+    assert not [record for record in caplog.records if record.levelname in {"WARNING", "ERROR"}]
+
+
+@pytest.mark.parametrize("command, destination", [
+    ("curl -X POST https://publish.example.test:notaport/upload", "https://publish.example.test/upload"),
+    ("curl https://account.example.test:65536/settings", "https://account.example.test/settings")])
+def test_configured_destination_with_an_unreadable_port_is_still_recognized(plugin, caplog, command, destination):
+    assert before(plugin, command)["action"] == "block"
+    assert len(plugin.writes) == 1
+    assert plugin.writes[0][1]["targets"] == [{"kind": "destination", "target": destination, "value": destination}]
+    assert not [record for record in caplog.records if record.levelname in {"WARNING", "ERROR"}]
+
+
+def test_owner_call_with_an_unreadable_port_meets_the_held_target_it_names(plugin, caplog):
+    held_permit(plugin, "curl -X POST https://publish.example.test/upload")
+    verdict = before(plugin, "curl -X POST https://publish.example.test:notaport/upload", session="owner-session")
+    assert_continue(plugin, verdict)
+    assert "this target is held" in verdict["message"]
+    assert not [record for record in caplog.records if record.levelname in {"WARNING", "ERROR"}]
+
+
 def test_owner_front_runs_floor_effect_and_review_cannot_borrow_a_hand(plugin):
     command = "curl https://api.stripe.com/v1/transfers"
     assert before(plugin, command, session="owner-session") is None
