@@ -194,9 +194,27 @@ if [ -f "$work/gateway.pid" ]; then
 fi
 [ "\$1" = stop ] && exit 0
 cd "$work"
-hermes gateway run >> "$work/gateway.log" 2>&1 &
-echo \$! > "$work/gateway.pid"
-for _ in \$(seq 1 120); do curl -sf "$WEBHOOK_URL/health" > /dev/null && exit 0; sleep 1; done
+start() {
+  hermes gateway run >> "$work/gateway.log" 2>&1 &
+  echo \$! > "$work/gateway.pid"
+}
+start
+for _ in \$(seq 1 120); do
+  curl -sf "$WEBHOOK_URL/health" > /dev/null && exit 0
+  pid=\$(cat "$work/gateway.pid")
+  if ! kill -0 "\$pid" 2>/dev/null; then
+    wait "\$pid"; code=\$?
+    # 75 is Hermes' transient refusal: this gateway lost the host lock to another gateway. A kanban worker of a
+    # standalone profile (colonymind-act) starts that profile's own gateway when it finds none, and in the moment
+    # between the old gateway's exit and this start that gateway can take the lock. Hermes' own service units start
+    # the gateway again 5 s after a 75 (RestartForceExitStatus=75, RestartSec=5); so does this helper, and says so.
+    if [ "\$code" != 75 ]; then echo "the gateway exited with \$code"; tail -60 "$work/gateway.log"; exit 1; fi
+    echo "the gateway exited 75 (another gateway holds the host lock); starting it again in 5 s, as a Hermes service unit does"
+    sleep 5
+    start
+  fi
+  sleep 1
+done
 echo "the gateway did not come up"; tail -60 "$work/gateway.log"; exit 1
 SH
 log "== gateway (capture platform, loopback webhook route, kanban dispatcher every 5 s)"
